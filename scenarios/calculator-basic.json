@@ -1,0 +1,112 @@
+{
+  "$schema": "automation-scenario-v1",
+  "name": "Calculator Basic Arithmetic",
+  "description": "Tests Calculator with addition, division, and value reading",
+  "version": "1.0",
+  "variables": {
+    "calcHandle": null,
+    "result1": null,
+    "result2": null
+  },
+  "steps": [
+    {
+      "id": 1,
+      "action": "launchProcess",
+      "params": {
+        "executable": "calc.exe",
+        "waitSeconds": 3
+      },
+      "description": "Launch Calculator"
+    },
+    {
+      "id": 2,
+      "action": "findWindow",
+      "params": {
+        "processName": "calc",
+        "storeAs": "calcHandle"
+      },
+      "description": "Find Calculator window by process name",
+      "assert": {
+        "notNull": "calcHandle"
+      }
+    },
+    {
+      "id": 3,
+      "action": "sendKeys",
+      "params": {
+        "target": "${calcHandle}",
+        "keys": "{ESCAPE}",
+        "waitMilliseconds": 500
+      },
+      "description": "Clear display"
+    },
+    {
+      "id": 4,
+      "action": "sendKeys",
+      "params": {
+        "target": "${calcHandle}",
+        "keys": "25+17=",
+        "waitSeconds": 1
+      },
+      "description": "Calculate 25 + 17"
+    },
+    {
+      "id": 5,
+      "action": "readValue",
+      "params": {
+        "target": "${calcHandle}",
+        "storeAs": "result1"
+      },
+      "description": "Read result",
+      "assert": {
+        "equals": {
+          "actual": "${result1}",
+          "expected": "42"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "action": "sendKeys",
+      "params": {
+        "target": "${calcHandle}",
+        "keys": "{ESCAPE}",
+        "waitMilliseconds": 500
+      },
+      "description": "Clear for next calculation"
+    },
+    {
+      "id": 7,
+      "action": "sendKeys",
+      "params": {
+        "target": "${calcHandle}",
+        "keys": "144/12=",
+        "waitSeconds": 1
+      },
+      "description": "Calculate 144 ÷ 12"
+    },
+    {
+      "id": 8,
+      "action": "readValue",
+      "params": {
+        "target": "${calcHandle}",
+        "storeAs": "result2"
+      },
+      "description": "Read result",
+      "assert": {
+        "equals": {
+          "actual": "${result2}",
+          "expected": "12"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "action": "closeProcess",
+      "params": {
+        "processNames": ["CalculatorApp", "ApplicationFrameHost"]
+      },
+      "description": "Close Calculator"
+    }
+  ]
+}

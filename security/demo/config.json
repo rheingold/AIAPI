@@ -1,0 +1,28 @@
+{
+  "version": "1.0",
+  "security": {
+    "defaultPolicy": "DENY_UNLISTED",
+    "requireTargetSignature": true
+  },
+  "processes": {
+    "whitelist": [
+      "notepad.exe",
+      "calc.exe"
+    ],
+    "blacklist": [
+      "cmd.exe",
+      "powershell.exe"
+    ]
+  },
+  "developmentMode": {
+    "enabled": false
+  },
+  "binaryHashes": {
+    "app": {
+      "path": "app.exe",
+      "sha256": "498D3BF3D7CF733C80C22A148026A470B8A15807E07459704519112B22517F0D",
+      "size": 29,
+      "lastModified": "2026-02-17T20:09:06.496Z"
+    }
+  }
+}

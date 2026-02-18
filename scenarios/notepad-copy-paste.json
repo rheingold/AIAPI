@@ -1,0 +1,92 @@
+{
+  "$schema": "automation-scenario-v1",
+  "name": "Notepad Copy & Paste",
+  "description": "Type text, select all, copy, move to end, paste duplicate",
+  "version": "1.0",
+  "variables": {
+    "notepadHandle": null
+  },
+  "steps": [
+    {
+      "id": 1,
+      "action": "launchProcess",
+      "params": {
+        "executable": "notepad.exe",
+        "waitSeconds": 2
+      },
+      "description": "Launch Notepad"
+    },
+    {
+      "id": 2,
+      "action": "findWindow",
+      "params": {
+        "processName": "notepad",
+        "storeAs": "notepadHandle"
+      },
+      "description": "Find Notepad window",
+      "assert": {
+        "notNull": "notepadHandle"
+      }
+    },
+    {
+      "id": 3,
+      "action": "sendKeys",
+      "params": {
+        "target": "notepad",
+        "keys": "Hello World! This is a test.{ENTER}Line 2 of text."
+      },
+      "description": "Type initial text",
+      "waitMilliseconds": 800
+    },
+    {
+      "id": 4,
+      "action": "sendKeys",
+      "params": {
+        "target": "notepad",
+        "keys": "^a"
+      },
+      "description": "Select all (Ctrl+A)",
+      "waitMilliseconds": 500
+    },
+    {
+      "id": 5,
+      "action": "sendKeys",
+      "params": {
+        "target": "notepad",
+        "keys": "^c"
+      },
+      "description": "Copy (Ctrl+C)",
+      "waitMilliseconds": 500
+    },
+    {
+      "id": 6,
+      "action": "sendKeys",
+      "params": {
+        "target": "notepad",
+        "keys": "^{END}"
+      },
+      "description": "Move to end (Ctrl+End)",
+      "waitMilliseconds": 500
+    },
+    {
+      "id": 7,
+      "action": "sendKeys",
+      "params": {
+        "target": "notepad",
+        "keys": "{ENTER}{ENTER}--- Pasted copy below ---{ENTER}"
+      },
+      "description": "Add separator",
+      "waitMilliseconds": 500
+    },
+    {
+      "id": 8,
+      "action": "sendKeys",
+      "params": {
+        "target": "notepad",
+        "keys": "^v"
+      },
+      "description": "Paste (Ctrl+V)",
+      "waitMilliseconds": 2000
+    }
+  ]
+}

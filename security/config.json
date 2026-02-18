@@ -1,0 +1,42 @@
+{
+  "version": "1.0",
+  "security": {
+    "defaultPolicy": "DENY_UNLISTED",
+    "requireTargetSignature": true,
+    "requireOSEnforcement": false,
+    "expectedCertThumbprint": null
+  },
+  "processes": {
+    "whitelist": [
+      "notepad.exe",
+      "calc.exe"
+    ],
+    "blacklist": [
+      "cmd.exe",
+      "powershell.exe"
+    ]
+  },
+  "developmentMode": {
+    "enabled": false
+  },
+  "binaryHashes": {
+    "keywin": {
+      "path": "dist\\win\\KeyWin.exe",
+      "sha256": "D75F3C0B1702558FAD7F2CFA2BD2366803F1CDA1290B5725AE4ACEC7F897DA6A",
+      "size": 32276,
+      "lastModified": "2026-02-17T20:35:36.432Z"
+    },
+    "mcpServer": {
+      "path": "dist\\server\\mcpServer.js",
+      "sha256": "3B189DE9FFA2269D37A9D1A46834023DA5816205F5FC44CA636601CD66377ABE",
+      "size": 25427,
+      "lastModified": "2026-02-17T20:37:14.017Z"
+    },
+    "automationEngine": {
+      "path": "dist\\engine\\automationEngine.js",
+      "sha256": "FA5443E9A91B6462EBFAC81AB0091DD646B9479F5ADD23FBF9F7344C8D0F29C0",
+      "size": 6111,
+      "lastModified": "2026-02-17T20:37:13.969Z"
+    }
+  }
+}

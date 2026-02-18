@@ -1,0 +1,33 @@
+{
+  "$schema": "automation-scenario-v1",
+  "name": "Calculator Multiply Test",
+  "description": "Launch calculator and perform multiplication 48*37",
+  "version": "1.0",
+  "variables": {
+    "calcHandle": null
+  },
+  "steps": [
+    {
+      "id": 1,
+      "action": "findWindow",
+      "params": {
+        "processName": "CalculatorApp",
+        "storeAs": "calcHandle"
+      },
+      "description": "Find Calculator window",
+      "assert": {
+        "notNull": "calcHandle"
+      }
+    },
+    {
+      "id": 2,
+      "action": "sendKeys",
+      "params": {
+        "target": "CalculatorApp",
+        "keys": "48*37="
+      },
+      "description": "Calculate 48*37",
+      "waitMilliseconds": 2000
+    }
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "$schema": "automation-scenario-v1",
+  "name": "Notepad Text Editing",
+  "description": "Tests Notepad with text input, selection, and clipboard operations",
+  "version": "1.0",
+  "variables": {
+    "notepadHandle": null
+  },
+  "steps": [
+    {
+      "id": 1,
+      "action": "launchProcess",
+      "params": {
+        "executable": "notepad.exe",
+        "waitSeconds": 2
+      },
+      "description": "Launch Notepad"
+    },
+    {
+      "id": 2,
+      "action": "findWindow",
+      "params": {
+        "processName": "notepad",
+        "storeAs": "notepadHandle"
+      },
+      "description": "Find Notepad window by process name"
+    },
+    {
+      "id": 3,
+      "action": "sendKeys",
+      "params": {
+        "target": "${notepadHandle}",
+        "keys": "Test automation with WinKeys{ENTER}Line 2: JSON scenarios{ENTER}Line 3: Complete"
+      },
+      "description": "Type multi-line text"
+    },
+    {
+      "id": 4,
+      "action": "sendKeys",
+      "params": {
+        "target": "${notepadHandle}",
+        "keys": "^a",
+        "waitMilliseconds": 500
+      },
+      "description": "Select all (Ctrl+A)"
+    },
+    {
+      "id": 5,
+      "action": "sendKeys",
+      "params": {
+        "target": "${notepadHandle}",
+        "keys": "^c",
+        "waitMilliseconds": 500
+      },
+      "description": "Copy (Ctrl+C)"
+    },
+    {
+      "id": 6,
+      "action": "queryTree",
+      "params": {
+        "target": "${notepadHandle}",
+        "depth": 2,
+        "storeAs": "notepadTree"
+      },
+      "description": "Query UI structure"
+    },
+    {
+      "id": 7,
+      "action": "sendKeys",
+      "params": {
+        "target": "${notepadHandle}",
+        "keys": "%{F4}",
+        "waitSeconds": 1
+      },
+      "description": "Close (Alt+F4)"
+    },
+    {
+      "id": 8,
+      "action": "findWindow",
+      "params": {
+        "titlePattern": "*Notepad*|*Poznámk*",
+        "storeAs": "saveDialog",
+        "optional": true
+      },
+      "description": "Find save dialog if present"
+    },
+    {
+      "id": 9,
+      "action": "sendKeys",
+      "params": {
+        "target": "${saveDialog}",
+        "keys": "{TAB}{ENTER}",
+        "condition": "saveDialog != null"
+      },
+      "description": "Click Don't Save if dialog appeared"
+    }
+  ]
+}

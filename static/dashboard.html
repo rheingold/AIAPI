@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI API Server Dashboard</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🤖 AI API Server Control Panel</h1>
+      <div class="status-bar">
+        <div class="status-item">
+          <span class="label">Status:</span>
+          <span id="server-status" class="value status-running">Running</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Uptime:</span>
+          <span id="uptime" class="value">--</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Requests:</span>
+          <span id="request-count" class="value">0</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="content">
+      <aside class="sidebar">
+        <nav>
+          <button class="nav-btn active" data-section="logs">
+            📋 Live Logs
+          </button>
+          <button class="nav-btn" data-section="settings">
+            ⚙️ Settings
+          </button>
+          <button class="nav-btn" data-section="tools">
+            🔧 MCP Tools
+          </button>
+          <button class="nav-btn" data-section="scenarios">
+            🎬 Scenarios
+          </button>
+        </nav>
+
+        <div class="actions">
+          <h3>Quick Actions</h3>
+          <button id="btn-restart" class="action-btn">🔄 Restart Server</button>
+          <button id="btn-clear-logs" class="action-btn">🗑️ Clear Logs</button>
+          <button id="btn-export-logs" class="action-btn">💾 Export Logs</button>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <!-- Logs Section -->
+        <section id="section-logs" class="section active">
+          <div class="section-header">
+            <h2>Live Server Logs</h2>
+            <div class="log-controls">
+              <label>
+                <input type="checkbox" id="auto-scroll" checked> Auto-scroll
+              </label>
+              <label style="color: #007acc; font-weight: bold;">
+                <input type="checkbox" id="json-logging" checked> JSON Logging
+              </label>
+              <label style="color: #ff6b35; font-weight: bold;">
+                <input type="checkbox" id="raw-mode"> Raw Mode
+              </label>
+              <select id="log-level">
+                <option value="all">All Levels</option>
+                <option value="debug">Debug</option>
+                <option value="info">Info</option>
+                <option value="warn">Warning</option>
+                <option value="error">Error</option>
+              </select>
+              <input type="text" id="log-search" placeholder="Search logs...">
+            </div>
+          </div>
+          <div class="log-container" id="log-output">
+            <div class="log-entry info">
+              <span class="timestamp">21:45:00</span>
+              <span class="level">INFO</span>
+              <span class="source">system</span>
+              <span class="message">Dashboard connected, waiting for logs...</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Settings Section -->
+        <section id="section-settings" class="section">
+          <div class="section-header">
+            <h2>Server Settings</h2>
+            <button id="btn-save-settings" class="btn-primary">💾 Save Changes</button>
+          </div>
+          <div class="settings-container">
+            <div class="setting-group">
+              <h3>Security Policy</h3>
+              <label>
+                <input type="checkbox" id="setting-require-signature"> Require Binary Signatures
+              </label>
+              <label>
+                <input type="checkbox" id="setting-require-os-enforcement"> Require OS Enforcement
+              </label>
+              <label>
+                <input type="checkbox" id="setting-allow-unsigned-scenarios"> Allow Unsigned Scenarios
+              </label>
+            </div>
+
+            <div class="setting-group">
+              <h3>Session Tokens</h3>
+              <label>
+                Token Expiry (seconds):
+                <input type="number" id="setting-token-expiry" value="60" min="5" max="3600">
+              </label>
+              <label>
+                <input type="checkbox" id="setting-enable-session-auth" checked> Enable Session Authentication
+              </label>
+            </div>
+
+            <div class="setting-group">
+              <h3>Server Configuration</h3>
+              <label>
+                Port:
+                <input type="number" id="setting-port" value="3457" min="1024" max="65535">
+              </label>
+              <label>
+                Log Level:
+                <select id="setting-log-level">
+                  <option value="debug">Debug</option>
+                  <option value="info" selected>Info</option>
+                  <option value="warn">Warning</option>
+                  <option value="error">Error</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tools Section -->
+        <section id="section-tools" class="section">
+          <div class="section-header">
+            <h2>Available MCP Tools</h2>
+          </div>
+          <div id="tools-list" class="tools-grid">
+            <div class="loading">Loading tools...</div>
+          </div>
+        </section>
+
+        <!-- Scenarios Section -->
+        <section id="section-scenarios" class="section">
+          <div class="section-header">
+            <h2>Test Scenarios</h2>
+            <button id="btn-run-scenario" class="btn-primary">▶️ Run Selected</button>
+          </div>
+          <div id="scenarios-list" class="scenarios-list">
+            <div class="loading">Loading scenarios...</div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>

@@ -1,0 +1,104 @@
+{
+  "name": "ai-ui-automation",
+  "displayName": "AI UI Automation Plugin",
+  "description": "VS Code extension with MCP@IPC + MCP@HTTP. Call vscode.commands.executeCommand('extension.mcp.callTool') for UI automation: Windows Forms, Web, Office. Keyboard input, mouse clicks, property read/write.",
+  "version": "0.1.1",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/ai-ui-automation-vsc-plugin"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "files": [
+    "dist/**",
+    "LICENSE",
+    "README.md",
+    "MCP_IPC_QUICK.md",
+    "MCP_IPC_QUICK_START.txt",
+    "START_HERE.md",
+    "INDEX.md"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "AI UI Automation",
+      "properties": {
+        "aiAutomation.enableLegacyHttp": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable legacy REST HTTP server (primarily for debugging/backwards compatibility)."
+        },
+        "aiAutomation.httpPort": {
+          "type": "number",
+          "default": 3456,
+          "description": "Port for legacy HTTP server (if enabled)."
+        },
+        "aiAutomation.mcpPort": {
+          "type": "number",
+          "default": 3457,
+          "description": "Port for MCP JSON-RPC server."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "extension.mcp.callTool",
+        "title": "MCP: Call Tool"
+      },
+      {
+        "command": "extension.mcp.listTools",
+        "title": "MCP: List Tools"
+      },
+      {
+        "command": "aiAutomation.inspectWindow",
+        "title": "AI Automation: Inspect Window"
+      },
+      {
+        "command": "aiAutomation.clickElement",
+        "title": "AI Automation: Click Element"
+      },
+      {
+        "command": "aiAutomation.setProperty",
+        "title": "AI Automation: Set Property"
+      },
+      {
+        "command": "aiAutomation.readProperty",
+        "title": "AI Automation: Read Property"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "start:mcp": "node dist/start-mcp-server.js",
+    "dev:start:mcp": "npx ts-node src/start-mcp-server.ts",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "lint": "echo 'Linting disabled for now'",
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.75.0",
+    "@typescript-eslint/eslint-plugin": "^5.0.0",
+    "@typescript-eslint/parser": "^5.0.0",
+    "eslint": "^8.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@types/ws": "^8.18.1",
+    "ws": "^8.19.0"
+  }
+}

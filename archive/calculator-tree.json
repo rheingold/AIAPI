@@ -1,0 +1,361 @@
+﻿Querying Calculator UI tree...
+
+{
+  "id": "",
+  "type": "ControlType.Window",
+  "name": "Kalkula´┐Żka",
+  "position": {
+    "x": 874,
+    "y": 0,
+    "width": 420,
+    "height": 676
+  },
+  "properties": {
+    "isEnabled": true,
+    "isOffscreen": false
+  },
+  "actions": [],
+  "children": [
+    {
+      "id": "TitleBar",
+      "type": "ControlType.Window",
+      "name": "Kalkula´┐Żka",
+      "position": {
+        "x": 1052,
+        "y": 1,
+        "width": 233,
+        "height": 40
+      },
+      "properties": {
+        "isEnabled": true,
+        "isOffscreen": false
+      },
+      "actions": [
+        "setValue",
+        "readValue"
+      ],
+      "children": [
+        {
+          "id": "SystemMenuBar",
+          "type": "ControlType.MenuBar",
+          "name": "Syst´┐Żm",
+          "properties": {
+            "isEnabled": true,
+            "isOffscreen": false
+          },
+          "actions": [],
+          "children": [
+            {
+              "id": "",
+              "type": "ControlType.MenuItem",
+              "name": "Syst´┐Żm",
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": []
+            }
+          ]
+        },
+        {
+          "id": "Minimize",
+          "type": "ControlType.Button",
+          "name": "Minimalizovat aplikaci Kalkula´┐Żka",
+          "position": {
+            "x": 1114,
+            "y": 1,
+            "width": 57,
+            "height": 40
+          },
+          "properties": {
+            "isEnabled": true,
+            "isOffscreen": false
+          },
+          "actions": [
+            "click"
+          ]
+        },
+        {
+          "id": "Maximize",
+          "type": "ControlType.Button",
+          "name": "Maximalizovat aplikaci Kalkula´┐Żka",
+          "position": {
+            "x": 1171,
+            "y": 1,
+            "width": 57,
+            "height": 40
+          },
+          "properties": {
+            "isEnabled": true,
+            "isOffscreen": false
+          },
+          "actions": [
+            "click"
+          ]
+        },
+        {
+          "id": "Close",
+          "type": "ControlType.Button",
+          "name": "Zav´┐Ż´┐Żt aplikaci Kalkula´┐Żka",
+          "position": {
+            "x": 1228,
+            "y": 1,
+            "width": 57,
+            "height": 40
+          },
+          "properties": {
+            "isEnabled": true,
+            "isOffscreen": false
+          },
+          "actions": [
+            "click"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "",
+      "type": "ControlType.Window",
+      "name": "Kalkula´┐Żka",
+      "position": {
+        "x": 883,
+        "y": 1,
+        "width": 402,
+        "height": 666
+      },
+      "properties": {
+        "isEnabled": true,
+        "isOffscreen": false
+      },
+      "actions": [],
+      "children": [
+        {
+          "id": "AppIcon",
+          "type": "ControlType.Image",
+          "name": "",
+          "position": {
+            "x": 903,
+            "y": 9,
+            "width": 25,
+            "height": 25
+          },
+          "properties": {
+            "isEnabled": true,
+            "isOffscreen": false
+          },
+          "actions": []
+        },
+        {
+          "id": "AppName",
+          "type": "ControlType.Text",
+          "name": "Kalkula´┐Żka",
+          "position": {
+            "x": 943,
+            "y": 11,
+            "width": 71,
+            "height": 20
+          },
+          "properties": {
+            "isEnabled": true,
+            "isOffscreen": false
+          },
+          "actions": [
+            "setText"
+          ]
+        },
+        {
+          "id": "NavView",
+          "type": "ControlType.Custom",
+          "name": "",
+          "position": {
+            "x": 883,
+            "y": 41,
+            "width": 402,
+            "height": 626
+          },
+          "properties": {
+            "isEnabled": true,
+            "isOffscreen": false
+          },
+          "actions": [],
+          "children": [
+            {
+              "id": "TogglePaneButton",
+              "type": "ControlType.Button",
+              "name": "Otev´┐Ż´┐Żt navigaci",
+              "position": {
+                "x": 888,
+                "y": 49,
+                "width": 50,
+                "height": 45
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": [
+                "click"
+              ]
+            },
+            {
+              "id": "",
+              "type": "ControlType.Group",
+              "name": "",
+              "position": {
+                "x": 883,
+                "y": 51,
+                "width": 402,
+                "height": 611
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": []
+            },
+            {
+              "id": "Header",
+              "type": "ControlType.Text",
+              "name": "Re´┐Żim kalkula´┐Żky Standardn´┐Ż",
+              "position": {
+                "x": 943,
+                "y": 52,
+                "width": 124,
+                "height": 34
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": [
+                "setText"
+              ]
+            },
+            {
+              "id": "NormalAlwaysOnTopButton",
+              "type": "ControlType.Button",
+              "name": "V´┐Żdy navrchu",
+              "position": {
+                "x": 1079,
+                "y": 51,
+                "width": 40,
+                "height": 40
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": [
+                "click"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "",
+      "type": "ControlType.Pane",
+      "name": "",
+      "position": {
+        "x": 883,
+        "y": 41,
+        "width": 402,
+        "height": 626
+      },
+      "properties": {
+        "isEnabled": true,
+        "isOffscreen": false
+      },
+      "actions": []
+    },
+    {
+      "id": "TitleBar",
+      "type": "ControlType.TitleBar",
+      "name": "Kalkula´┐Żka",
+      "position": {
+        "x": 883,
+        "y": 9,
+        "width": 402,
+        "height": 29
+      },
+      "properties": {
+        "isEnabled": true,
+        "isOffscreen": false
+      },
+      "actions": [],
+      "children": [
+        {
+          "id": "SystemMenuBar",
+          "type": "ControlType.MenuBar",
+          "name": "Syst´┐Żmov´┐Ż nab´┐Żdka",
+          "position": {
+            "x": 883,
+            "y": 9,
+            "width": 28,
+            "height": 28
+          },
+          "properties": {
+            "isEnabled": true,
+            "isOffscreen": false
+          },
+          "actions": [],
+          "children": [
+            {
+              "id": "Item 1",
+              "type": "ControlType.MenuItem",
+              "name": "Syst´┐Żm",
+              "position": {
+                "x": 883,
+                "y": 9,
+                "width": 28,
+                "height": 28
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": []
+            }
+          ]
+        },
+        {
+          "id": "Minimize",
+          "type": "ControlType.Button",
+          "name": "Minimalizovat",
+          "properties": {
+            "isEnabled": true,
+            "isOffscreen": true
+          },
+          "actions": [
+            "click"
+          ]
+        },
+        {
+          "id": "Maximize",
+          "type": "ControlType.Button",
+          "name": "Maximalizovat",
+          "properties": {
+            "isEnabled": true,
+            "isOffscreen": true
+          },
+          "actions": [
+            "click"
+          ]
+        },
+        {
+          "id": "Close",
+          "type": "ControlType.Button",
+          "name": "Zav´┐Ż´┐Żt",
+          "properties": {
+            "isEnabled": true,
+            "isOffscreen": true
+          },
+          "actions": [
+            "click"
+          ]
+        }
+      ]
+    }
+  ]
+}

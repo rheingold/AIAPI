@@ -1,6 +1,118 @@
 # TODO - Next Development Phase
 
-## 🎯 Browser Automation
+## 🔐 Security & Configuration UI (PRIORITY 1)
+**Goal:** User-friendly configuration and security management
+
+### Configuration UI
+- [ ] Create web-based configuration interface
+- [ ] Settings Management:
+  - [ ] Location of scenarios folder (default: `./scenarios`)
+  - [ ] Location of security folder (default: `./security`)
+  - [ ] Location of key files (public.key.enc, private.key.enc)
+  - [ ] Server ports (MCP, Dashboard)
+  - [ ] Session token expiry settings
+  - [ ] Log level configuration
+  - [ ] Enable/disable security features
+- [ ] Security Filters Configuration:
+  - [ ] Visual editor for `.json` config security filters
+  - [ ] Allowed executables list
+  - [ ] Blocked executables list
+  - [ ] Allowed file paths (whitelist)
+  - [ ] Blocked file paths (blacklist)
+  - [ ] Network restrictions
+  - [ ] OS enforcement rules
+- [ ] File Browser:
+  - [ ] Browse for scenario files
+  - [ ] Browse for key files
+  - [ ] Browse for config files
+- [ ] Validation:
+  - [ ] Check if paths exist
+  - [ ] Validate key file integrity
+  - [ ] Test security configuration
+  - [ ] Preview effective permissions
+
+### Interactive Scenario Editor
+- [ ] Visual scenario builder (no syntax knowledge required)
+- [ ] Features:
+  - [ ] Drag-and-drop step builder
+  - [ ] IntelliSense-style autocomplete for:
+    - [ ] Action types (launchProcess, clickElement, sendKeys, etc.)
+    - [ ] Parameter names
+    - [ ] Valid parameter values
+  - [ ] Context-aware suggestions:
+    - [ ] Available providers
+    - [ ] Target process names from running apps
+    - [ ] Element IDs from queried UI trees
+  - [ ] Step templates:
+    - [ ] Common patterns (open app, fill form, etc.)
+    - [ ] Parameterized templates
+  - [ ] Real-time validation:
+    - [ ] Required parameters highlighted
+    - [ ] Type checking
+    - [ ] Dependency validation (e.g., target must be launched first)
+  - [ ] Live preview:
+    - [ ] JSON output preview
+    - [ ] Execution flow visualization
+  - [ ] Test runner:
+    - [ ] Run individual steps
+    - [ ] Debug mode with breakpoints
+    - [ ] Variable inspection
+- [ ] UI Components:
+  - [ ] Action palette (searchable list of all actions)
+  - [ ] Parameter forms (type-specific inputs)
+  - [ ] Step reordering (drag handles)
+  - [ ] Copy/paste/duplicate steps
+  - [ ] Undo/redo support
+- [ ] Integration:
+  - [ ] Save/load from scenarios folder
+  - [ ] Import existing .json scenarios
+  - [ ] Export to .json format
+  - [ ] Version control friendly output
+
+### Installer & Deployment
+- [ ] Windows Installer:
+  - [ ] MSI installer package
+  - [ ] Install to Program Files
+  - [ ] Create Start Menu shortcuts
+  - [ ] Desktop shortcuts (optional)
+  - [ ] Windows Service installation (optional)
+  - [ ] Automatic security setup wizard
+  - [ ] Generate key files on first run
+  - [ ] Sign config.json automatically
+- [ ] Installer Features:
+  - [ ] Select installation directory
+  - [ ] Choose components (server, dashboard, tools)
+  - [ ] Port configuration during install
+  - [ ] Create Windows Firewall rules
+  - [ ] Register file associations (.aiapi-scenario)
+  - [ ] Add to PATH (optional)
+- [ ] Uninstaller:
+  - [ ] Clean removal of all files
+  - [ ] Option to keep scenarios and config
+  - [ ] Remove firewall rules
+  - [ ] Remove service
+- [ ] Auto-updater:
+  - [ ] Check for updates on startup
+  - [ ] Download and install updates
+  - [ ] Backup before update
+  - [ ] Rollback on failure
+
+### Dashboard Enhancements
+- [ ] Add "Settings" tab with configuration UI
+- [ ] Add "Scenario Editor" tab
+- [ ] Add "Security" tab:
+  - [ ] View current security config
+  - [ ] Edit security filters
+  - [ ] Test security rules
+  - [ ] View security logs/violations
+- [ ] Add "Status" indicators:
+  - [ ] Security status (enabled/disabled, valid keys)
+  - [ ] Key expiry warnings
+  - [ ] Configuration issues
+
+---
+
+## 🎯 Browser Automation (PRIORITY 2)
 **Goal:** Control web browsers with DOM structure access
 
 ### BrowserWin.exe Helper
@@ -41,7 +153,7 @@
 
 ---
 
-## 📄 MS Office Automation
+## 📄 MS Office Automation (PRIORITY 3)
 **Goal:** Control Word, Excel, PowerPoint with document structure access
 
 ### OfficeWin.exe Helper
@@ -122,11 +234,24 @@
 ---
 
 ## 📋 Implementation Priority
-1. **Phase 1:** BrowserWin.exe with Edge/Chrome support
-2. **Phase 2:** OfficeWin.exe with Word support
-3. **Phase 3:** Excel and PowerPoint support
-4. **Phase 4:** Firefox and Brave browser support
-5. **Phase 5:** Advanced features (screenshots, complex DOM queries)
+1. **PRIORITY 1 - Security & Config UI:**
+   - a) Configuration UI for paths and settings
+   - b) Security filters visual editor
+   - c) Interactive scenario editor with IntelliSense
+   - d) Windows installer with auto-setup
+2. **PRIORITY 2 - Browser Automation:**
+   - a) BrowserWin.exe with Edge/Chrome support
+   - b) DOM structure access and manipulation
+   - c) Test scenarios
+3. **PRIORITY 3 - Office Automation:**
+   - a) OfficeWin.exe with Word support
+   - b) Excel and PowerPoint support
+   - c) Document structure queries
+4. **PRIORITY 4 - Advanced Features:**
+   - a) Firefox and Brave browser support
+   - b) Screenshots and video recording
+   - c) Complex DOM/document queries
+   - d) AI-assisted scenario generation
 
 ---
 

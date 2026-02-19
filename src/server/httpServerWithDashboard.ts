@@ -36,12 +36,31 @@ export class HttpServerWithDashboard {
   private sessions: Map<string, DashboardSession> = new Map();
   private securityPolicy: SecurityPolicy | null = null;
   private verboseLogging: boolean = true; // Enabled by default
+  private config: any = {}; // Configuration storage
 
   constructor(automationEngine: AutomationEngine, sessionTokenManager?: SessionTokenManager, port?: number) {
     this.automationEngine = automationEngine;
     this.sessionTokenManager = sessionTokenManager || null;
     this.port = port || 3457;
     this.loadSecurityPolicy();
+    
+    // Initialize default config
+    this.config = {
+      scenariosPath: './scenarios',
+      securityPath: './security',
+      publicKeyPath: './security/public.key.enc',
+      privateKeyPath: './security/private.key.enc',
+      mcpPort: 3457,
+      logLevel: 'info',
+      tokenExpiry: 60,
+      requireBinarySignature: false,
+      requireOsEnforcement: false,
+      allowUnsignedScenarios: true,
+      allowedExecutables: [],
+      blockedExecutables: [],
+      allowedPaths: [],
+      blockedPaths: [],
+    };
     
     // Register this dashboard as log receiver
     globalLogger.onLog((level, source, message) => {
@@ -395,6 +414,18 @@ export class HttpServerWithDashboard {
       }
       if (pathname === '/api/scenarios/run' && req.method === 'POST') {
         return this.handleRunScenario(req, res);
+      }
+      if (pathname === '/api/settings' && req.method === 'GET') {
+        return this.handleGetSettings(req, res);
+      }
+      if (pathname === '/api/settings' && req.method === 'POST') {
+        return this.handleSaveSettings(req, res);
+      }
+      if (pathname === '/api/settings/validate' && req.method === 'GET') {
+        return this.handleValidateSettings(req, res);
+      }
+      if (pathname === '/api/token/generate' && req.method === 'POST') {
+        return this.handleGenerateToken(req, res);
       }
 
       // Legacy automation API endpoints
@@ -805,5 +836,168 @@ export class HttpServerWithDashboard {
       });
       req.on('error', reject);
     });
+  }
+
+  /**
+   * Settings Management Endpoints
+   */
+  private async handleGetSettings(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const settings = {
+        paths: {
+          scenarios: this.config.scenariosPath || './scenarios',
+          security: this.config.securityPath || './security',
+          publicKey: this.config.publicKeyPath || './security/public.key.enc',
+          privateKey: this.config.privateKeyPath || './security/private.key.enc',
+        },
+        security: {
+          requireSignature: this.config.requireBinarySignature || false,
+          requireOsEnforcement: this.config.requireOsEnforcement || false,
+          allowUnsignedScenarios: this.config.allowUnsignedScenarios || false,
+          enableSessionAuth: this.sessionTokenManager !== null,
+          allowedExecutables: this.config.allowedExecutables || [],
+          blockedExecutables: this.config.blockedExecutables || [],
+          allowedPaths: this.config.allowedPaths || [],
+          blockedPaths: this.config.blockedPaths || [],
+        },
+        server: {
+          port: this.config.mcpPort || 3457,
+          dashboardPort: this.port,
+          logLevel: this.config.logLevel || 'info',
+          tokenExpiry: this.config.tokenExpiry || 60,
+        },
+        currentToken: this.sessionTokenManager?.generateToken() || null,
+      };
+
+      res.writeHead(200);
+      res.end(JSON.stringify(settings));
+    } catch (error) {
+      this.log('error', 'settings', `Failed to get settings: ${error}`);
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: 'Failed to load settings' }));
+    }
+  }
+
+  private async handleSaveSettings(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const body = await this.readBody(req);
+      const settings = JSON.parse(body);
+
+      // Update config (in-memory for now)
+      if (settings.paths) {
+        this.config.scenariosPath = settings.paths.scenarios;
+        this.config.securityPath = settings.paths.security;
+        this.config.publicKeyPath = settings.paths.publicKey;
+        this.config.privateKeyPath = settings.paths.privateKey;
+      }
+
+      if (settings.security) {
+        this.config.requireBinarySignature = settings.security.requireSignature;
+        this.config.requireOsEnforcement = settings.security.requireOsEnforcement;
+        this.config.allowUnsignedScenarios = settings.security.allowUnsignedScenarios;
+        this.config.allowedExecutables = settings.security.allowedExecutables;
+        this.config.blockedExecutables = settings.security.blockedExecutables;
+        this.config.allowedPaths = settings.security.allowedPaths;
+        this.config.blockedPaths = settings.security.blockedPaths;
+      }
+
+      if (settings.server) {
+        this.config.mcpPort = settings.server.port;
+        this.config.logLevel = settings.server.logLevel;
+        this.config.tokenExpiry = settings.server.tokenExpiry;
+      }
+
+      // TODO: Persist settings to config file
+      this.log('info', 'settings', 'Settings updated successfully');
+
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        success: true,
+        requiresRestart: settings.server?.port !== undefined || settings.server?.dashboardPort !== undefined,
+      }));
+    } catch (error) {
+      this.log('error', 'settings', `Failed to save settings: ${error}`);
+      res.writeHead(500);
+      res.end(JSON.stringify({ success: false, error: String(error) }));
+    }
+  }
+
+  private async handleValidateSettings(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const checks = [];
+
+      // Check scenarios path
+      const scenariosPath = this.config.scenariosPath || './scenarios';
+      checks.push({
+        status: fs.existsSync(scenariosPath) ? 'ok' : 'error',
+        message: `Scenarios folder: ${scenariosPath}`,
+      });
+
+      // Check security path
+      const securityPath = this.config.securityPath || './security';
+      checks.push({
+        status: fs.existsSync(securityPath) ? 'ok' : 'error',
+        message: `Security folder: ${securityPath}`,
+      });
+
+      // Check public key
+      const publicKeyPath = this.config.publicKeyPath || './security/public.key.enc';
+      checks.push({
+        status: fs.existsSync(publicKeyPath) ? 'ok' : 'warning',
+        message: `Public key: ${publicKeyPath}`,
+      });
+
+      // Check private key
+      const privateKeyPath = this.config.privateKeyPath || './security/private.key.enc';
+      checks.push({
+        status: fs.existsSync(privateKeyPath) ? 'ok' : 'warning',
+        message: `Private key: ${privateKeyPath}`,
+      });
+
+      // Check session token
+      checks.push({
+        status: this.sessionTokenManager ? 'ok' : 'warning',
+        message: 'Session token manager',
+      });
+
+      // Check security filters
+      const hasFilters =
+        (this.config.allowedExecutables?.length || 0) > 0 ||
+        (this.config.blockedExecutables?.length || 0) > 0 ||
+        (this.config.allowedPaths?.length || 0) > 0 ||
+        (this.config.blockedPaths?.length || 0) > 0;
+      
+      checks.push({
+        status: hasFilters ? 'ok' : 'warning',
+        message: `Security filters configured: ${hasFilters ? 'Yes' : 'No (all access allowed)'}`,
+      });
+
+      res.writeHead(200);
+      res.end(JSON.stringify({ checks }));
+    } catch (error) {
+      this.log('error', 'settings', `Validation error: ${error}`);
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: String(error) }));
+    }
+  }
+
+  private async handleGenerateToken(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      if (!this.sessionTokenManager) {
+        throw new Error('Session token manager not available');
+      }
+
+      const token = this.sessionTokenManager.generateToken();
+      this.log('info', 'security', 'New session token generated');
+
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, token }));
+    } catch (error) {
+      this.log('error', 'security', `Token generation failed: ${error}`);
+      res.writeHead(500);
+      res.end(JSON.stringify({ success: false, error: String(error) }));
+    }
   }
 }

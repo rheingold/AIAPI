@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeWebSocket();
   initializeLogControls();
   initializeActions();
+  initializeSettings();
   loadTools();
   loadScenarios();
   loadSettings();
@@ -405,4 +406,163 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+// Settings Management
+function initializeSettings() {
+  // Browse buttons
+  document.querySelectorAll('.btn-browse').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetId = btn.dataset.target;
+      const input = document.getElementById(targetId);
+      // In a real implementation, this would open a file dialog
+      // For now, just allow manual input
+      const path = prompt('Enter path:', input.value);
+      if (path) input.value = path;
+    });
+  });
+
+  // Save settings button
+  document.getElementById('btn-save-settings')?.addEventListener('click', saveSettings);
+  
+  // Reload settings button
+  document.getElementById('btn-reload-settings')?.addEventListener('click', loadSettings);
+  
+  // Validate config button
+  document.getElementById('btn-validate-config')?.addEventListener('click', validateConfiguration);
+  
+  // Generate token button
+  document.getElementById('btn-generate-token')?.addEventListener('click', generateNewToken);
+}
+
+async function loadSettings() {
+  try {
+    const response = await fetch('/api/settings');
+    const settings = await response.json();
+    
+    // Apply settings to form
+    if (settings.paths) {
+      document.getElementById('setting-scenarios-path').value = settings.paths.scenarios || './scenarios';
+      document.getElementById('setting-security-path').value = settings.paths.security || './security';
+      document.getElementById('setting-public-key').value = settings.paths.publicKey || './security/public.key.enc';
+      document.getElementById('setting-private-key').value = settings.paths.privateKey || './security/private.key.enc';
+    }
+    
+    if (settings.security) {
+      document.getElementById('setting-require-signature').checked = settings.security.requireSignature || false;
+      document.getElementById('setting-require-os-enforcement').checked = settings.security.requireOsEnforcement || false;
+      document.getElementById('setting-allow-unsigned-scenarios').checked = settings.security.allowUnsignedScenarios || false;
+      document.getElementById('setting-enable-session-auth').checked = settings.security.enableSessionAuth !== false;
+      
+      // Security filters
+      document.getElementById('setting-allowed-exes').value = (settings.security.allowedExecutables || []).join('\n');
+      document.getElementById('setting-blocked-exes').value = (settings.security.blockedExecutables || []).join('\n');
+      document.getElementById('setting-allowed-paths').value = (settings.security.allowedPaths || []).join('\n');
+      document.getElementById('setting-blocked-paths').value = (settings.security.blockedPaths || []).join('\n');
+    }
+    
+    if (settings.server) {
+      document.getElementById('setting-port').value = settings.server.port || 3457;
+      document.getElementById('setting-dashboard-port').value = settings.server.dashboardPort || 3458;
+      document.getElementById('setting-log-level').value = settings.server.logLevel || 'info';
+      document.getElementById('setting-token-expiry').value = settings.server.tokenExpiry || 60;
+    }
+    
+    if (settings.currentToken) {
+      document.getElementById('current-token').textContent = settings.currentToken.substring(0, 16) + '...';
+    }
+    
+    addLog('info', 'settings', 'Settings loaded successfully');
+  } catch (error) {
+    addLog('error', 'settings', `Failed to load settings: ${error.message}`);
+  }
+}
+
+async function saveSettings() {
+  try {
+    const settings = {
+      paths: {
+        scenarios: document.getElementById('setting-scenarios-path').value,
+        security: document.getElementById('setting-security-path').value,
+        publicKey: document.getElementById('setting-public-key').value,
+        privateKey: document.getElementById('setting-private-key').value,
+      },
+      security: {
+        requireSignature: document.getElementById('setting-require-signature').checked,
+        requireOsEnforcement: document.getElementById('setting-require-os-enforcement').checked,
+        allowUnsignedScenarios: document.getElementById('setting-allow-unsigned-scenarios').checked,
+        enableSessionAuth: document.getElementById('setting-enable-session-auth').checked,
+        allowedExecutables: document.getElementById('setting-allowed-exes').value.split('\n').filter(x => x.trim()),
+        blockedExecutables: document.getElementById('setting-blocked-exes').value.split('\n').filter(x => x.trim()),
+        allowedPaths: document.getElementById('setting-allowed-paths').value.split('\n').filter(x => x.trim()),
+        blockedPaths: document.getElementById('setting-blocked-paths').value.split('\n').filter(x => x.trim()),
+      },
+      server: {
+        port: parseInt(document.getElementById('setting-port').value),
+        dashboardPort: parseInt(document.getElementById('setting-dashboard-port').value),
+        logLevel: document.getElementById('setting-log-level').value,
+        tokenExpiry: parseInt(document.getElementById('setting-token-expiry').value),
+      },
+    };
+    
+    const response = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      addLog('info', 'settings', 'Settings saved successfully');
+      if (result.requiresRestart) {
+        addLog('warn', 'settings', 'Server restart required for changes to take effect');
+      }
+    } else {
+      addLog('error', 'settings', `Failed to save settings: ${result.error}`);
+    }
+  } catch (error) {
+    addLog('error', 'settings', `Failed to save settings: ${error.message}`);
+  }
+}
+
+async function validateConfiguration() {
+  const statusDiv = document.getElementById('config-status');
+  statusDiv.innerHTML = '<div class="status-item"><span class="status-icon">⏳</span><span>Validating...</span></div>';
+  
+  try {
+    const response = await fetch('/api/settings/validate');
+    const validation = await response.json();
+    
+    let html = '';
+    validation.checks.forEach(check => {
+      const icon = check.status === 'ok' ? '✅' : check.status === 'warning' ? '⚠️' : '❌';
+      const iconClass = check.status === 'ok' ? 'success' : check.status === 'warning' ? 'warning' : 'error';
+      html += `<div class="status-item">
+        <span class="status-icon ${iconClass}">${icon}</span>
+        <span>${check.message}</span>
+      </div>`;
+    });
+    
+    statusDiv.innerHTML = html;
+    addLog('info', 'settings', `Validation complete: ${validation.checks.length} checks performed`);
+  } catch (error) {
+    statusDiv.innerHTML = '<div class="status-item"><span class="status-icon error">❌</span><span>Validation failed</span></div>';
+    addLog('error', 'settings', `Validation error: ${error.message}`);
+  }
+}
+
+async function generateNewToken() {
+  try {
+    const response = await fetch('/api/token/generate', { method: 'POST' });
+    const result = await response.json();
+    
+    if (result.success && result.token) {
+      document.getElementById('current-token').textContent = result.token.substring(0, 16) + '...';
+      addLog('info', 'settings', 'New session token generated');
+    } else {
+      addLog('error', 'settings', 'Failed to generate token');
+    }
+  } catch (error) {
+    addLog('error', 'settings', `Token generation error: ${error.message}`);
+  }
 }

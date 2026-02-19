@@ -463,3 +463,120 @@ nav {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--accent);
 }
+/* Settings Enhancements */
+.path-input {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.path-input input {
+  flex: 1;
+}
+
+.btn-browse {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--bg-tertiary);
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background 0.2s;
+}
+
+.btn-browse:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--bg-tertiary);
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-secondary:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.filter-section {
+  margin-bottom: 1rem;
+}
+
+.filter-section h4 {
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.filter-section textarea {
+  width: 100%;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--bg-tertiary);
+  border-radius: 4px;
+  padding: 0.5rem;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 0.875rem;
+  resize: vertical;
+}
+
+.filter-section small {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.token-info {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background: var(--bg-primary);
+  border-radius: 4px;
+}
+
+.token-info code {
+  background: var(--bg-tertiary);
+  padding: 0.25rem 0.5rem;
+  border-radius: 3px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 0.875rem;
+}
+
+.config-status {
+  background: var(--bg-primary);
+  border-radius: 4px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.config-status .status-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.config-status .status-item:last-child {
+  margin-bottom: 0;
+}
+
+.config-status .status-icon {
+  font-size: 1.25rem;
+}
+
+.config-status .status-icon.success {
+  color: var(--success);
+}
+
+.config-status .status-icon.error {
+  color: var(--error);
+}
+
+.config-status .status-icon.warning {
+  color: var(--warning);
+}

@@ -91,10 +91,45 @@
           <div class="section-header">
             <h2>Server Settings</h2>
             <button id="btn-save-settings" class="btn-primary">💾 Save Changes</button>
+            <button id="btn-reload-settings" class="btn-secondary">🔄 Reload</button>
           </div>
           <div class="settings-container">
+            <!-- File Paths -->
             <div class="setting-group">
-              <h3>Security Policy</h3>
+              <h3>📁 File Paths</h3>
+              <label>
+                Scenarios Folder:
+                <div class="path-input">
+                  <input type="text" id="setting-scenarios-path" value="./scenarios" placeholder="./scenarios">
+                  <button class="btn-browse" data-target="setting-scenarios-path">📂 Browse</button>
+                </div>
+              </label>
+              <label>
+                Security Folder:
+                <div class="path-input">
+                  <input type="text" id="setting-security-path" value="./security" placeholder="./security">
+                  <button class="btn-browse" data-target="setting-security-path">📂 Browse</button>
+                </div>
+              </label>
+              <label>
+                Public Key File:
+                <div class="path-input">
+                  <input type="text" id="setting-public-key" value="./security/public.key.enc" placeholder="./security/public.key.enc">
+                  <button class="btn-browse" data-target="setting-public-key">📂 Browse</button>
+                </div>
+              </label>
+              <label>
+                Private Key File:
+                <div class="path-input">
+                  <input type="text" id="setting-private-key" value="./security/private.key.enc" placeholder="./security/private.key.enc">
+                  <button class="btn-browse" data-target="setting-private-key">📂 Browse</button>
+                </div>
+              </label>
+            </div>
+
+            <!-- Security Policy -->
+            <div class="setting-group">
+              <h3>🔐 Security Policy</h3>
               <label>
                 <input type="checkbox" id="setting-require-signature"> Require Binary Signatures
               </label>
@@ -104,24 +139,59 @@
               <label>
                 <input type="checkbox" id="setting-allow-unsigned-scenarios"> Allow Unsigned Scenarios
               </label>
-            </div>
-
-            <div class="setting-group">
-              <h3>Session Tokens</h3>
-              <label>
-                Token Expiry (seconds):
-                <input type="number" id="setting-token-expiry" value="60" min="5" max="3600">
-              </label>
               <label>
                 <input type="checkbox" id="setting-enable-session-auth" checked> Enable Session Authentication
               </label>
             </div>
 
+            <!-- Security Filters -->
             <div class="setting-group">
-              <h3>Server Configuration</h3>
+              <h3>🛡️ Security Filters</h3>
+              <div class="filter-section">
+                <h4>Allowed Executables</h4>
+                <textarea id="setting-allowed-exes" rows="4" placeholder="calc.exe&#10;notepad.exe&#10;explorer.exe"></textarea>
+                <small>One executable per line</small>
+              </div>
+              <div class="filter-section">
+                <h4>Blocked Executables</h4>
+                <textarea id="setting-blocked-exes" rows="4" placeholder="malware.exe&#10;dangerous.exe"></textarea>
+                <small>One executable per line</small>
+              </div>
+              <div class="filter-section">
+                <h4>Allowed File Paths</h4>
+                <textarea id="setting-allowed-paths" rows="4" placeholder="C:\Program Files\*&#10;C:\Windows\System32\*"></textarea>
+                <small>One path per line. Use * for wildcards</small>
+              </div>
+              <div class="filter-section">
+                <h4>Blocked File Paths</h4>
+                <textarea id="setting-blocked-paths" rows="4" placeholder="C:\Users\*\AppData\Local\Temp\*"></textarea>
+                <small>One path per line. Use * for wildcards</small>
+              </div>
+            </div>
+
+            <!-- Session Tokens -->
+            <div class="setting-group">
+              <h3>🔑 Session Tokens</h3>
               <label>
-                Port:
+                Token Expiry (seconds):
+                <input type="number" id="setting-token-expiry" value="60" min="5" max="3600">
+              </label>
+              <button id="btn-generate-token" class="btn-secondary">🔄 Generate New Token</button>
+              <div id="token-info" class="token-info">
+                <span>Current Token: <code id="current-token">Loading...</code></span>
+              </div>
+            </div>
+
+            <!-- Server Configuration -->
+            <div class="setting-group">
+              <h3>⚙️ Server Configuration</h3>
+              <label>
+                MCP Server Port:
                 <input type="number" id="setting-port" value="3457" min="1024" max="65535">
+              </label>
+              <label>
+                Dashboard Port:
+                <input type="number" id="setting-dashboard-port" value="3458" min="1024" max="65535">
               </label>
               <label>
                 Log Level:
@@ -132,6 +202,18 @@
                   <option value="error">Error</option>
                 </select>
               </label>
+            </div>
+
+            <!-- Validation Status -->
+            <div class="setting-group">
+              <h3>✅ Configuration Status</h3>
+              <div id="config-status" class="config-status">
+                <div class="status-item">
+                  <span class="status-icon">⏳</span>
+                  <span>Checking configuration...</span>
+                </div>
+              </div>
+              <button id="btn-validate-config" class="btn-secondary">🔍 Validate Configuration</button>
             </div>
           </div>
         </section>

@@ -6,6 +6,7 @@ import { QueryOptions } from '../types';
 import { ScenarioReplayer } from '../scenario/replayer';
 import { SessionTokenManager } from '../security/SessionTokenManager';
 import { globalLogger } from '../utils/Logger';
+import { HelperRegistry } from './HelperRegistry';
 
 /**
  * MCP (Model Context Protocol) compliant JSON-RPC 2.0 server
@@ -21,6 +22,18 @@ export class MCPServer {
     version: '0.1.1',
   };
   private docsPath: string;
+  private helperRegistry: HelperRegistry;
+  private advancedFilters: Array<{
+    id?: number;
+    action: 'allow' | 'deny';
+    process: string;
+    helper: string;
+    command: string;
+    pattern: string;
+    description?: string;
+  }> = [];
+  private disabledHelpers: string[] = [];
+  private readonly settingsPath = path.resolve(process.cwd(), 'dashboard-settings.json');
 
   constructor(automationEngine?: AutomationEngine, port: number = 3457) {
     // Initialize session token manager first
@@ -41,6 +54,215 @@ export class MCPServer {
       this.sessionTokenManager
     );
     this.docsPath = path.join(__dirname, '..', '..');
+
+    // Setup security filter validator if config exists
+    this.setupSecurityFilter();
+
+    // Load dashboard-managed advanced filters and watch for live updates
+    this.loadAdvancedFilters();
+    fs.watchFile(this.settingsPath, { interval: 2000 }, () => {
+      this.loadAdvancedFilters();
+    });
+
+    // Initialise helper registry and discover helpers asynchronously
+    this.helperRegistry = new HelperRegistry(token, secret);
+    const helperSearchPaths = [
+      path.join(__dirname, '..', '..', 'dist', 'win'),
+      path.join(__dirname, '..', '..', 'dist', 'browser'),
+      path.join(__dirname, '..', '..', 'dist', 'office'),
+    ];
+    this.helperRegistry.discoverHelpers(helperSearchPaths).catch(e =>
+      globalLogger.warn('HelperRegistry', `Discovery error: ${e}`)
+    );
+  }
+
+  /**
+   * Load advancedFilters from dashboard-settings.json into memory.
+   * Called on startup and whenever the file changes.
+   */
+  private loadAdvancedFilters(): void {
+    try {
+      if (fs.existsSync(this.settingsPath)) {
+        const saved = JSON.parse(fs.readFileSync(this.settingsPath, 'utf8'));
+        this.advancedFilters = Array.isArray(saved.advancedFilters) ? saved.advancedFilters : [];
+        this.disabledHelpers = Array.isArray(saved.disabledHelpers) ? saved.disabledHelpers : [];
+        globalLogger.info('Security', `Loaded ${this.advancedFilters.length} advanced filter rule(s) from dashboard-settings.json`);
+        if (this.disabledHelpers.length > 0) {
+          globalLogger.info('HelperRegistry', `Disabled helpers: ${this.disabledHelpers.join(', ')}`);
+        }
+      } else {
+        this.advancedFilters = [];
+      }
+    } catch (err) {
+      globalLogger.warn('Security', `Could not load advanced filters: ${err}`);
+    }
+  }
+
+  /**
+   * Wildcard glob match — supports * (zero-or-more) and ? (single char).
+   * Case-insensitive.
+   */
+  private wildcardMatch(pattern: string, text: string): boolean {
+    if (pattern === '*') return true;
+    const regexStr = pattern
+      .replace(/[.+^${}()|\[\]\\]/g, '\\$&')  // escape regex special chars
+      .replace(/\*/g, '.*')
+      .replace(/\?/g, '.');
+    return new RegExp(`^${regexStr}$`, 'i').test(text);
+  }
+
+  /**
+   * Setup security filter configuration
+   */
+  private async setupSecurityFilter(): Promise<void> {
+    try {
+      const configPath = path.join(__dirname, '..', '..', 'security', 'config.json');
+      if (fs.existsSync(configPath)) {
+        // Here we'd load the security config
+        // For now, we'll setup a basic validator
+        this.automationEngine.setSecurityValidator(this.validateSecurityFilter.bind(this));
+        globalLogger.info('Security', 'Security filter enabled');
+      }
+    } catch (error) {
+      globalLogger.error('Security', `Security filter setup error: ${error}`);
+    }
+  }
+
+  /**
+   * Validate security filter for command execution.
+   *
+   * Evaluation order (first matching rule wins; default is DENY if security is
+   * active and no rule explicitly allows the operation):
+   *
+   *   1. Admin token present & valid  → ALLOW immediately (audit logged)
+   *   2. Admin token present but expired/invalid → fall through to normal rules
+   *   3. Read-only command (QUERYTREE, READ, LISTWINDOWS, GETPROVIDERS) → ALLOW
+   *   4. Target is a protected system process (explorer, lsass, …) → DENY
+   *   5. All other operations → ALLOW (permissive default while in development;
+   *      tighten by loading deny-list from security/config.json)
+   *
+   * Rule priority: DENY wins over ALLOW when the same command matches both a
+   * DENY rule and an ALLOW rule.  The default when no ALLOW rule matches is
+   * DENY (fail-closed).
+   */
+  private async validateSecurityFilter(
+    processName: string,
+    commandType: string,
+    parameter: string,
+    context?: { adminToken?: string }
+  ): Promise<'ALLOW' | 'DENY'> {
+    // 1. Check for admin token first
+    if (context?.adminToken) {
+      const validation = this.sessionTokenManager.validateAdminToken(context.adminToken);
+      if (validation.valid && !validation.expired) {
+        globalLogger.warn('Security', `Admin token bypass: ${commandType} on ${processName}`);
+        return 'ALLOW'; // Admin token bypasses all filters
+      } else if (validation.expired) {
+        globalLogger.warn('Security', 'Expired admin token attempted');
+        // Continue to normal security validation
+      } else {
+        globalLogger.warn('Security', 'Invalid admin token attempted');
+        // Continue to normal security validation  
+      }
+    }
+
+    // 2. Apply dashboard-managed advanced filters (DENY wins over ALLOW)
+    //    filter.command is stored as "{CLICKNAME}" — strip braces to compare with commandType
+    if (this.advancedFilters.length > 0) {
+      let matchedDeny = false;
+      let matchedAllow = false;
+
+      for (const filter of this.advancedFilters) {
+        // Match process name
+        if (!this.wildcardMatch(filter.process || '*', processName)) continue;
+
+        // Match command — stored as {CLICKID}, commandType is CLICKID
+        const filterCmd = filter.command.replace(/^\{|\}$/g, '');
+        if (!this.wildcardMatch(filterCmd, commandType) && filter.command !== '*') continue;
+
+        // Match parameter pattern
+        if (!this.wildcardMatch(filter.pattern || '*', parameter || '')) continue;
+
+        if (filter.action === 'deny') {
+          matchedDeny = true;
+          globalLogger.warn('Security', `Advanced filter DENY: ${commandType} on ${processName} (param: ${parameter})`);
+          break; // DENY wins immediately
+        } else {
+          matchedAllow = true;
+        }
+      }
+
+      if (matchedDeny) return 'DENY';
+      if (matchedAllow) {
+        globalLogger.info('Security', `Advanced filter ALLOW: ${commandType} on ${processName}`);
+        // Continue to built-in rules for additional checks
+      }
+    }
+    
+    // 3. Read-only commands are always permitted
+    const readOnlyCommands = ['QUERYTREE', 'READ', 'LISTWINDOWS', 'GETPROVIDERS'];
+    if (readOnlyCommands.includes(commandType)) {
+      return 'ALLOW';
+    }
+
+    // 4. Deny destructive operations on protected system processes
+    const systemProcesses = ['explorer', 'winlogon', 'csrss', 'lsass', 'services', 'svchost'];
+    if (systemProcesses.some(proc => processName.toLowerCase().includes(proc.toLowerCase()))) {
+      globalLogger.warn('Security', `Security filter blocked ${commandType} on system process ${processName}`);
+      return 'DENY';
+    }
+
+    // 5. Permissive default during development — replace with config-driven deny-list in production
+    return 'ALLOW';
+  }
+
+  /**
+   * Handle admin token generation request
+   */
+  private async handleAdminTokenRequest(body: string, res: http.ServerResponse): Promise<void> {
+    try {
+      const { password } = JSON.parse(body);
+      
+      if (!password || typeof password !== 'string') {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: 'Password required' }));
+        return;
+      }
+      
+      const adminToken = this.sessionTokenManager.generateAdminToken(password);
+      
+      if (!adminToken) {
+        globalLogger.warn('Security', 'Invalid admin password attempt');
+        res.writeHead(401);
+        res.end(JSON.stringify({ error: 'Invalid password' }));
+        return;
+      }
+      
+      // Calculate expiry time (15 minutes from now)
+      const expiry = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      
+      globalLogger.warn('Security', '⚠️ ADMIN MODE ACTIVATED - Security filters bypassed');
+      
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        token: adminToken,
+        expiry,
+        privileges: ['BYPASS_FILTERS', 'MODIFY_CONFIG'],
+        warning: 'All security filters are bypassed while this token is active'
+      }));
+      
+    } catch (error) {
+      globalLogger.error('Security', `Admin token request error: ${error}`);
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: 'Internal server error' }));
+    }
+  }
+
+  /**
+   * Expose the helper registry so the dashboard server can serve /api/listHelpers.
+   */
+  getHelperRegistry(): HelperRegistry {
+    return this.helperRegistry;
   }
 
   /**
@@ -68,6 +290,7 @@ export class MCPServer {
    * Stop the MCP server
    */
   stop(): Promise<void> {
+    this.helperRegistry.shutdownAll();
     return new Promise((resolve) => {
       if (this.server) {
         this.server.close(() => {
@@ -115,6 +338,13 @@ export class MCPServer {
 
     try {
       const body = await this.readBody(req);
+      
+      // Handle admin token requests (non-JSON-RPC)
+      if (req.url === '/api/auth/admin-token') {
+        await this.handleAdminTokenRequest(body, res);
+        return;
+      }
+      
       const request = JSON.parse(body);
 
       // Log incoming request (if JSON logging enabled)
@@ -393,7 +623,7 @@ export class MCPServer {
               properties: {
                 scenarioPath: {
                   type: 'string',
-                  description: 'Path to JSON scenario file (e.g., "scenarios/calculator-basic.json")',
+                  description: 'Path to JSON scenario file (e.g., "config/scenarios/calculator-basic.json")',
                 },
                 scenarioJson: {
                   type: 'object',
@@ -405,6 +635,65 @@ export class MCPServer {
                   default: false,
                 },
               },
+            },
+          },
+          // ── Dynamically discovered helper tools (respects disabled list) ──
+          ...this.helperRegistry.toMcpTools().filter(t => {
+            const s = this.helperRegistry.getByToolName(t.name);
+            return !s || !this.disabledHelpers.includes(s.helper);
+          }),
+
+          // ── Helper management tools ───────────────────────────────────────
+          {
+            name: 'listHelpers',
+            description: 'List all discovered helper executables and their supported commands',
+            inputSchema: {
+              type: 'object',
+              properties: {},
+            },
+          },
+          {
+            name: 'getHelperSchema',
+            description: 'Get the full API schema for a specific helper executable',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                helperName: {
+                  type: 'string',
+                  description: 'Helper name (e.g. "KeyWin.exe")',
+                },
+              },
+              required: ['helperName'],
+            },
+          },
+
+          // ── Web scraping ──────────────────────────────────────────────────
+          {
+            name: 'fetch_webpage',
+            description: 'Fetch content from a webpage with security filtering',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                url: {
+                  type: 'string',
+                  description: 'URL to fetch (HTTP/HTTPS)',
+                },
+                options: {
+                  type: 'object',
+                  description: 'Fetch options',
+                  properties: {
+                    method: { type: 'string', default: 'GET' },
+                    headers: { type: 'object' },
+                    timeout: { type: 'number', default: 30000 },
+                    extractText: { type: 'boolean', default: true },
+                    extractElements: { type: 'string', description: 'CSS selector to extract specific elements' },
+                    maxResponseSize: { type: 'number', default: 10485760 }, // 10MB
+                    allowRedirects: { type: 'boolean', default: true },
+                    userAgent: { type: 'string' },
+                  },
+                },
+              },
+              required: ['url'],
             },
           },
         ],
@@ -474,8 +763,64 @@ export class MCPServer {
           result = await this.executeScenario(args);
           break;
 
-        default:
+        case 'fetch_webpage':
+          result = await this.automationEngine.fetchWebpage(args.url, args.options);
+          break;
+
+        case 'listHelpers':
+          result = {
+            success: true,
+            helpers: this.helperRegistry.getAll().map(s => ({
+              name: s.helper,
+              version: s.version,
+              description: s.description,
+              toolName: s.toolName,
+              filePath: s.filePath,
+              commandCount: s.commands.length,
+              commands: s.commands.map(c => ({ name: c.name, description: c.description })),
+            })),
+          };
+          break;
+
+        case 'getHelperSchema': {
+          const schema = this.helperRegistry.get(args.helperName);
+          if (!schema) {
+            return this.createErrorResponse(id, -32602, `Helper not found: ${args.helperName}`);
+          }
+          result = { success: true, schema };
+          break;
+        }
+
+        default: {
+          // Dynamic dispatch for helper_* tools
+          const helperSchema = this.helperRegistry.getByToolName(name);
+          if (helperSchema) {
+            // Check if helper is disabled
+            if (this.disabledHelpers.includes(helperSchema.helper)) {
+              return this.createErrorResponse(id, -32603,
+                `Helper ${helperSchema.helper} is disabled. Enable it in the Dashboard → Settings → Discovered Helpers.`);
+            }
+            // Security validation before executing helper command
+            const helperVerdict = await this.validateSecurityFilter(
+              args.target || '',
+              args.command || '',
+              args.parameter ?? '',
+              undefined
+            );
+            if (helperVerdict === 'DENY') {
+              return this.createErrorResponse(id, -32603,
+                `Security filter blocked: ${args.command} on ${args.target}`);
+            }
+            result = await this.helperRegistry.callCommand(
+              helperSchema.helper,
+              args.target,
+              args.command,
+              args.parameter ?? ''
+            );
+            break;
+          }
           return this.createErrorResponse(id, -32602, `Unknown tool: ${name}`);
+        }
       }
 
       return {
@@ -582,6 +927,16 @@ export class MCPServer {
    */
   private async terminateProcess(process: string): Promise<any> {
     try {
+      // Security validation before executing KILL
+      const killVerdict = await this.validateSecurityFilter(process, 'KILL', '', undefined);
+      if (killVerdict === 'DENY') {
+        return {
+          success: false,
+          error: 'security_deny',
+          message: `Security filter blocked KILL on process: ${process}`
+        };
+      }
+
       const result = await this.scenarioReplayer.executeKeyWin('{KILL}', process);
       
       if (result.success) {
@@ -613,14 +968,14 @@ export class MCPServer {
   private serveDocs(url: string, res: http.ServerResponse, asHtml: boolean): void {
     // Map URL to doc file
     const docMap: { [key: string]: string } = {
-      '/docs': 'INDEX.md',
-      '/docs/api': 'KEYWIN_API.md',
-      '/docs/errors': 'ERROR_CODES.md',
-      '/docs/fixes': 'FIXES_SUMMARY.md',
-      '/docs/quick': 'QUICK_REFERENCE.md',
-      '/docs/scenarios': 'SCENARIO_FORMAT.md',
-      '/api': 'KEYWIN_API.md',
-      '/api/errors': 'ERROR_CODES.md',
+      '/docs': 'docs/INDEX.md',
+      '/docs/api': 'docs/api/KEYWIN_API.md',
+      '/docs/errors': 'docs/specs/ERROR_CODES.md',
+      '/docs/fixes': 'archive/FIXES_SUMMARY.md',
+      '/docs/quick': 'docs/guides/QUICK_REF.md',
+      '/docs/scenarios': 'docs/specs/SCENARIO_FORMAT.md',
+      '/api': 'docs/api/KEYWIN_API.md',
+      '/api/errors': 'docs/specs/ERROR_CODES.md',
     };
 
     const docFile = docMap[url] || docMap[url.replace('/docs/', '/').replace('/api/', '/')];
@@ -674,7 +1029,7 @@ export class MCPServer {
         const content = JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
         return {
           name: content.name,
-          file: `scenarios/${f}`,
+          file: `config/scenarios/${f}`,
           description: content.description,
           steps: content.steps?.length || 0,
         };

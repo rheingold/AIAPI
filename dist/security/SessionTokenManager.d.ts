@@ -61,6 +61,23 @@ export declare class SessionTokenManager {
      */
     static fromEnvironment(envVar?: string, developmentMode?: boolean): SessionTokenManager;
     /**
+     * Generate an admin token with extended privileges
+     * @param password Private key password for authentication
+     * @param durationMinutes How long the admin token should be valid (default 15 minutes)
+     * @returns Admin token or null if password invalid
+     */
+    generateAdminToken(password: string, durationMinutes?: number): string | null;
+    /**
+     * Validate an admin token
+     * @param token Admin token to validate
+     * @returns Object with validation result and token data
+     */
+    validateAdminToken(token: string): {
+        valid: boolean;
+        expired: boolean;
+        data?: any;
+    };
+    /**
      * Export session secret as hex string (for passing to child processes)
      */
     exportSecret(): string;

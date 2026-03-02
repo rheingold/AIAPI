@@ -1,21 +1,122 @@
 {
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "npm: compile",
-      "type": "shell",
-      "command": "npm",
-      "args": [
-        "run",
-        "compile"
-      ],
-      "problemMatcher": "$tsc",
-      "isBackground": false,
-      "presentation": {
-        "reveal": "always",
-        "showReuseMessage": false,
-        "panel": "shared"
-      }
-    }
-  ]
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "npm: compile",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"compile"
+			],
+			"problemMatcher": "$tsc",
+			"isBackground": false,
+			"presentation": {
+				"reveal": "always",
+				"showReuseMessage": false,
+				"panel": "shared"
+			}
+		},
+		{
+			"label": "start:mcp:noauth",
+			"type": "shell",
+			"command": "node dist/start-mcp-server.js",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "build-all",
+			"type": "shell",
+			"command": "npm run compile 2>&1 ; $csc=\"$env:WINDIR\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe\" ; $root=\"c:\\Users\\plachy\\Documents\\Dev\\VSCplugins\\AIAPI\" ; $uiac=(Get-ChildItem \"$env:WINDIR\\Microsoft.NET\" -Recurse -Filter UIAutomationClient.dll -EA SilentlyContinue | Select-Object -First 1).FullName ; $uiat=(Get-ChildItem \"$env:WINDIR\\Microsoft.NET\" -Recurse -Filter UIAutomationTypes.dll -EA SilentlyContinue | Select-Object -First 1).FullName ; $wbase=(Get-ChildItem \"$env:WINDIR\\Microsoft.NET\" -Recurse -Filter WindowsBase.dll -EA SilentlyContinue | Select-Object -First 1).FullName ; & $csc /nologo /target:winexe \"/out:$root\\dist\\win\\KeyWin.exe\" \"/r:$uiac\" \"/r:$uiat\" \"/r:$wbase\" \"$root\\tools\\common\\HelperCommon.cs\" \"$root\\tools\\win\\KeyWin.cs\" ; Write-Host \"KeyWin exit=$LASTEXITCODE\" ; & $csc /nologo /target:exe \"/out:$root\\dist\\browser\\BrowserWin.exe\" \"$root\\tools\\common\\HelperCommon.cs\" \"$root\\tools\\browser\\BrowserWin.cs\" ; Write-Host \"BrowserWin exit=$LASTEXITCODE\"",
+			"isBackground": false
+		},
+		{
+			"label": "build-all-ps1",
+			"type": "shell",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1",
+			"isBackground": false
+		},
+		{
+			"label": "build-all-ps1-fix",
+			"type": "shell",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1",
+			"isBackground": false
+		},
+		{
+			"label": "build-all-final",
+			"type": "shell",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1",
+			"isBackground": false
+		},
+		{
+			"label": "run-full-test",
+			"type": "shell",
+			"command": "node test-full-stack-stdin.js",
+			"isBackground": false
+		},
+		{
+			"label": "run-full-test-2",
+			"type": "shell",
+			"command": "node test-full-stack-stdin.js",
+			"isBackground": false
+		},
+		{
+			"label": "list-windows-now",
+			"type": "shell",
+			"command": "node -e \"const http=require('http');const body=JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'helper_KeyWin',arguments:{target:'SYSTEM',command:'LISTWINDOWS',parameter:''}}});const req=http.request({hostname:'127.0.0.1',port:3457,path:'/',method:'POST',headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(body)}},res=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{const r=JSON.parse(d);console.log(JSON.stringify(r.result?.windows?.map(w=>w.title),null,2));})});req.write(body);req.end();\"",
+			"isBackground": false
+		},
+		{
+			"label": "build-foreground",
+			"type": "shell",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1",
+			"isBackground": false
+		},
+		{
+			"label": "build-and-test-newdoc",
+			"type": "shell",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1 ; node test-full-stack-stdin.js",
+			"isBackground": false
+		},
+		{
+			"label": "build-test-specialkeys",
+			"type": "shell",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1 ; node test-full-stack-stdin.js",
+			"isBackground": false
+		},
+		{
+			"label": "build-test-sendkeys-translate",
+			"type": "shell",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1 ; node test-full-stack-stdin.js",
+			"isBackground": false
+		},
+		{
+			"label": "build-wincommon",
+			"type": "shell",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1"
+		},
+		{
+			"label": "test-with-browseruia",
+			"type": "shell",
+			"command": "node test-full-stack-stdin.js"
+		},
+		{
+			"label": "build-wincommon-fix",
+			"type": "shell",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1"
+		},
+		{
+			"label": "build-test-browser-uia",
+			"type": "shell",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1 ; node test-full-stack-stdin.js"
+		},
+		{
+			"label": "test-uia-form",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"test-full-stack-stdin.js"
+			]
+		}
+	]
 }

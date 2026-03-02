@@ -1,0 +1,40 @@
+{
+  "scenariosPath": "./scenarios",
+  "securityPath": "./security",
+  "publicKeyPath": "./config/security/public.key.enc",
+  "privateKeyPath": "./config/security/private.key.enc",
+  "helperPaths": [
+    "./dist/win/*.exe"
+  ],
+  "mcpPort": 3457,
+  "logLevel": "info",
+  "tokenExpiry": 60,
+  "requireBinarySignature": false,
+  "requireOsEnforcement": false,
+  "allowUnsignedScenarios": true,
+  "allowedExecutables": [],
+  "blockedExecutables": [],
+  "allowedPaths": [],
+  "blockedPaths": [],
+  "advancedFilters": [
+    {
+      "id": 1,
+      "action": "allow",
+      "process": "calc.exe",
+      "helper": "KeyWin.exe",
+      "command": "{CLICKNAME}",
+      "pattern": "num*Button",
+      "description": "Calculator numbers"
+    },
+    {
+      "id": 2,
+      "action": "deny",
+      "process": "*",
+      "helper": "KeyWin.exe",
+      "command": "{KILL}",
+      "pattern": "*",
+      "description": "Block kill globally"
+    }
+  ],
+  "disabledHelpers": []
+}

@@ -182,6 +182,71 @@ class SessionTokenManager {
         return new SessionTokenManager(secret, developmentMode);
     }
     /**
+     * Generate an admin token with extended privileges
+     * @param password Private key password for authentication
+     * @param durationMinutes How long the admin token should be valid (default 15 minutes)
+     * @returns Admin token or null if password invalid
+     */
+    generateAdminToken(password, durationMinutes = 15) {
+        // In a real implementation, this would verify against the encrypted private key
+        // For now, we'll use a simple password check
+        const expectedPassword = process.env.ADMIN_PASSWORD || 'admin123';
+        if (password !== expectedPassword) {
+            return null; // Invalid password
+        }
+        const timestamp = Math.floor(Date.now() / 1000);
+        const expiry = timestamp + (durationMinutes * 60);
+        const nonce = crypto.randomBytes(16).toString('hex');
+        const tokenData = {
+            type: 'admin',
+            timestamp,
+            expiry,
+            privileges: ['BYPASS_FILTERS', 'MODIFY_CONFIG'],
+            nonce
+        };
+        const message = JSON.stringify(tokenData);
+        const signature = crypto.createHmac('sha256', this.sessionSecret).update(message).digest('hex');
+        // Return base64 encoded token
+        const token = Buffer.from(`${message}:${signature}`).toString('base64');
+        return token;
+    }
+    /**
+     * Validate an admin token
+     * @param token Admin token to validate
+     * @returns Object with validation result and token data
+     */
+    validateAdminToken(token) {
+        try {
+            const decoded = Buffer.from(token, 'base64').toString();
+            const lastColonIndex = decoded.lastIndexOf(':');
+            if (lastColonIndex === -1) {
+                return { valid: false, expired: false };
+            }
+            const message = decoded.substring(0, lastColonIndex);
+            const signature = decoded.substring(lastColonIndex + 1);
+            // Verify signature
+            const expectedSignature = crypto.createHmac('sha256', this.sessionSecret).update(message).digest('hex');
+            if (signature !== expectedSignature) {
+                return { valid: false, expired: false };
+            }
+            // Parse token data
+            const tokenData = JSON.parse(message);
+            // Check if admin token
+            if (tokenData.type !== 'admin') {
+                return { valid: false, expired: false };
+            }
+            // Check expiry
+            const currentTimestamp = Math.floor(Date.now() / 1000);
+            if (currentTimestamp > tokenData.expiry) {
+                return { valid: false, expired: true, data: tokenData };
+            }
+            return { valid: true, expired: false, data: tokenData };
+        }
+        catch (error) {
+            return { valid: false, expired: false };
+        }
+    }
+    /**
      * Export session secret as hex string (for passing to child processes)
      */
     exportSecret() {

@@ -8,7 +8,7 @@ import { ConfigSigner } from './ConfigSigner';
 import { CertificateManager } from './CertificateManager';
 
 describe('ConfigSigner', () => {
-    const testDir = path.join(__dirname, '../../security/test-config-signing');
+    const testDir = path.join(__dirname, '../../config/security/test-config-signing');
     const configPath = path.join(testDir, 'config.json');
     const signaturePath = path.join(testDir, 'config.json.sig');
     const testPassword = 'test-password-123';

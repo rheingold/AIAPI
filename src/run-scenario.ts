@@ -10,7 +10,7 @@ async function main() {
         console.log('Usage: run-scenario <scenario.json> [--verbose]');
         console.log('');
         console.log('Example:');
-        console.log('  node dist/run-scenario.js scenarios/calculator-basic.json --verbose');
+        console.log('  node dist/run-scenario.js config/scenarios/calculator-basic.json --verbose');
         process.exit(1);
     }
 

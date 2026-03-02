@@ -32,6 +32,30 @@ node dist/start-mcp-server.js
 
 Server starts on `http://127.0.0.1:3457`
 
+> **Persistent daemons:** Once started, `KeyWin.exe` and `BrowserWin.exe` run as
+> long-lived child processes (one per helper). This eliminates per-call spawn overhead
+> but means the `.exe` files are **locked** while the server is running.
+
+## Rebuild Workflow
+
+Because daemons hold the `.exe` open, you must stop the server before rebuilding:
+
+```powershell
+# 1. Stop server cleanly (Ctrl+C in server terminal — sends _exit to helpers)
+#    OR force-kill if needed:
+Get-Process node -EA SilentlyContinue | Stop-Process -Force
+Get-Process KeyWin, BrowserWin -EA SilentlyContinue | Stop-Process -Force
+
+# 2. Rebuild TypeScript + C# helpers
+PowerShell -ExecutionPolicy Bypass -File build-all.ps1
+
+# 3. Restart server (daemons start automatically on first tool call)
+node dist/start-mcp-server.js
+```
+
+Skipping step 1 will produce:
+`error CS0016: Cannot write to KeyWin.exe — file in use by another process`
+
 ## First Test
 
 Open a new PowerShell terminal and run:
@@ -96,9 +120,10 @@ This creates `ai-ui-automation-0.1.1.vsix` which can be installed in VS Code.
 - Use "ApplicationFrameHost" as target ID
 - Check if Calculator is running: `Get-Process ApplicationFrameHost`
 
-### WinKeys.exe not found
-- Rebuild: `.\scripts\build-win-tools.ps1`
-- Check: `Test-Path dist\win\WinKeys.exe`
+### Helper .exe not found (KeyWin.exe / BrowserWin.exe)
+- Rebuild: `PowerShell -ExecutionPolicy Bypass -File build-all.ps1`
+- Check: `Test-Path dist\win\KeyWin.exe` and `Test-Path dist\browser\BrowserWin.exe`
+- If build fails with "file in use": server is still running — see **Rebuild Workflow** above
 
 ## Development
 
@@ -106,10 +131,11 @@ This creates `ai-ui-automation-0.1.1.vsix` which can be installed in VS Code.
 # Watch mode (auto-compile on file changes)
 npm run watch
 
-# Rebuild WinKeys.exe
-.\scripts\build-win-tools.ps1
+# Rebuild everything (TypeScript + KeyWin.exe + BrowserWin.exe)
+# ⚠️ Stop server first! See Rebuild Workflow above.
+PowerShell -ExecutionPolicy Bypass -File build-all.ps1
 
-# Run TypeScript compiler
+# TypeScript only
 npm run compile
 ```
 
@@ -119,13 +145,16 @@ npm run compile
 AIAPI/
 ├── dist/                      # Compiled output
 │   ├── start-mcp-server.js   # Server entry point
-│   └── win/WinKeys.exe        # Windows automation binary
+│   ├── win/KeyWin.exe         # Windows UI automation helper
+│   └── browser/BrowserWin.exe # Browser (CDP + UIA) helper
 ├── src/                       # TypeScript source
 │   ├── extension.ts           # VS Code extension
-│   ├── server/                # MCP server
+│   ├── server/                # MCP server + HelperRegistry
 │   ├── engine/                # Automation engine
 │   └── providers/             # Platform providers
-├── tools/win/WinKeys.cs       # WinKeys source
+├── tools/win/KeyWin.cs        # KeyWin source
+├── tools/browser/BrowserWin.cs # BrowserWin source
+├── tools/common/HelperCommon.cs # Shared helper transport code
 ├── scripts/                   # Build scripts
 ├── package.json               # Dependencies
 ├── tsconfig.json              # TypeScript config

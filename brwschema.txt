@@ -1,0 +1,23 @@
+{
+  "helper": "BrowserWin.exe",
+  "version": "1.0.0",
+  "description": "Browser automation helper using Chrome DevTools Protocol (CDP). Requires a Chromium browser started with --remote-debugging-port=<port>.",
+  "targetDescription": "Browser name with optional CDP port: 'brave', 'msedge', 'chrome', 'brave:9223'. Default port: 9222. The browser must be running with --remote-debugging-port=<port>.",
+  "protocol": "CDP",
+  "defaultDebugPort": 9222,
+  "commands": [
+    { "name": "LISTBROWSERS", "description": "List all running Chromium-family browser processes (Chrome, Edge, Brave, Opera)", "parameters": [], "examples": ["{LISTBROWSERS}"] },
+    { "name": "NAVIGATE", "description": "Navigate the active page to a URL", "parameters": [ { "name": "url", "type": "string", "required": true } ], "examples": ["{NAVIGATE:https://example.com}"] },
+    { "name": "READ", "description": "Read the current page title, URL and meta-description", "parameters": [], "examples": ["{READ}"] },
+    { "name": "QUERYTREE", "description": "Query the DOM tree up to the specified depth (default 3)", "parameters": [ { "name": "depth", "type": "integer", "required": false, "default": 3 } ], "examples": ["{QUERYTREE}", "{QUERYTREE:5}"] },
+    { "name": "CLICKID", "description": "Click a DOM element matching a CSS selector", "parameters": [ { "name": "selector", "type": "string", "required": true } ], "examples": ["{CLICKID:#submitBtn}", "{CLICKID:.login-button}"] },
+    { "name": "CLICKNAME", "description": "Click a button/link whose visible text matches the given string", "parameters": [ { "name": "text", "type": "string", "required": true } ], "examples": ["{CLICKNAME:Log in}", "{CLICKNAME:Accept all}"] },
+    { "name": "FILL", "description": "Set the value of an input field. Format: selector:value", "parameters": [ { "name": "selector", "type": "string", "required": true }, { "name": "value", "type": "string", "required": true } ], "examples": ["{FILL:#email:user@example.com}", "{FILL:input[name=q]:search term}"] },
+    { "name": "EXEC", "description": "Evaluate a JavaScript expression and return its string result", "parameters": [ { "name": "script", "type": "string", "required": true } ], "examples": ["{EXEC:document.title}", "{EXEC:window.scrollY}"] },
+    { "name": "SCREENSHOT", "description": "Capture a screenshot of the current page (requires WebSocket CDP - not yet implemented)", "parameters": [ { "name": "path", "type": "string", "required": false } ], "examples": ["{SCREENSHOT}", "{SCREENSHOT:C:\\shot.png}"] },
+    { "name": "NEWPAGE", "description": "Open a new browser tab; optionally navigate it to a URL", "parameters": [ { "name": "url", "type": "string", "required": false } ], "examples": ["{NEWPAGE}", "{NEWPAGE:https://example.com}"] },
+    { "name": "COOKIES", "description": "Manage browser cookies. Actions: get | clear | set:<name=value;domain=...>", "parameters": [ { "name": "action", "type": "string", "required": true } ], "examples": ["{COOKIES:get}", "{COOKIES:clear}", "{COOKIES:set:SOCS=accept}"] },
+    { "name": "KILL", "description": "Terminate the target browser process", "parameters": [], "examples": ["{KILL}"] }
+  ]
+}
+

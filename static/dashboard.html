@@ -1,9 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="cs">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI API Server Dashboard</title>
+  <link rel="icon" href="/favicon.ico" type="image/svg+xml">
   <link rel="stylesheet" href="dashboard.css">
 </head>
 <body>
@@ -23,8 +25,32 @@
           <span class="label">Requests:</span>
           <span id="request-count" class="value">0</span>
         </div>
+        <div class="status-item">
+          <span class="label">🛡️ Security:</span>
+          <span id="security-status" class="value status-indicator" title="Security status">--</span>
+        </div>
+        <div class="status-item">
+          <span class="label">🔑 Keys:</span>
+          <span id="keys-status" class="value status-indicator" title="Key files status">--</span>
+        </div>
+        <div class="status-item">
+          <span class="label">🔌 Helpers:</span>
+          <span id="helpers-status" class="value status-indicator" title="Discovered helpers">--</span>
+        </div>
       </div>
     </header>
+
+    <!-- Admin Mode Warning Banner -->
+    <div id="admin-mode-banner" class="admin-warning" style="display: none;">
+      <div class="admin-content">
+        <span class="admin-icon">⚠️</span>
+        <span class="admin-message">
+          <strong>ADMIN MODE ACTIVE</strong> - Security filters are bypassed!
+          <span id="admin-expiry"></span>
+        </span>
+        <button id="btn-exit-admin" class="admin-exit">Exit Admin Mode</button>
+      </div>
+    </div>
 
     <div class="content">
       <aside class="sidebar">
@@ -34,6 +60,9 @@
           </button>
           <button class="nav-btn" data-section="settings">
             ⚙️ Settings
+          </button>
+          <button class="nav-btn" data-section="security">
+            🛡️ Security Filters
           </button>
           <button class="nav-btn" data-section="tools">
             🔧 MCP Tools
@@ -45,6 +74,7 @@
 
         <div class="actions">
           <h3>Quick Actions</h3>
+          <button id="btn-admin-mode" class="action-btn admin-btn">🔓 Enter Admin Mode</button>
           <button id="btn-restart" class="action-btn">🔄 Restart Server</button>
           <button id="btn-clear-logs" class="action-btn">🗑️ Clear Logs</button>
           <button id="btn-export-logs" class="action-btn">💾 Export Logs</button>
@@ -66,6 +96,17 @@
               <label style="color: #ff6b35; font-weight: bold;">
                 <input type="checkbox" id="raw-mode"> Raw Mode
               </label>
+              <label style="color: #89d185; font-weight: bold;">
+                <input type="checkbox" id="expand-all"> Expand All
+              </label>
+              <select id="log-source" title="Filter by source">
+                <option value="all">All Sources</option>
+                <option value="http">🌐 HTTP</option>
+                <option value="keywin">🔧 KeyWin</option>
+                <option value="security">🛡️ Security</option>
+                <option value="system">⚙️ System</option>
+                <option value="auth">🔑 Auth</option>
+              </select>
               <select id="log-level">
                 <option value="all">All Levels</option>
                 <option value="debug">Debug</option>
@@ -93,6 +134,19 @@
             <button id="btn-save-settings" class="btn-primary">💾 Save Changes</button>
             <button id="btn-reload-settings" class="btn-secondary">🔄 Reload</button>
           </div>
+          
+          <!-- Current Working Directory -->
+          <div class="current-dir-banner">
+            <span class="label">📁 Current Working Directory:</span>
+            <code id="current-working-dir">Loading...</code>
+            <button id="btn-change-dir" class="btn-browse">📂 Change</button>
+            <small>All relative paths are resolved from this directory</small>
+          </div>
+          
+          <div class="info-banner">
+            ℹ️ <strong>Tip:</strong> Security filters have moved to their own dedicated section. Click <strong>🛡️ Security Filters</strong> in the sidebar.
+          </div>
+          
           <div class="settings-container">
             <!-- File Paths -->
             <div class="setting-group">
@@ -125,6 +179,27 @@
                   <button class="btn-browse" data-target="setting-private-key">📂 Browse</button>
                 </div>
               </label>
+              <label>
+                Helper Executables (wildcards allowed):
+                <div class="path-input">
+                  <input type="text" id="setting-helper-paths" value="./dist/win/*.exe" placeholder="./dist/win/*.exe, ./dist/office/*.exe">
+                  <button class="btn-browse" data-target="setting-helper-paths">📂 Browse</button>
+                </div>
+                <small>Comma-separated paths (e.g., ./dist/win/*.exe, ./dist/office/*.exe)</small>
+              </label>
+            </div>
+
+            <!-- Discovered Helpers -->
+            <div class="setting-group" id="discovered-helpers-group">
+              <h3>🔌 Discovered Helpers</h3>
+              <p class="setting-hint">Helper executables advertise their commands via <code>--api-schema</code>. Paths above control where they are discovered on startup.</p>
+              <div class="helpers-toolbar">
+                <button id="btn-scan-helpers" class="btn-secondary">🔍 Scan for Helpers</button>
+                <span id="helpers-scan-status" class="helpers-scan-status"></span>
+              </div>
+              <div id="helpers-list" class="helpers-list">
+                <div class="helpers-empty">Click "Scan for Helpers" to discover available helper executables.</div>
+              </div>
             </div>
 
             <!-- Security Policy -->
@@ -142,31 +217,6 @@
               <label>
                 <input type="checkbox" id="setting-enable-session-auth" checked> Enable Session Authentication
               </label>
-            </div>
-
-            <!-- Security Filters -->
-            <div class="setting-group">
-              <h3>🛡️ Security Filters</h3>
-              <div class="filter-section">
-                <h4>Allowed Executables</h4>
-                <textarea id="setting-allowed-exes" rows="4" placeholder="calc.exe&#10;notepad.exe&#10;explorer.exe"></textarea>
-                <small>One executable per line</small>
-              </div>
-              <div class="filter-section">
-                <h4>Blocked Executables</h4>
-                <textarea id="setting-blocked-exes" rows="4" placeholder="malware.exe&#10;dangerous.exe"></textarea>
-                <small>One executable per line</small>
-              </div>
-              <div class="filter-section">
-                <h4>Allowed File Paths</h4>
-                <textarea id="setting-allowed-paths" rows="4" placeholder="C:\Program Files\*&#10;C:\Windows\System32\*"></textarea>
-                <small>One path per line. Use * for wildcards</small>
-              </div>
-              <div class="filter-section">
-                <h4>Blocked File Paths</h4>
-                <textarea id="setting-blocked-paths" rows="4" placeholder="C:\Users\*\AppData\Local\Temp\*"></textarea>
-                <small>One path per line. Use * for wildcards</small>
-              </div>
             </div>
 
             <!-- Session Tokens -->
@@ -218,6 +268,84 @@
           </div>
         </section>
 
+        <!-- Security Filters Section -->
+        <section id="section-security" class="section">
+          <div class="section-header">
+            <h2>🛡️ Security Filters - Context-Aware Access Control</h2>
+            <button id="btn-add-filter" class="btn-primary">➕ Add Filter Rule</button>
+          </div>
+          
+          <div class="info-banner">
+            <strong>ℹ️ Context-Aware Filtering:</strong> Control which operations are allowed based on:<br>
+            📦 <strong>Target Process</strong> (calc.exe, notepad.exe, etc.) + 
+            🔧 <strong>Helper Tool</strong> (KeyWin.exe, BrowserWin.exe) + 
+            ⚡ <strong>Command</strong> ({CLICKNAME}, {SETPROPERTY}) + 
+            🎯 <strong>Parameter Pattern</strong> (num*Button, closeButton*)
+          </div>
+          
+          <div class="filter-toolbar">
+            <button id="btn-import-tree" class="btn-secondary">📥 Import from Live UI</button>
+            <button id="btn-import-filters" class="btn-secondary">📂 Import JSON</button>
+            <button id="btn-validate-filters" class="btn-secondary">✔️ Validate All</button>
+            <button id="btn-export-filters" class="btn-secondary">💾 Export</button>
+            <button id="btn-save-filters" class="btn-primary" style="margin-left:auto">💾 Save All Filters</button>
+            <input type="text" id="filter-search" placeholder="🔍 Search filters..." class="filter-search">
+          </div>
+
+          <!-- Filter Rules Display -->
+          <div id="filter-rules-list" class="filter-rules-container">
+            <!-- Dynamically populated -->
+          </div>
+          
+          <!-- Filter Format Help -->
+          <details class="filter-help-section">
+            <summary><strong>📖 Filter Format & Pattern Syntax</strong></summary>
+            <div class="filter-format-help">
+              <h4>Filter Structure:</h4>
+              <code>[ACTION] [PROCESS] → [HELPER]::[COMMAND]/[PATTERN]</code>
+              
+              <h4>Examples:</h4>
+              <ul>
+                <li><code><span class="allow">ALLOW</span> calc.exe → KeyWin.exe::{CLICKNAME}/num*Button</code>
+                  <br><em>Allow clicking number buttons only in Calculator</em></li>
+                <li><code><span class="deny">DENY</span> * → KeyWin.exe::{CLICKNAME}/closeButton*</code>
+                  <br><em>Block closing any window (universal rule)</em></li>
+                <li><code><span class="allow">ALLOW</span> notepad.exe → KeyWin.exe::{SETPROPERTY}/Text=*</code>
+                  <br><em>Allow text editing only in Notepad</em></li>
+                <li><code><span class="deny">DENY</span> * → BrowserWin.exe::navigate/*://malicious.com/*</code>
+                  <br><em>Block navigation to malicious domains in any browser</em></li>
+              </ul>
+              
+              <h4>Pattern Wildcards:</h4>
+              <ul>
+                <li><code>*</code> - Match any characters (zero or more)</li>
+                <li><code>?</code> - Match single character</li>
+                <li><code>[abc]</code> - Match any character in brackets</li>
+                <li><code>[a-z]</code> - Match range of characters</li>
+                <li><code>{regex}</code> - Use full regex pattern</li>
+              </ul>
+            </div>
+          </details>
+
+          <!-- Filter Test Panel -->
+          <div class="setting-group filter-test-panel">
+            <h3>🧪 Test Security Rule</h3>
+            <p class="setting-hint">Simulate a tool call and see which filter would match — no actual execution.</p>
+            <div class="filter-test-form">
+              <input type="text" id="test-process" placeholder="Process (e.g. calc.exe)" value="calc.exe">
+              <select id="test-command">
+                <option>CLICKNAME</option><option>CLICKID</option><option>CLICK</option>
+                <option>SENDKEYS</option><option>SET</option><option>READ</option>
+                <option>QUERYTREE</option><option>LISTWINDOWS</option>
+                <option>LAUNCH</option><option>KILL</option>
+              </select>
+              <input type="text" id="test-parameter" placeholder="Parameter (e.g. num5Button)">
+              <button id="btn-test-filter" class="btn-primary">🧪 Test</button>
+            </div>
+            <div id="filter-test-result" class="filter-test-result" style="display:none"></div>
+          </div>
+        </section>
+
         <!-- Tools Section -->
         <section id="section-tools" class="section">
           <div class="section-header">
@@ -239,6 +367,268 @@
           </div>
         </section>
       </main>
+    </div>
+  </div>
+
+  <!-- Filter Editor Modal -->
+  <div id="filter-editor-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="filter-editor-title">Add Security Filter</h3>
+        <button class="modal-close" onclick="closeFilterEditor()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="filter-action">Action:</label>
+          <select id="filter-action">
+            <option value="allow">✅ ALLOW - Permit this operation</option>
+            <option value="deny">🚫 DENY - Block this operation</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>📋 Quick Templates:</label>
+          <div class="template-row">
+            <select id="filter-template" style="flex:1">
+              <option value="">— choose a template —</option>
+              <option value="0">✅ Allow calc number buttons (CLICKNAME/num*Button)</option>
+              <option value="1">🚫 Block KILL on all processes</option>
+              <option value="2">✅ Allow read-only ops on any process</option>
+              <option value="3">🚫 Block all SENDKEYS globally</option>
+              <option value="4">✅ Allow Notepad text editing (SET/*)</option>
+              <option value="5">🚫 Block LAUNCH everywhere</option>
+              <option value="6">✅ Allow QUERYTREE on any process</option>
+            </select>
+            <button type="button" class="btn-secondary" onclick="applyFilterTemplate()">Apply</button>
+          </div>
+          <small>Fill the form from a predefined template, then customise as needed</small>
+        </div>
+        
+        <div class="form-group">
+          <label for="filter-process">Target Process/Binary:</label>
+          <div class="input-with-button">
+            <input type="text" id="filter-process" placeholder="calc.exe or * for all" 
+                   list="process-suggestions">
+            <button type="button" onclick="openWindowSelector()" class="btn-tool">🪟 Select Window</button>
+            <button type="button" onclick="launchAndSelect()" class="btn-tool">🚀 Launch & Select</button>
+          </div>
+          <datalist id="process-suggestions">
+            <option value="*">
+            <option value="calc.exe">
+            <option value="CalculatorApp.exe">
+            <option value="notepad.exe">
+            <option value="explorer.exe">
+            <option value="chrome.exe">
+            <option value="msedge.exe">
+          </datalist>
+          <small>Select from running windows, launch new process, or enter manually</small>
+          <div id="process-details" class="process-details"></div>
+        </div>
+        
+        <div class="form-group">
+          <label>Process Identification Criteria:</label>
+          <div class="criteria-options">
+            <label class="checkbox-label">
+              <input type="checkbox" id="criteria-process-name" checked>
+              Process Name (e.g., calc.exe)
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="criteria-window-title">
+              Window Title (supports wildcards)
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="criteria-process-path">
+              Full Process Path
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="criteria-binary-hash">
+              Binary Hash (SHA256/MD5) - Most Secure ⭐
+            </label>
+          </div>
+          <div class="criteria-details">
+            <div class="criteria-field" id="field-window-title" style="display:none;">
+              <label>Window Title Pattern:</label>
+              <input type="text" id="filter-window-title" placeholder="*Calculator* or Kalkulačka">
+              <small>Use * for wildcards, e.g., *notepad* matches any notepad window</small>
+            </div>
+            <div class="criteria-field" id="field-process-path" style="display:none;">
+              <label>Process Path Pattern:</label>
+              <input type="text" id="filter-process-path" placeholder="C:\\Windows\\System32\\*.exe">
+              <small>Full or partial path with wildcards</small>
+            </div>
+            <div class="criteria-field" id="field-binary-hash" style="display:none;">
+              <label>Binary Hash:</label>
+              <select id="hash-algorithm" style="margin-bottom: 0.5rem;">
+                <option value="SHA256">SHA256 (Recommended)</option>
+                <option value="MD5">MD5 (Legacy)</option>
+              </select>
+              <input type="text" id="filter-binary-hash" placeholder="a3b2c1d4e5f6789abcdef..." pattern="[a-fA-F0-9]+">
+              <button type="button" onclick="computeHashFromFile()" class="btn-tool">📂 Compute from File</button>
+              <button type="button" onclick="computeHashFromRunning()" class="btn-tool">🔍 Get from Running Process</button>
+              <small>
+                <strong>Why use hash?</strong> Cryptographically verifies the exact binary. 
+                Cannot be spoofed by renaming. Detects tampering.
+                <br><strong>Example:</strong> SHA256:5a8d5f7e9c2b1a3d4e6f...
+              </small>
+            </div>
+          </div>
+          <small style="color: var(--warning);">⚠️ Don't use PID or HANDLE - they are transient and change on restart</small>
+        </div>
+        
+        <div class="form-group">
+          <label for="filter-helper">Helper Tool:</label>
+          <select id="filter-helper">
+            <option value="KeyWin.exe">🎹 KeyWin.exe - Windows UI Automation</option>
+            <option value="BrowserWin.exe">🌐 BrowserWin.exe - Web Browser (Coming Soon)</option>
+            <option value="OfficeWin.exe">📄 OfficeWin.exe - MS Office (Coming Soon)</option>
+          </select>
+          <small>The automation helper that will execute the command</small>
+        </div>
+        
+        <div class="form-group">
+          <label for="filter-command">Command:</label>
+          <select id="filter-command">
+            <optgroup label="🟢 Read Operations (Low Risk)">
+              <option value="{QUERYTREE}">{QUERYTREE} - Query UI element tree</option>
+              <option value="{READ}">{READ} - Read text/properties</option>
+              <option value="{LISTWINDOWS}">{LISTWINDOWS} - List all windows</option>
+              <option value="{GETPROVIDERS}">{GETPROVIDERS} - List available providers</option>
+            </optgroup>
+            <optgroup label="🟡 Modification (Medium Risk)">
+              <option value="{SET}">{SET} - Set property/text value</option>
+            </optgroup>
+            <optgroup label="🔴 UI Interaction (High Risk)">
+              <option value="{CLICKID}">{CLICKID} - Click element by AutomationId</option>
+              <option value="{CLICKNAME}">{CLICKNAME} - Click element by Name</option>
+              <option value="{CLICK}">{CLICK} - Click at coordinates</option>
+              <option value="{SENDKEYS}">{SENDKEYS} - Send keyboard input</option>
+            </optgroup>
+            <optgroup label="⛔ Process Control (Critical Risk)">
+              <option value="{LAUNCH}">{LAUNCH} - Launch new process</option>
+              <option value="{KILL}">{KILL} - Terminate process</option>
+            </optgroup>
+            <optgroup label="Special">
+              <option value="*">* - All commands (use with caution)</option>
+            </optgroup>
+          </select>
+          <small>The specific command/operation to control</small>
+        </div>
+        
+        <div class="form-group">
+          <label for="filter-pattern">Parameter Pattern:</label>
+          <div class="input-with-button">
+            <input type="text" id="filter-pattern" placeholder="num*Button or * for all" 
+                   list="parameter-suggestions"
+                   title="Use * for wildcards, ? for single char — suggestions from schema">
+            <button type="button" onclick="openUITreeBrowser()" class="btn-tool" id="btn-browse-tree">🌳 Browse UI Tree</button>
+          </div>
+          <datalist id="parameter-suggestions"></datalist>
+          <small>
+            <strong>Examples:</strong><br>
+            • For {CLICKID}: <code>num*Button</code> (allows num0Button, num1Button, etc.)<br>
+            • For {CLICKNAME}: <code>Submit*</code> (allows Submit, Submit Button, etc.)<br>
+            • For {SENDKEYS}: <code>*</code> (allows any keystrokes)<br>
+            • For {LAUNCH}: <code>calc.exe</code> or <code>notepad.exe</code><br>
+            • Use <code>*</code> to match all parameters
+          </small>
+        </div>
+        
+        <div class="form-group">
+          <label for="filter-description">Description:</label>
+          <input type="text" id="filter-description" 
+                 placeholder="Brief description of what this filter does">
+        </div>
+        
+        <div class="filter-preview">
+          <strong>🔍 Filter Preview:</strong>
+          <code id="filter-preview-text">
+            <span class="preview-action">ACTION</span>
+            <span class="preview-process">process</span> → 
+            <span class="preview-helper">Helper.exe</span>::<span class="preview-command">command</span>/<span class="preview-pattern">pattern</span>
+          </code>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button onclick="closeFilterEditor()" class="btn-secondary">Cancel</button>
+        <button onclick="saveFilter()" class="btn-primary">Save Filter</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Window Selector Modal -->
+  <div id="window-selector-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>🪟 Select Running Window</h3>
+        <button class="modal-close" onclick="closeWindowSelector()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="window-search" placeholder="🔍 Search windows..." class="filter-search">
+        <div id="windows-list" class="windows-list">
+          <div class="loading">Loading windows...</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button onclick="closeWindowSelector()" class="btn-secondary">Cancel</button>
+        <button onclick="refreshWindowsList()" class="btn-secondary">🔄 Refresh</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- UI Tree Browser Modal -->
+  <div id="tree-browser-modal" class="modal">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h3>🌳 UI Tree Browser</h3>
+        <button class="modal-close" onclick="closeUITreeBrowser()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="tree-info">
+          <strong>Target:</strong> <span id="tree-target">Not selected</span>
+          <button onclick="queryUITree()" class="btn-tool">🔄 Query Tree</button>
+        </div>
+        <div class="info-banner" style="background: var(--bg-tertiary); padding: 0.75rem; border-left: 3px solid var(--success); margin-bottom: 1rem; font-size: 0.9rem;">
+          <strong>💡 Identifier Priority:</strong> Use <span style="color: var(--success); font-weight: bold;">[ID: xxx]</span> for scripts (stable across sessions). 
+          <strong>Name</strong> may change with localization. <strong>Type</strong> is not unique.
+        </div>
+        <input type="text" id="tree-search" placeholder="🔍 Search elements..." class="filter-search">
+        <div class="tree-browser-container">
+          <div class="tree-panel">
+            <div id="ui-tree-display" class="ui-tree">
+              <div class="tree-instructions">
+                ℹ️ First select a window from "Select Window", then click "🔄 Query Tree" to load UI elements.
+              </div>
+            </div>
+          </div>
+          <div class="properties-panel">
+            <div class="properties-header">
+              <h4>📋 Element Properties</h4>
+            </div>
+            <div id="element-properties" class="properties-content">
+              <div class="properties-placeholder">
+                Select an element from the tree to view its properties
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button onclick="closeUITreeBrowser()" class="btn-secondary">Cancel</button>
+        <button onclick="useSelectedElement()" class="btn-primary">Use Selected Element</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Helper Schema Modal -->
+  <div id="helper-schema-modal" class="modal">
+    <div class="modal-content" style="max-width:720px;width:90%">
+      <div class="modal-header">
+        <h3>📄 Schema: <span id="helper-schema-title"></span></h3>
+        <button class="modal-close" onclick="closeHelperSchema()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:0">
+        <pre id="helper-schema-content" style="margin:0;padding:1rem;background:var(--bg-primary);color:var(--text-primary);font-size:0.82rem;overflow:auto;max-height:65vh;border-radius:0 0 6px 6px"></pre>
+      </div>
     </div>
   </div>
 

@@ -113,7 +113,7 @@ class SecureConfig {
                     '**/.git/**'
                 ],
                 mustBeChildOfVSCodeWorkspace: true,
-                auditLog: 'security/dev-approvals.log'
+                auditLog: 'config/security/dev-approvals.log'
             }
         };
     }

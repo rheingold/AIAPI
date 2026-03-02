@@ -88,6 +88,7 @@
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
+    "@types/jsdom": "^27.0.0",
     "@types/node": "^18.0.0",
     "@types/vscode": "^1.75.0",
     "@typescript-eslint/eslint-plugin": "^5.0.0",
@@ -99,6 +100,8 @@
   },
   "dependencies": {
     "@types/ws": "^8.18.1",
+    "iconv-lite": "^0.7.2",
+    "jsdom": "^28.1.0",
     "ws": "^8.19.0"
   }
 }

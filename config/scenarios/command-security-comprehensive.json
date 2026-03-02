@@ -1,0 +1,230 @@
+{
+  "name": "Comprehensive Command Security Test",
+  "description": "Test security filters for all command types in the command matrix",
+  "version": "1.0",
+  "metadata": {
+    "author": "AI Assistant",
+    "tags": ["security", "comprehensive", "command-matrix", "validation"],
+    "purpose": "Verify security filter evaluation for all KeyWin.exe commands",
+    "coverage": "All commands from COMMAND_ALIGNMENT.md"
+  },
+  "variables": {
+    "testApp": "Calculator",
+    "systemProcess": "explorer",
+    "safeElement": "num1Button",
+    "dangerousElement": "closeButton"
+  },
+  "testSuites": [
+    {
+      "name": "Read Operations (Low Risk - Should Be Allowed)",
+      "expectedSecurity": "ALLOW",
+      "steps": [
+        {
+          "type": "action",
+          "description": "Test QUERYTREE command",
+          "command": "queryTree",
+          "params": {
+            "providerName": "windowsForms",
+            "targetId": "${testApp}"
+          },
+          "securityContext": {
+            "commandType": "QUERYTREE",
+            "parameter": "3",
+            "riskLevel": "low"
+          }
+        },
+        {
+          "type": "action", 
+          "description": "Test READ command",
+          "command": "readProperty",
+          "params": {
+            "elementId": "${testApp}:${safeElement}",
+            "property": "Text"
+          },
+          "securityContext": {
+            "commandType": "READ",
+            "parameter": "",
+            "riskLevel": "low"
+          }
+        },
+        {
+          "type": "action",
+          "description": "Test LISTWINDOWS command",
+          "command": "listWindows",
+          "params": {},
+          "securityContext": {
+            "commandType": "LISTWINDOWS", 
+            "parameter": "",
+            "riskLevel": "very-low"
+          }
+        },
+        {
+          "type": "action",
+          "description": "Test GETPROVIDERS command",
+          "command": "getProviders",
+          "params": {},
+          "securityContext": {
+            "commandType": "GETPROVIDERS",
+            "parameter": "",
+            "riskLevel": "very-low"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Modification Operations (High Risk - Context Dependent)",
+      "expectedSecurity": "CONTEXT_DEPENDENT",
+      "steps": [
+        {
+          "type": "action",
+          "description": "Test CLICKID on safe application",
+          "command": "clickElement",
+          "params": {
+            "providerName": "windowsForms",
+            "elementId": "${testApp}:${safeElement}"
+          },
+          "securityContext": {
+            "commandType": "CLICKID",
+            "parameter": "${safeElement}",
+            "processName": "${testApp}",
+            "expectedResult": "ALLOW",
+            "riskLevel": "high"
+          }
+        },
+        {
+          "type": "action",
+          "description": "Test CLICKID on system process",
+          "command": "clickElement", 
+          "params": {
+            "providerName": "windowsForms",
+            "elementId": "${systemProcess}:${dangerousElement}"
+          },
+          "securityContext": {
+            "commandType": "CLICKID",
+            "parameter": "${dangerousElement}",
+            "processName": "${systemProcess}",
+            "expectedResult": "DENY",
+            "riskLevel": "high"
+          }
+        },
+        {
+          "type": "action",
+          "description": "Test CLICKNAME on safe application",
+          "command": "clickElement",
+          "params": {
+            "providerName": "windowsForms",
+            "elementName": "1"
+          },
+          "securityContext": {
+            "commandType": "CLICKNAME",
+            "parameter": "1",
+            "processName": "${testApp}",
+            "expectedResult": "ALLOW",
+            "riskLevel": "high"
+          }
+        },
+        {
+          "type": "action",
+          "description": "Test SET command on safe application",
+          "command": "setProperty",
+          "params": {
+            "elementId": "${testApp}:textField",
+            "property": "Text",
+            "value": "123"
+          },
+          "securityContext": {
+            "commandType": "SET",
+            "parameter": "Text:123",
+            "processName": "${testApp}",
+            "expectedResult": "ALLOW",
+            "riskLevel": "high"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Critical Operations (Should Be Denied on System Processes)",
+      "expectedSecurity": "DENY_SYSTEM",
+      "steps": [
+        {
+          "type": "action",
+          "description": "Test KILL on system process",
+          "command": "terminateProcess",
+          "params": {
+            "processName": "explorer"
+          },
+          "securityContext": {
+            "commandType": "KILL",
+            "parameter": "explorer",
+            "expectedResult": "DENY",
+            "riskLevel": "critical"
+          }
+        },
+        {
+          "type": "action",
+          "description": "Test KILL on safe process",
+          "command": "terminateProcess",
+          "params": {
+            "processName": "${testApp}"
+          },
+          "securityContext": {
+            "commandType": "KILL",
+            "parameter": "${testApp}",
+            "expectedResult": "ALLOW",
+            "riskLevel": "critical"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Edge Cases and Security Boundaries",
+      "expectedSecurity": "EDGE_CASES",
+      "steps": [
+        {
+          "type": "action",
+          "description": "Test command with malformed parameters",
+          "command": "clickElement",
+          "params": {
+            "elementId": "malformed::{INJECT:code}"
+          },
+          "securityContext": {
+            "commandType": "CLICKID",
+            "parameter": "{INJECT:code}",
+            "expectedResult": "DENY",
+            "riskLevel": "injection-attempt"
+          }
+        },
+        {
+          "type": "action",
+          "description": "Test excessively long parameter",
+          "command": "setProperty",
+          "params": {
+            "elementId": "test",
+            "property": "Text",
+            "value": "${'A'.repeat(10000)}"
+          },
+          "securityContext": {
+            "commandType": "SET",
+            "parameter": "Text:${'A'.repeat(10000)}",
+            "expectedResult": "DENY",
+            "riskLevel": "buffer-overflow-attempt"
+          }
+        }
+      ]
+    }
+  ],
+  "validationRules": {
+    "filterEvaluationOrder": [
+      "1. Check for explicit DENY rules first",
+      "2. Check for explicit ALLOW rules second", 
+      "3. Apply default DENY if no rules match",
+      "4. DENY always wins over ALLOW for same rule"
+    ],
+    "riskLevels": {
+      "very-low": ["LISTWINDOWS", "GETPROVIDERS"],
+      "low": ["QUERYTREE", "READ"],
+      "high": ["CLICKID", "CLICKNAME", "CLICK", "SET", "SENDKEYS"],
+      "critical": ["KILL", "LAUNCH"]
+    }
+  }
+}

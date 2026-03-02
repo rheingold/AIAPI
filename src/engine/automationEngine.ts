@@ -3,6 +3,16 @@ import { WindowsFormsProvider } from '../providers/windowsFormsProvider';
 import { OfficeProvider } from '../providers/officeProvider';
 
 /**
+ * Security filter validation function type
+ */
+export type SecurityFilterValidator = (
+  processName: string, 
+  command: string, 
+  parameter: string,
+  context?: { adminToken?: string }
+) => Promise<'ALLOW' | 'DENY'>;
+
+/**
  * Central automation engine that manages all providers
  */
 export class AutomationEngine {
@@ -12,11 +22,98 @@ export class AutomationEngine {
   private readonly maxCacheSize = 100;
   private sessionToken: string | null = null;
   private sessionSecret: string | null = null;
+  private securityValidator: SecurityFilterValidator | null = null;
+  private webScrapingClient: any; // Lazy initialized
+  private adminToken: string | null = null; // For privileged operations
 
   constructor(sessionToken?: string, sessionSecret?: string) {
     this.sessionToken = sessionToken || null;
     this.sessionSecret = sessionSecret || null;
     this.initializeProviders();
+  }
+
+  /**
+   * Set security filter validator
+   */
+  setSecurityValidator(validator: SecurityFilterValidator | null): void {
+    this.securityValidator = validator;
+  }
+
+  /**
+   * Set admin token for privileged operations
+   */
+  setAdminToken(token: string | null): void {
+    this.adminToken = token;
+  }
+
+  /**
+   * Determine command type from element ID for security filtering
+   */
+  private determineCommandType(elementId: string): string {
+    if (elementId.includes('{QUERYTREE'))  return 'QUERYTREE';
+    if (elementId.includes('{CLICKID:'))   return 'CLICKID';
+    if (elementId.includes('{CLICKNAME:')) return 'CLICKNAME';
+    if (elementId.includes('{CLICK:'))     return 'CLICK';
+    if (elementId.includes('{read}'))      return 'READ';
+    if (elementId.includes('{SET:'))       return 'SET';
+    if (elementId.includes('{LISTWINDOWS}')) return 'LISTWINDOWS';
+    if (elementId.includes('{KILL}'))      return 'KILL';
+    return 'SENDKEYS'; // Default for regular keystrokes
+  }
+
+  /**
+   * Extract parameter from element ID
+   */
+  private extractParameter(elementId: string, commandType: string): string {
+    const regex = new RegExp(`\\{${commandType}:?([^}]*)\\}`, 'i');
+    const match = elementId.match(regex);
+    return match ? match[1] : elementId;
+  }
+
+  /**
+   * Extract process name from element ID (HANDLE:xxx or process name)
+   */
+  private extractProcessName(elementId: string): string {
+    if (elementId.startsWith('HANDLE:')) {
+      return '*'; // Handle-based targeting - use wildcard for now
+    }
+    if (elementId.startsWith('PID:')) {
+      return '*'; // PID-based targeting - use wildcard for now  
+    }
+    const parts = elementId.split(':');
+    return parts.length > 1 ? parts[0] : '*';
+  }
+
+  /**
+   * Validate security filter before executing command
+   */
+  private async validateSecurityFilter(
+    elementId: string
+  ): Promise<void> {
+    // Check for emergency admin mode
+    if (process.env.EMERGENCY_ADMIN_MODE === 'true') {
+      this.log(`🚨 EMERGENCY MODE: Bypassing security filter for ${elementId}`, true);
+      return; // Emergency mode bypasses all security
+    }
+    
+    if (!this.securityValidator) {
+      return; // No validator configured - allow all
+    }
+
+    const commandType = this.determineCommandType(elementId);
+    const parameter = this.extractParameter(elementId, commandType);
+    const processName = this.extractProcessName(elementId);
+
+    const result = await this.securityValidator(
+      processName, 
+      commandType, 
+      parameter,
+      { adminToken: this.adminToken || undefined }
+    );
+    
+    if (result === 'DENY') {
+      throw new Error(`Operation blocked by security filter: ${commandType} on ${processName} with parameter ${parameter}`);
+    }
   }
 
   private initializeProviders(): void {
@@ -86,6 +183,9 @@ export class AutomationEngine {
    * Execute a click action on an element
    */
   async clickElement(providerName: string, elementId: string): Promise<ActionResult> {
+    // Validate security filter before execution
+    await this.validateSecurityFilter(elementId);
+    
     const provider = this.getProvider(providerName);
     if (!provider) {
       this.log(`Click failed: Provider '${providerName}' not found`, false);
@@ -106,6 +206,9 @@ export class AutomationEngine {
     property: string,
     value: any
   ): Promise<ActionResult> {
+    // Validate security filter before execution
+    await this.validateSecurityFilter(elementId);
+    
     const provider = this.getProvider(providerName);
     if (!provider) {
       this.log(`SetProperty failed: Provider '${providerName}' not found`, false);
@@ -128,6 +231,9 @@ export class AutomationEngine {
     elementId: string,
     property: string
   ): Promise<any> {
+    // Validate security filter before execution
+    await this.validateSecurityFilter(elementId);
+    
     const provider = this.getProvider(providerName);
     if (!provider) {
       this.log(`ReadProperty failed: Provider '${providerName}' not found`, false);
@@ -223,5 +329,40 @@ export class AutomationEngine {
       }
     }
     this.objectCache.set(key, obj);
+  }
+
+  /**
+   * Fetch webpage content with security filtering
+   */
+  async fetchWebpage(
+    url: string, 
+    options: any = {}
+  ): Promise<any> {
+    // Lazy initialize web scraping client
+    if (!this.webScrapingClient) {
+      // Import dynamically to avoid module resolution issues
+      const { WebScrapingClient } = await import('./webScrapingClient');
+      this.webScrapingClient = new WebScrapingClient();
+    }
+    
+    this.log(`Fetching webpage: ${url}`, true);
+    const result = await this.webScrapingClient.fetchWebpage(url, options);
+    this.log(`Webpage fetch completed: ${result.success}`, result.success);
+    return result;
+  }
+
+  /**
+   * Configure web scraping security settings
+   */
+  configureWebSecurity(filter: any): void {
+    // Lazy initialize web scraping client
+    if (!this.webScrapingClient) {
+      // Import dynamically to avoid module resolution issues
+      const { WebScrapingClient } = require('./webScrapingClient');
+      this.webScrapingClient = new WebScrapingClient();
+    }
+    
+    this.webScrapingClient.setSecurityFilter(filter);
+    this.log('Web security filter updated', true);
   }
 }

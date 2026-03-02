@@ -1,5 +1,52 @@
 # Project TODO List
 
+## ⚠️ HIGH PRIORITY - Security & Command Alignment
+
+### Binary Hash Verification for Process Identification
+
+**Status:** 🟡 UI Complete, Backend Pending
+
+**Goal:** Support cryptographic hash (SHA256/MD5) for secure process identification in security filters.
+
+**Why:** 
+- Process name/path can be spoofed
+- Cryptographically verify exact binary
+- Detect tampering or modifications
+- Version-specific access control
+- Malware detection and blocking
+
+**Supported Formats:**
+- `SHA256:5a8d5f7e9c2b1a3d4e6f...` - SHA-256 hash (recommended)
+- `MD5:a3b2c1d4e5f6789abc...` - MD5 hash (legacy support)
+- `calc.exe[SHA256:hash]` - Hybrid format (readable + verified)
+
+**Implementation Tasks:**
+- [x] Documentation: Added hash methods to [COMMAND_ALIGNMENT.md](COMMAND_ALIGNMENT.md)
+- [x] UI: Added hash checkbox and input fields to dashboard
+- [x] UI: Added "Compute from File" button (client-side hashing)
+- [x] UI: Added "Get from Running Process" button (server-side API)
+- [ ] Backend: Implement `/api/process-hash` endpoint
+  - Accept processId or processName
+  - Read binary from disk
+  - Compute SHA256/MD5 hash
+  - Cache results for performance
+- [ ] Backend: Update `listWindows` to include binary hash
+  - Add `binaryHash` field to window info
+  - Compute SHA256 by default
+  - Include in JSON response
+- [ ] Backend: Update filter validation to support hash matching
+  - Parse `SHA256:`, `MD5:`, hybrid formats
+  - Compare against running process
+  - Cache computed hashes
+- [ ] Testing: Hash-based filter scenarios
+  - Allow verified binary (whitelist)
+  - Block known malware (blacklist)
+  - Version-specific rules
+
+**Documentation:** See [COMMAND_ALIGNMENT.md § Process Identification Methods](COMMAND_ALIGNMENT.md#process-identification-methods)
+
+---
+
 ## Platform Support Expansion
 
 ### Binary Naming Convention

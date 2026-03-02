@@ -9,7 +9,7 @@ import { ConfigSigner } from './ConfigSigner';
 import { CertificateManager } from './CertificateManager';
 
 describe('IntegrityChecker', () => {
-    const testDir = path.join(__dirname, '../../security/test-integrity');
+    const testDir = path.join(__dirname, '../../config/security/test-integrity');
     const testPassword = 'test-password-456';
     let checker: IntegrityChecker;
     let signer: ConfigSigner;

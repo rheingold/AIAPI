@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Windows.Forms;
 using System.Windows.Automation;
 using System.Security.Cryptography;
@@ -98,6 +99,77 @@ namespace KeyWin
         const byte VK_CONTROL = 0x11;
         const byte VK_MENU = 0x12;  // Alt key
         const byte VK_RETURN = 0x0D;
+
+        // Command detection for security filtering
+        static string DetermineCommandType(string keys)
+        {
+            if (string.IsNullOrEmpty(keys)) return "SENDKEYS";
+            
+            if (keys.StartsWith("{QUERYTREE", StringComparison.OrdinalIgnoreCase))
+                return "QUERYTREE";
+            if (keys.StartsWith("{CLICKID:", StringComparison.OrdinalIgnoreCase))
+                return "CLICKID";
+            if (keys.StartsWith("{CLICKNAME:", StringComparison.OrdinalIgnoreCase))
+                return "CLICKNAME";
+            if (keys.StartsWith("{CLICK:", StringComparison.OrdinalIgnoreCase))
+                return "CLICK";
+            if (keys.Equals("{read}", StringComparison.OrdinalIgnoreCase))
+                return "READ";
+            if (keys.StartsWith("{SET:", StringComparison.OrdinalIgnoreCase))
+                return "SET";
+            if (keys.Equals("{LISTWINDOWS}", StringComparison.OrdinalIgnoreCase))
+                return "LISTWINDOWS";
+            if (keys.Equals("{KILL}", StringComparison.OrdinalIgnoreCase))
+                return "KILL";
+            if (keys.Equals("{RESET}", StringComparison.OrdinalIgnoreCase))
+                return "RESET";
+            if (keys.Equals("{NEWDOC}", StringComparison.OrdinalIgnoreCase))
+                return "NEWDOC";
+            
+            // Default: treat as keystroke input
+            return "SENDKEYS";
+        }
+
+        static string ExtractParameter(string keys, string commandType)
+        {
+            if (string.IsNullOrEmpty(keys)) return "";
+            
+            switch (commandType)
+            {
+                case "CLICKID":
+                    // Extract "buttonId" from "{CLICKID:buttonId}"
+                    var matchId = Regex.Match(keys, @"\{CLICKID:(.+?)\}", RegexOptions.IgnoreCase);
+                    return matchId.Success ? matchId.Groups[1].Value : "";
+                
+                case "CLICKNAME":
+                    // Extract "Button Name" from "{CLICKNAME:Button Name}"
+                    var matchName = Regex.Match(keys, @"\{CLICKNAME:(.+?)\}", RegexOptions.IgnoreCase);
+                    return matchName.Success ? matchName.Groups[1].Value : "";
+                
+                case "CLICK":
+                    // Extract coordinates from "{CLICK:x,y}"
+                    var matchClick = Regex.Match(keys, @"\{CLICK:(.+?)\}", RegexOptions.IgnoreCase);
+                    return matchClick.Success ? matchClick.Groups[1].Value : "";
+                
+                case "SET":
+                    // Extract property:value from "{SET:prop:value}"
+                    var matchSet = Regex.Match(keys, @"\{SET:(.+?)\}", RegexOptions.IgnoreCase);
+                    return matchSet.Success ? matchSet.Groups[1].Value : "";
+                
+                case "QUERYTREE":
+                    // Extract depth from "{QUERYTREE:N}" or return default
+                    var matchTree = Regex.Match(keys, @"\{QUERYTREE:(\d+)\}", RegexOptions.IgnoreCase);
+                    return matchTree.Success ? matchTree.Groups[1].Value : "3";
+                
+                case "SENDKEYS":
+                    // Strip {SENDKEYS:text} wrapper if present (MCP protocol wraps every action)
+                    var matchSK = Regex.Match(keys, @"^\{SENDKEYS:(.+)\}$", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                    return matchSK.Success ? matchSK.Groups[1].Value : keys;
+                
+                default:
+                    return "*";
+            }
+        }
         const byte VK_TAB = 0x09;
         const byte VK_ESCAPE = 0x1B;
         const byte VK_BACK = 0x08;
@@ -194,8 +266,9 @@ namespace KeyWin
                     }
                 }
 
-                // Final fallback: title hint search (for UWP windows hosted by ApplicationFrameHost)
-                IntPtr titleHwnd = FindWindowByTitleHint();
+                // Final fallback: search all windows whose title contains the process name
+                // This handles UWP apps, hosted processes, and any window not returned by GetProcessesByName
+                IntPtr titleHwnd = FindWindowByPartialTitle(processName);
                 if (titleHwnd != IntPtr.Zero)
                 {
                     Console.Error.WriteLine("DEBUG: Fallback title match handle: " + titleHwnd);
@@ -236,9 +309,12 @@ namespace KeyWin
             }
         }
 
-        static IntPtr FindWindowByTitleHint()
+        /// <summary>
+        /// Generic: find any visible window whose title contains the given search string.
+        /// Used as a fallback when process-name lookup fails (e.g. UWP apps hosted by ApplicationFrameHost).
+        /// </summary>
+        static IntPtr FindWindowByPartialTitle(string titleSearch)
         {
-            string[] hints = { "Calculator", "Kalkula", "Kalkula\u010dka", "Calc" };
             IntPtr match = IntPtr.Zero;
 
             EnumWindows((hWnd, lParam) =>
@@ -249,14 +325,11 @@ namespace KeyWin
                 string title = sb.ToString();
                 if (string.IsNullOrWhiteSpace(title)) return true;
 
-                foreach (var hint in hints)
+                if (title.IndexOf(titleSearch, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    if (title.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        match = hWnd;
-                        Console.Error.WriteLine("DEBUG: Title hint match: '" + title + "'");
-                        return false; // stop
-                    }
+                    match = hWnd;
+                    Console.Error.WriteLine("DEBUG: Title match: '" + title + "'");
+                    return false; // stop enumeration
                 }
                 return true;
             }, IntPtr.Zero);
@@ -303,11 +376,98 @@ namespace KeyWin
                 case "UP": return VK_UP;
                 case "RIGHT": return VK_RIGHT;
                 case "DOWN": return VK_DOWN;
+                case "HOME": return 0x24;   // VK_HOME
+                case "END":  return 0x23;   // VK_END
+                case "PGUP": case "PAGEUP": return 0x21;  // VK_PRIOR
+                case "PGDN": case "PAGEDOWN": return 0x22; // VK_NEXT
                 case "SHIFT": return VK_SHIFT;
                 case "CONTROL": case "CTRL": return VK_CONTROL;
                 case "ALT": case "MENU": return VK_MENU;
                 default: return 0;
             }
+        }
+
+        /// <summary>
+        /// Translate our token notation into System.Windows.Forms.SendKeys notation.
+        ///   {CTRL+A}   → ^a        {CTRL+HOME} → ^{HOME}
+        ///   {CTRL+END} → ^{END}    {ENTER}     → {ENTER}
+        ///   {TAB}      → {TAB}     {CTRL+Z}    → ^z
+        /// Plain text characters are left as-is except SendKeys special chars +^%~(){} which are escaped.
+        /// </summary>
+        static string TranslateToSendKeys(string keys)
+        {
+            // SendKeys special chars that must be escaped when used as literals: + ^ % ~ ( ) { }
+            // We process token-by-token: anything in { } is a token, rest is literal text.
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < keys.Length; i++)
+            {
+                if (keys[i] == '{')
+                {
+                    int close = keys.IndexOf('}', i);
+                    if (close > i)
+                    {
+                        string token = keys.Substring(i + 1, close - i - 1).ToUpper();
+                        i = close;  // advance past the }
+
+                        // Modifier+key combos
+                        int plus = token.IndexOf('+');
+                        if (plus > 0)
+                        {
+                            string mod = token.Substring(0, plus);
+                            string key2 = token.Substring(plus + 1);
+                            char modChar = mod == "CTRL" || mod == "CONTROL" ? '^' :
+                                           mod == "SHIFT" ? '+' :
+                                           mod == "ALT"   ? '%' : '\0';
+                            if (modChar != '\0')
+                            {
+                                // Single-letter keys: ^a, ^c etc.  Multi-char keys: ^{END}, ^{HOME}
+                                if (key2.Length == 1)
+                                    sb.Append(modChar).Append(char.ToLower(key2[0]));
+                                else
+                                    sb.Append(modChar).Append('{').Append(key2).Append('}');
+                                continue;
+                            }
+                        }
+
+                        // Known single tokens — pass through as SendKeys tokens
+                        switch (token)
+                        {
+                            case "ENTER":     sb.Append("{ENTER}"); break;
+                            case "TAB":       sb.Append("{TAB}"); break;
+                            case "ESC": case "ESCAPE": sb.Append("{ESC}"); break;
+                            case "BACK": case "BACKSPACE": sb.Append("{BACKSPACE}"); break;
+                            case "DELETE": case "DEL": sb.Append("{DELETE}"); break;
+                            case "HOME":  sb.Append("{HOME}"); break;
+                            case "END":   sb.Append("{END}"); break;
+                            case "LEFT":  sb.Append("{LEFT}"); break;
+                            case "RIGHT": sb.Append("{RIGHT}"); break;
+                            case "UP":    sb.Append("{UP}"); break;
+                            case "DOWN":  sb.Append("{DOWN}"); break;
+                            default:
+                                // Unknown token — emit as literal letter sequence
+                                sb.Append(token.ToLower());
+                                break;
+                        }
+                        continue;
+                    }
+                }
+
+                // Literal character — escape SendKeys special chars
+                char c = keys[i];
+                switch (c)
+                {
+                    case '+': sb.Append("{+}"); break;
+                    case '^': sb.Append("{^}"); break;
+                    case '%': sb.Append("{%}"); break;
+                    case '~': sb.Append("{~}"); break;
+                    case '(': sb.Append("{(}"); break;
+                    case ')': sb.Append("{)}"); break;
+                    case '{': sb.Append("{{}"); break;
+                    case '}': sb.Append("{}}"); break;
+                    default:  sb.Append(c); break;
+                }
+            }
+            return sb.ToString();
         }
 
         static IntPtr GetEditControlForDirectInject(IntPtr hwnd)
@@ -367,33 +527,6 @@ namespace KeyWin
             // If no Edit control found, return the original window
             Console.Error.WriteLine("DEBUG: No Edit control found, using main window");
             return hwnd;
-        }
-
-        static string GetButtonNameForChar(char c)
-        {
-            // Map characters to button AutomationId (language-independent)
-            // For Calculator: num0Button, num1Button, etc.
-            switch (c)
-            {
-                case '0': return "num0Button";
-                case '1': return "num1Button";
-                case '2': return "num2Button";
-                case '3': return "num3Button";
-                case '4': return "num4Button";
-                case '5': return "num5Button";
-                case '6': return "num6Button";
-                case '7': return "num7Button";
-                case '8': return "num8Button";
-                case '9': return "num9Button";
-                case '+': return "plusButton";
-                case '-': return "minusButton";
-                case '*': return "multiplyButton";
-                case '/': return "divideButton";
-                case '=': return "equalButton";
-                case '.': return "decimalSeparatorButton";
-                case 'C': case 'c': return "clearButton";
-                default: return null;
-            }
         }
 
         static bool InvokeButtonByName(AutomationElement root, string buttonIdentifier)
@@ -460,93 +593,143 @@ namespace KeyWin
             return false;
         }
 
+        // ── Browser helpers ──────────────────────────────────────────────────────
+
+        // Window class names for Chromium-family browsers
+        static readonly string[] ChromiumRenderClasses = new[]
+        {
+            "Chrome_RenderWidgetHostHWND",
+            "CefBrowserWindow",
+        };
+
+        delegate bool EnumChildProc(IntPtr hwnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        static extern bool EnumChildWindows(IntPtr parent, EnumChildProc callback, IntPtr lParam);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+        /// <summary>
+        /// Find the Chromium render-widget HWND inside a browser window.
+        /// This is the surface that Chrome accessibility / WM_KEY messages target.
+        /// Returns IntPtr.Zero if the window is not a Chromium browser.
+        /// </summary>
+        static IntPtr FindRenderWidgetHwnd(IntPtr topHwnd)
+        {
+            IntPtr found = IntPtr.Zero;
+            EnumChildWindows(topHwnd, (child, _) =>
+            {
+                var sb = new StringBuilder(256);
+                GetClassName(child, sb, 256);
+                string cls = sb.ToString();
+                foreach (var rc in ChromiumRenderClasses)
+                {
+                    if (cls.IndexOf(rc, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        found = child;
+                        return false; // stop enumeration
+                    }
+                }
+                return true;
+            }, IntPtr.Zero);
+            return found;
+        }
+
+        // ── End browser helpers ───────────────────────────────────────────────
+
         static void DirectSendKeys(IntPtr hwnd, string keys)
         {
             Console.Error.WriteLine("DEBUG: DirectSendKeys injecting to hwnd=" + hwnd + " keys='" + keys + "'");
-            
-            // Try UI Automation approach - find controls and invoke them directly (no focus needed)
-            try
+
+            // Only use ValuePattern (UIA shortcut) for pure plain text without special tokens.
+            // If the input contains any {…} token (e.g. {ENTER}, {CTRL+A}), we must go through
+            // the PostMessage loop so those tokens are interpreted correctly.
+            bool hasSpecialTokens = keys.Contains('{') && keys.Contains('}');
+
+            if (!hasSpecialTokens)
             {
-                var root = AutomationElement.FromHandle(hwnd);
-                
-                // Try Document control with ValuePattern (Notepad, Word, etc.)
-                var docCondition = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document);
-                var docElement = root.FindFirst(TreeScope.Descendants, docCondition);
-                
-                if (docElement != null)
+                // Try UI Automation approach - find controls and invoke them directly (no focus needed)
+                try
                 {
-                    Console.Error.WriteLine("DEBUG: Found Document control, using ValuePattern");
-                    try
+                    var root = AutomationElement.FromHandle(hwnd);
+
+                    // Try Document control with ValuePattern (Notepad, Word, etc.)
+                    var docCondition = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document);
+                    var docElement = root.FindFirst(TreeScope.Descendants, docCondition);
+
+                    if (docElement != null)
                     {
-                        var valuePattern = docElement.GetCurrentPattern(ValuePattern.Pattern) as ValuePattern;
-                        if (valuePattern != null && !valuePattern.Current.IsReadOnly)
+                        Console.Error.WriteLine("DEBUG: Found Document control, using ValuePattern");
+                        try
                         {
-                            string currentValue = valuePattern.Current.Value ?? "";
-                            valuePattern.SetValue(currentValue + keys);
-                            Console.Error.WriteLine("DEBUG: Text set via ValuePattern");
-                            return;
+                            var valuePattern = docElement.GetCurrentPattern(ValuePattern.Pattern) as ValuePattern;
+                            if (valuePattern != null && !valuePattern.Current.IsReadOnly)
+                            {
+                                string currentValue = valuePattern.Current.Value ?? "";
+                                valuePattern.SetValue(currentValue + keys);
+                                Console.Error.WriteLine("DEBUG: Text set via ValuePattern");
+                                return;
+                            }
+                        }
+                        catch (InvalidOperationException)
+                        {
+                            Console.Error.WriteLine("DEBUG: ValuePattern not available");
                         }
                     }
-                    catch (InvalidOperationException)
+
+                    // Try Edit control with ValuePattern
+                    var editCondition = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit);
+                    var editElement = root.FindFirst(TreeScope.Descendants, editCondition);
+
+                    if (editElement != null)
                     {
-                        Console.Error.WriteLine("DEBUG: ValuePattern not available");
-                    }
-                }
-                
-                // Try Edit control with ValuePattern
-                var editCondition = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit);
-                var editElement = root.FindFirst(TreeScope.Descendants, editCondition);
-                
-                if (editElement != null)
-                {
-                    Console.Error.WriteLine("DEBUG: Found Edit control, using ValuePattern");
-                    try
-                    {
-                        var valuePattern = editElement.GetCurrentPattern(ValuePattern.Pattern) as ValuePattern;
-                        if (valuePattern != null && !valuePattern.Current.IsReadOnly)
+                        Console.Error.WriteLine("DEBUG: Found Edit control, using ValuePattern");
+                        try
                         {
-                            string currentValue = valuePattern.Current.Value ?? "";
-                            valuePattern.SetValue(currentValue + keys);
-                            Console.Error.WriteLine("DEBUG: Text set to Edit control via ValuePattern");
-                            return;
+                            var valuePattern = editElement.GetCurrentPattern(ValuePattern.Pattern) as ValuePattern;
+                            if (valuePattern != null && !valuePattern.Current.IsReadOnly)
+                            {
+                                string currentValue = valuePattern.Current.Value ?? "";
+                                valuePattern.SetValue(currentValue + keys);
+                                Console.Error.WriteLine("DEBUG: Text set to Edit control via ValuePattern");
+                                return;
+                            }
+                        }
+                        catch (InvalidOperationException)
+                        {
+                            Console.Error.WriteLine("DEBUG: ValuePattern not available on Edit control");
                         }
                     }
-                    catch (InvalidOperationException)
-                    {
-                        Console.Error.WriteLine("DEBUG: ValuePattern not available on Edit control");
-                    }
+
+                    Console.Error.WriteLine("DEBUG: No ValuePattern controls found, falling through to PostMessage");
                 }
-                
-                // For apps with buttons (Calculator, etc.), try to invoke controls by name
-                // Parse keys and find corresponding buttons
-                Console.Error.WriteLine("DEBUG: No ValuePattern controls found, trying button invocation");
-                bool anyInvoked = false;
-                for (int i = 0; i < keys.Length; i++)
+                catch (Exception ex)
                 {
-                    char c = keys[i];
-                    string buttonName = GetButtonNameForChar(c);
-                    
-                    Console.Error.WriteLine("DEBUG: Char '" + c + "' maps to button name: " + (buttonName ?? "null"));
-                    
-                    if (!string.IsNullOrEmpty(buttonName))
-                    {
-                        if (InvokeButtonByName(root, buttonName))
-                        {
-                            anyInvoked = true;
-                            System.Threading.Thread.Sleep(50);
-                        }
-                    }
-                }
-                
-                if (anyInvoked)
-                {
-                    Console.Error.WriteLine("DEBUG: Successfully invoked buttons via UI Automation");
-                    return;
+                    Console.Error.WriteLine("DEBUG: UI Automation approach failed: " + ex.Message);
                 }
             }
-            catch (Exception ex)
+            else
             {
-                Console.Error.WriteLine("DEBUG: UI Automation approach failed: " + ex.Message);
+                // Special tokens present: bring window to foreground and use SendKeys
+                // (which handles {ENTER}, Ctrl combos, etc. natively via Windows message pump)
+                Console.Error.WriteLine("DEBUG: Special tokens present — using SendKeys.SendWait with foreground focus");
+                SetForegroundWindow(hwnd);
+                System.Threading.Thread.Sleep(200);
+                // Translate our {CTRL+X} notation to SendKeys notation
+                // Our syntax:     {CTRL+A}  {CTRL+C} {CTRL+V} {CTRL+Z} {CTRL+S} {CTRL+END} {ENTER} {TAB}
+                // SendKeys syntax: ^a        ^c       ^v       ^z       ^s       ^{END}      {ENTER} {TAB}
+                string sendKeysStr = TranslateToSendKeys(keys);
+                Console.Error.WriteLine("DEBUG: Translated to SendKeys: " + sendKeysStr);
+                try
+                {
+                    System.Windows.Forms.SendKeys.SendWait(sendKeysStr);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine("DEBUG: SendKeys failed: " + ex.Message);
+                }
+                return;
             }
             
             // Final fallback: PostMessage to Edit control (classic Win32 apps)
@@ -557,13 +740,46 @@ namespace KeyWin
             {
                 char c = keys[i];
                 
-                // Handle special sequences like {ENTER}
+                // Handle special sequences like {ENTER}, {CTRL+A}, {CTRL+C}, etc.
                 if (c == '{')
                 {
                     int closeBrace = keys.IndexOf('}', i);
                     if (closeBrace > i)
                     {
                         string special = keys.Substring(i + 1, closeBrace - i - 1);
+
+                        // Check for compound Ctrl/Alt/Shift combos like CTRL+A, CTRL+END, etc.
+                        int plusIndex = special.IndexOf('+');
+                        if (plusIndex > 0)
+                        {
+                            string modifier  = special.Substring(0, plusIndex).ToUpper();
+                            string remainder = special.Substring(plusIndex + 1);
+                            uint modVk = 0;
+                            if (modifier == "CTRL"  || modifier == "CONTROL") modVk = VK_CONTROL;
+                            else if (modifier == "SHIFT") modVk = VK_SHIFT;
+                            else if (modifier == "ALT")   modVk = VK_MENU;
+                            if (modVk != 0)
+                            {
+                                uint keyVk = GetVirtualKeyCode(remainder);
+                                if (keyVk == 0 && remainder.Length == 1)
+                                    keyVk = (uint)char.ToUpper(remainder[0]);
+                                if (keyVk != 0)
+                                {
+                                    SetForegroundWindow(hwnd);  // focus required for Ctrl combos
+                                    System.Threading.Thread.Sleep(30);
+                                    PostMessage(targetHwnd, WM_KEYDOWN, (IntPtr)modVk, IntPtr.Zero);
+                                    PostMessage(targetHwnd, WM_KEYDOWN, (IntPtr)keyVk, IntPtr.Zero);
+                                    System.Threading.Thread.Sleep(30);
+                                    PostMessage(targetHwnd, WM_KEYUP,   (IntPtr)keyVk, IntPtr.Zero);
+                                    PostMessage(targetHwnd, WM_KEYUP,   (IntPtr)modVk, IntPtr.Zero);
+                                    System.Threading.Thread.Sleep(50);
+                                    i = closeBrace;
+                                    continue;
+                                }
+                            }
+                        }
+
+                        // Simple single-key token
                         uint vk = GetVirtualKeyCode(special);
                         if (vk != 0)
                         {
@@ -656,7 +872,8 @@ namespace KeyWin
         static bool TryParseClick(string keys, out int? x, out int? y)
         {
             x = null; y = null;
-            if (!keys.StartsWith("{CLICK", StringComparison.OrdinalIgnoreCase)) return false;
+            // Must be {CLICK:x,y} format exactly - do NOT match {CLICKID:...} or {CLICKNAME:...}
+            if (!Regex.IsMatch(keys, @"^\{CLICK:\d", RegexOptions.IgnoreCase)) return false;
             int colon = keys.IndexOf(':');
             int end = keys.IndexOf('}');
             if (colon > 0 && end > colon)
@@ -766,10 +983,33 @@ namespace KeyWin
                 var root = AutomationElement.FromHandle(hwnd);
                 AutomationElement display = null;
 
-                // Prefer CalculatorResults AutomationId
+                // Prefer CalculatorResults AutomationId (for Calculator)
                 var condId = new PropertyCondition(AutomationElement.AutomationIdProperty, "CalculatorResults");
                 display = root.FindFirst(TreeScope.Descendants, condId);
 
+                // For text editors: prefer Document control (modern Notepad, Word etc.)
+                if (display == null)
+                {
+                    var condDoc = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document);
+                    var docEl = root.FindFirst(TreeScope.Descendants, condDoc);
+                    if (docEl != null)
+                    {
+                        display = docEl;
+                    }
+                }
+
+                // Fallback: Edit control (classic Notepad, WinForms TextBox)
+                if (display == null)
+                {
+                    var condEdit = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit);
+                    var editEl = root.FindFirst(TreeScope.Descendants, condEdit);
+                    if (editEl != null)
+                    {
+                        display = editEl;
+                    }
+                }
+
+                // Last resort: any Text element (Calculator fallback)
                 if (display == null)
                 {
                     var condText = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Text);
@@ -783,15 +1023,19 @@ namespace KeyWin
                         var vp = display.GetCurrentPattern(ValuePattern.Pattern) as ValuePattern;
                         if (vp != null)
                         {
-                            // Extract pure value - strip localized prefix like "Display is 8" -> "8"
                             string rawValue = vp.Current.Value;
-                            if (!string.IsNullOrWhiteSpace(rawValue))
+                            if (rawValue != null) // can be empty string for new document
                             {
-                                // Remove any non-numeric prefix (like "Display is ", "Zobrazuje se ", etc.)
-                                var match = Regex.Match(rawValue, @"[\d\+\-\*/\.,\(\)eE]+$");
-                                if (match.Success)
+                                // For Calculator: strip localized prefix "Display is 8" -> "8"
+                                // Only apply numeric extraction if the control is CalculatorResults
+                                string autoId = display.Current.AutomationId ?? "";
+                                if (autoId == "CalculatorResults")
                                 {
-                                    return match.Value.Trim();
+                                    var match = Regex.Match(rawValue, @"[\d\+\-\*/\.,\(\)eE]+$");
+                                    if (match.Success)
+                                    {
+                                        return match.Value.Trim();
+                                    }
                                 }
                                 return rawValue;
                             }
@@ -799,14 +1043,19 @@ namespace KeyWin
                     }
                     catch { /* fall back to Name */ }
 
-                    // Try Name property, extract numeric content
+                    // Try Name property
                     string name = display.Current.Name;
                     if (!string.IsNullOrWhiteSpace(name))
                     {
-                        var match = Regex.Match(name, @"[\d\+\-\*/\.,\(\)eE]+$");
-                        if (match.Success)
+                        // Only apply numeric stripping for CalculatorResults
+                        string autoId2 = display.Current.AutomationId ?? "";
+                        if (autoId2 == "CalculatorResults")
                         {
-                            return match.Value.Trim();
+                            var match = Regex.Match(name, @"[\d\+\-\*/\.,\(\)eE]+$");
+                            if (match.Success)
+                            {
+                                return match.Value.Trim();
+                            }
                         }
                         return name;
                     }
@@ -1045,6 +1294,41 @@ namespace KeyWin
         [STAThread]
         static int Main(string[] args)
         {
+            // Check for API schema request
+            if (args.Length > 0 && args[0] == "--api-schema")
+            {
+                OutputApiSchema();
+                return 0;
+            }
+
+            // ── stdin-pipe mode (replaces inject-mode tmpFile protocol) ──────────
+            // HelperRegistry sends one JSON line to stdin and reads one JSON line
+            // from stdout.  Format:
+            //   {"id":"1","target":"notepad","action":"{QUERYTREE:3}"}
+            // We re-invoke Main() with synthesised [target, action] args so the
+            // full existing command-dispatch runs without any code duplication.
+            if (args.Length > 0 && args[0] == "--listen-stdin")
+            {
+                bool persistent = HelperCommon.HasFlag(args, "--persistent");
+                Action<string, string> kwDispatch = (tgt, act) =>
+                {
+                    // Synthesise args that the normal Main() dispatch path expects:
+                    //   Main(new[]{ target, action })
+                    // The recursive call goes through VerifySessionToken (still
+                    // uses SKIP_SESSION_AUTH=true from env in Step-1), then normal
+                    // processName / keys resolution and command dispatch.
+                    Main(new string[] { tgt, act });
+                };
+                Func<string> kwSchema = () =>
+                {
+                    var sb = new StringBuilder();
+                    sb.Append("{\"helper\":\"KeyWin.exe\",\"version\":\"1.0.0\",");
+                    sb.Append("\"description\":\"Windows UI automation helper with form controls and element manipulation\"}");
+                    return sb.ToString();
+                };
+                return HelperCommon.RunStdinListener(persistent, kwDispatch, kwSchema);
+            }
+
             try
             {
                 // Verify session token from MCP server
@@ -1125,6 +1409,11 @@ namespace KeyWin
                 // Handle global commands that don't need a process/window
                 if (keys != null && keys.Equals("{LISTWINDOWS}", StringComparison.OrdinalIgnoreCase))
                 {
+                    // TODO: Add security validation here
+                    string commandType = DetermineCommandType(keys);
+                    string parameter = ExtractParameter(keys, commandType);
+                    Console.Error.WriteLine("DEBUG: Command=" + commandType + ", Parameter=" + parameter);
+                    
                     var windows = new System.Collections.Generic.List<string>();
                     EnumWindows((IntPtr h, IntPtr lParam) =>
                     {
@@ -1150,6 +1439,11 @@ namespace KeyWin
                 // Handle {KILL} command
                 if (keys != null && keys.Equals("{KILL}", StringComparison.OrdinalIgnoreCase))
                 {
+                    // TODO: Add security validation here
+                    string commandType = DetermineCommandType(keys);
+                    string parameter = ExtractParameter(keys, commandType);
+                    Console.Error.WriteLine("DEBUG: Command=" + commandType + ", Parameter=" + parameter);
+                    
                     if (string.IsNullOrEmpty(processName))
                     {
                         Console.WriteLine("{\"success\":false,\"error\":\"missing_process\",\"message\":\"Process name required for KILL command\"}");
@@ -1208,6 +1502,134 @@ namespace KeyWin
                     }
                 }
 
+                // ── {RESET} — clear single-session app state without closing it ───────────
+                // Strategy: try standard AC/Clear AutomationIds first, then Ctrl+Z spam,
+                // then fall back to app-specific sequences.
+                if (keys != null && keys.Equals("{RESET}", StringComparison.OrdinalIgnoreCase))
+                {
+                    IntPtr resetHwnd = FindWindowByProcessName(processName);
+                    if (resetHwnd == IntPtr.Zero)
+                    {
+                        Console.WriteLine("{\"success\":false,\"error\":\"window_not_found\",\"target\":\"" + EscapeJson(processName) + "\"}");
+                        return 1;
+                    }
+
+                    // 1. Try clicking the AC / Clear / ClearAll automation element
+                    var clearIds = new[] { "clearButton", "clearEntryButton", "ClearButton", "btnClear", "btnAC", "clearall" };
+                    bool resetDone = false;
+                    try
+                    {
+                        var rootEl = System.Windows.Automation.AutomationElement.FromHandle(resetHwnd);
+                        foreach (var clearId in clearIds)
+                        {
+                            var found = rootEl.FindFirst(
+                                System.Windows.Automation.TreeScope.Descendants,
+                                new System.Windows.Automation.PropertyCondition(
+                                    System.Windows.Automation.AutomationElement.AutomationIdProperty, clearId));
+                            if (found != null)
+                            {
+                                object inv;
+                                if (found.TryGetCurrentPattern(System.Windows.Automation.InvokePattern.Pattern, out inv))
+                                {
+                                    ((System.Windows.Automation.InvokePattern)inv).Invoke();
+                                    resetDone = true;
+                                    Console.WriteLine("{\"success\":true,\"action\":\"reset\",\"method\":\"clickId:" + clearId + "\"}");
+                                    return 0;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+
+                    // 2. Fallback: send Escape then Ctrl+Z × 20 to undo all
+                    if (!resetDone)
+                    {
+                        PostMessage(resetHwnd, WM_KEYDOWN, (IntPtr)0x1B, IntPtr.Zero);  // ESC
+                        Thread.Sleep(100);
+                        for (int i = 0; i < 20; i++)
+                        {
+                            PostMessage(resetHwnd, WM_KEYDOWN, (IntPtr)0x11, IntPtr.Zero);  // CTRL
+                            PostMessage(resetHwnd, WM_KEYDOWN, (IntPtr)0x5A, IntPtr.Zero);  // Z
+                            PostMessage(resetHwnd, WM_KEYUP,   (IntPtr)0x5A, IntPtr.Zero);
+                            PostMessage(resetHwnd, WM_KEYUP,   (IntPtr)0x11, IntPtr.Zero);
+                        }
+                        Console.WriteLine("{\"success\":true,\"action\":\"reset\",\"method\":\"ctrl+z×20\"}");
+                    }
+                    return 0;
+                }
+
+                // ── {NEWDOC} — open a new document in a multi-document app (Ctrl+N) ─────
+                if (keys != null && keys.Equals("{NEWDOC}", StringComparison.OrdinalIgnoreCase))
+                {
+                    IntPtr ndHwnd = FindWindowByProcessName(processName);
+                    if (ndHwnd == IntPtr.Zero)
+                    {
+                        Console.WriteLine("{\"success\":false,\"error\":\"window_not_found\",\"target\":\"" + EscapeJson(processName) + "\"}");
+                        return 1;
+                    }
+
+                    // Snapshot the set of visible windows belonging to this process BEFORE
+                    // Ctrl+N so we can identify any NEW window that appears afterwards.
+                    // This is more reliable than GetForegroundWindow() which can be stolen
+                    // by the IDE/runner process (e.g. VS Code) between SendKeys and our read.
+                    int ndPid;
+                    GetWindowThreadProcessId(ndHwnd, out ndPid);
+                    var beforeHwnds = new System.Collections.Generic.HashSet<long>();
+                    EnumWindows((h, lp) =>
+                    {
+                        int pid;
+                        GetWindowThreadProcessId(h, out pid);
+                        if (pid == ndPid && IsWindowVisible(h))
+                            beforeHwnds.Add(h.ToInt64());
+                        return true;
+                    }, IntPtr.Zero);
+
+                    // Bring window to foreground, then send Ctrl+N via SendKeys (focus-required)
+                    SetForegroundWindow(ndHwnd);
+                    Thread.Sleep(200);
+                    System.Windows.Forms.SendKeys.SendWait("^n");
+                    Thread.Sleep(600);  // wait for new document window to appear
+
+                    // Pick the first new visible window for the same process.
+                    // Avoids the race where GetForegroundWindow() returns the IDE window.
+                    IntPtr newHwnd = IntPtr.Zero;
+                    string newTitle = "";
+                    EnumWindows((h, lp) =>
+                    {
+                        int pid;
+                        GetWindowThreadProcessId(h, out pid);
+                        if (pid == ndPid && IsWindowVisible(h) && !beforeHwnds.Contains(h.ToInt64()))
+                        {
+                            var sb2 = new System.Text.StringBuilder(512);
+                            GetWindowText(h, sb2, sb2.Capacity);
+                            string t = sb2.ToString();
+                            if (!string.IsNullOrWhiteSpace(t))
+                            {
+                                newHwnd  = h;
+                                newTitle = t;
+                                return false; // stop enumeration
+                            }
+                        }
+                        return true;
+                    }, IntPtr.Zero);
+
+                    // Fallback: if no new top-level window appeared (e.g. Windows 11 tabbed
+                    // Notepad opens a new tab inside the EXISTING window), return the original
+                    // window handle — it now contains the new document/tab.
+                    if (newHwnd == IntPtr.Zero)
+                    {
+                        newHwnd = ndHwnd;
+                        var sb2 = new System.Text.StringBuilder(512);
+                        GetWindowText(ndHwnd, sb2, sb2.Capacity);
+                        newTitle = sb2.ToString();
+                    }
+
+                    Console.WriteLine("{\"success\":true,\"action\":\"newdoc\",\"method\":\"ctrl+n\","
+                        + "\"new_window_handle\":" + newHwnd.ToInt64() + ","
+                        + "\"new_window_title\":\"" + EscapeJson(newTitle) + "\"}");
+                    return 0;
+                }
+
                 if (string.IsNullOrEmpty(processName) || string.IsNullOrEmpty(keys))
                 {
                     Console.Error.WriteLine("Usage: WinKeys [--inject-mode=direct|focus] <ProcessId> <Keys>");
@@ -1245,7 +1667,12 @@ namespace KeyWin
                 }
 
                 Console.Error.WriteLine("DEBUG: Window found, handle: " + hwnd);
-                
+
+                // Always bring window to foreground so the user can see what is happening.
+                // (Direct/PostMessage injection works without focus, but visibility is expected.)
+                SetForegroundWindow(hwnd);
+                System.Threading.Thread.Sleep(80);
+
                 // Handle focus mode if requested
                 if (injectMode == "focus")
                 {
@@ -1288,6 +1715,11 @@ namespace KeyWin
                 // Query UI tree - {QUERYTREE} or {QUERYTREE:depth}
                 if (keys.StartsWith("{QUERYTREE", StringComparison.OrdinalIgnoreCase))
                 {
+                    // TODO: Add security validation here
+                    string commandType = DetermineCommandType(keys);
+                    string parameter = ExtractParameter(keys, commandType);
+                    Console.Error.WriteLine("DEBUG: Command=" + commandType + ", Parameter=" + parameter);
+                    
                     int depth = 2; // default depth
                     var match = Regex.Match(keys, @"\{QUERYTREE:(\d+)\}", RegexOptions.IgnoreCase);
                     if (match.Success)
@@ -1297,6 +1729,23 @@ namespace KeyWin
                     var json = QueryUITree(hwnd, depth);
                     Console.WriteLine(json);
                     return 0;
+                }
+
+                // Handle {CLICKID:automationId} - click by AutomationId
+                var clickIdMatch = Regex.Match(keys, @"\{CLICKID:([^}]+)\}", RegexOptions.IgnoreCase);
+                if (clickIdMatch.Success)
+                {
+                    string buttonId = clickIdMatch.Groups[1].Value;
+                    Console.Error.WriteLine("DEBUG: CLICKID - looking for: " + buttonId);
+                    var root = AutomationElement.FromHandle(hwnd);
+                    if (InvokeButtonByName(root, buttonId))
+                    {
+                        Console.WriteLine("{\"success\":true,\"action\":\"clickid\",\"elementId\":\"" + EscapeJson(buttonId) + "\"}");
+                        return 0;
+                    }
+                    Console.Error.WriteLine("DEBUG: CLICKID - element not found: " + buttonId);
+                    Console.WriteLine("{\"success\":false,\"error\":\"element_not_found\",\"elementId\":\"" + EscapeJson(buttonId) + "\"}");
+                    return 5;
                 }
 
                 int? cx, cy;
@@ -1318,6 +1767,11 @@ namespace KeyWin
                 var clickNameMatches = Regex.Matches(keys, "\\{CLICKNAME:[^}]+\\}");
                 if (clickNameMatches.Count > 0)
                 {
+                    // TODO: Add security validation here for each CLICKNAME
+                    string commandType = DetermineCommandType(keys);
+                    string parameter = ExtractParameter(keys, commandType);
+                    Console.Error.WriteLine("DEBUG: Command=" + commandType + ", Parameter=" + parameter);
+                    
                     bool anyClick = false;
                     foreach (Match m in clickNameMatches)
                     {
@@ -1343,8 +1797,22 @@ namespace KeyWin
                 // Send keystrokes based on inject mode
                 if (injectMode == "direct")
                 {
-                    // Direct injection via PostMessage
-                    DirectSendKeys(hwnd, keys);
+                    // Strip {SENDKEYS:text} wrapper from MCP protocol before injecting
+                    string keysToSend = keys;
+                    var skWrap = Regex.Match(keys, @"^\{SENDKEYS:(.+)\}$", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                    if (skWrap.Success) keysToSend = skWrap.Groups[1].Value;
+                    Console.Error.WriteLine("DEBUG: SENDKEYS payload=" + keysToSend);
+
+                    // For browser render widgets, send input to the focused child HWND
+                    IntPtr sendTarget = hwnd;
+                    IntPtr renderHwnd = FindRenderWidgetHwnd(hwnd);
+                    if (renderHwnd != IntPtr.Zero)
+                    {
+                        Console.Error.WriteLine("DEBUG: SENDKEYS -> Chrome_RenderWidgetHostHWND " + renderHwnd);
+                        sendTarget = renderHwnd;
+                    }
+
+                    DirectSendKeys(sendTarget, keysToSend);
                     Console.WriteLine("{\"success\":true,\"action\":\"keys\",\"mode\":\"direct\"}");
                 }
                 else
@@ -1375,6 +1843,39 @@ namespace KeyWin
                 Console.WriteLine("{\"success\":false,\"error\":\"fatal_exception\",\"type\":\"" + EscapeJson(ex.GetType().Name) + "\",\"message\":\"" + EscapeJson(ex.Message) + "\"}");
                 return 128;
             }
+        }
+
+        static void OutputApiSchema()
+        {
+            // Simple JSON serialization without System.Text.Json (not available in older .NET)
+            var sb = new StringBuilder();
+            sb.AppendLine("{");
+            sb.AppendLine("  \"helper\": \"KeyWin.exe\",");
+            sb.AppendLine("  \"version\": \"1.1.0\",");
+            sb.AppendLine("  \"description\": \"Windows UI automation via UIA/HWND. Supports two window modes:\\n    SINGLE-SESSION apps (Calculator, Paint, Minesweeper): only one window exists at a time.\\n    Use RESET to clear state before reuse instead of closing.\\n    MULTI-DOCUMENT apps (Notepad, Word, Excel, browser via UIA): can hold many open documents.\\n    Use NEWDOC to open a new document/tab within the existing window instead of relaunching.\\n    Teardown policy (default: leave_open): leave_open (window stays open), discard_doc (close active doc/tab), close_app (terminate app).\\n    Before automating, call LISTWINDOWS to discover existing instances and reuse them.\",");
+            sb.AppendLine("  \"window_modes\": [");
+            sb.AppendLine("    { \"mode\": \"single_session\", \"description\": \"One window; use RESET to clear state\", \"examples\": [\"calc.exe\", \"mspaint.exe\"] },");
+            sb.AppendLine("    { \"mode\": \"multi_document\", \"description\": \"Many documents/tabs; use NEWDOC or open new windows\", \"examples\": [\"notepad.exe\", \"winword.exe\"] }");
+            sb.AppendLine("  ],");
+            sb.AppendLine("  \"teardown_policies\": [\"leave_open\", \"discard_doc\", \"close_app\"],");
+            sb.AppendLine("  \"commands\": [");
+
+            // Command definitions
+            sb.AppendLine("    { \"name\": \"LISTWINDOWS\", \"description\": \"List all visible top-level windows with title, handle and PID. Always call first to discover existing instances before launching new ones.\", \"parameters\": [], \"examples\": [\"{LISTWINDOWS}\"] },");
+            sb.AppendLine("    { \"name\": \"QUERYTREE\", \"description\": \"Return the UIA element tree for the target window (depth 1-8). Use to discover AutomationIds and control names before clicking.\", \"parameters\": [ { \"name\": \"depth\", \"type\": \"integer\", \"required\": false, \"default\": 3 } ], \"examples\": [\"{QUERYTREE}\", \"{QUERYTREE:5}\"] },");
+            sb.AppendLine("    { \"name\": \"READ\", \"description\": \"Read the current value/text from the target window (document body, selected value, etc.).\", \"parameters\": [], \"examples\": [\"{READ}\"] },");
+            sb.AppendLine("    { \"name\": \"CLICKID\", \"description\": \"Click a UI element by AutomationId (from QUERYTREE). Preferred over CLICKNAME when IDs are stable.\", \"parameters\": [ { \"name\": \"elementId\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{CLICKID:num2Button}\", \"{CLICKID:clearButton}\"] },");
+            sb.AppendLine("    { \"name\": \"CLICKNAME\", \"description\": \"Click a UI element by its visible Name property. Use when no stable AutomationId is available.\", \"parameters\": [ { \"name\": \"elementName\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{CLICKNAME:Plus}\", \"{CLICKNAME:OK}\"] },");
+            sb.AppendLine("    { \"name\": \"CLICK\", \"description\": \"Click at absolute screen coordinates (x,y). Use only when element IDs and names are unavailable.\", \"parameters\": [ { \"name\": \"coordinates\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{CLICK:100,200}\"] },");
+            sb.AppendLine("    { \"name\": \"SENDKEYS\", \"description\": \"Send keystrokes to the target window. Supports literal text and special tokens: {ENTER}, {TAB}, {ESC}, {CTRL+A}, {CTRL+C} (copy), {CTRL+V} (paste), {CTRL+Z} (undo), {CTRL+S} (save), {DELETE}, {BACK}. Use for typing, editing, and clipboard operations.\", \"parameters\": [ { \"name\": \"keys\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"Hello World\", \"Hello{ENTER}World\", \"{CTRL+A}{CTRL+C}\", \"{CTRL+V}\"] },");
+            sb.AppendLine("    { \"name\": \"SET\", \"description\": \"Set a property on a UI element via ValuePattern (direct value injection, bypasses keyboard).\", \"parameters\": [ { \"name\": \"property\", \"type\": \"string\", \"required\": true }, { \"name\": \"value\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{SET:Value:Hello World}\"] },");
+            sb.AppendLine("    { \"name\": \"RESET\", \"description\": \"Reset a SINGLE-SESSION app to a clean state without closing it. For Calculator: clicks the AC/Clear button. For other apps: application-specific reset. Prefer over close+relaunch to minimise side effects.\", \"parameters\": [], \"examples\": [\"{RESET}\"] },");
+            sb.AppendLine("    { \"name\": \"NEWDOC\", \"description\": \"Open a new document in the target MULTI-DOCUMENT app (Ctrl+N). Use instead of launching a second process when the application already exists.\", \"parameters\": [], \"examples\": [\"{NEWDOC}\"] },");
+            sb.AppendLine("    { \"name\": \"KILL\", \"description\": \"Terminate the target process. Use only when teardown_policy=close_app and explicitly confirmed.\", \"parameters\": [], \"examples\": [\"{KILL}\"] }");
+            sb.AppendLine("  ]");
+            sb.AppendLine("}");
+            
+            Console.WriteLine(sb.ToString());
         }
     }
 }

@@ -3,12 +3,17 @@ import * as url from 'url';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { WebSocketServer, WebSocket } from 'ws';
 import { AutomationEngine } from '../engine/automationEngine';
 import { UIObject, ActionResult, QueryOptions } from '../types';
 import { SessionTokenManager } from '../security/SessionTokenManager';
 import { SecurityPolicy } from '../security/types';
 import { globalLogger } from '../utils/Logger';
+import { HelperRegistry } from './HelperRegistry';
+
+const execFileAsync = promisify(execFile);
 
 interface LogEntry {
   timestamp: string;
@@ -29,6 +34,7 @@ export class HttpServerWithDashboard {
   private wss: WebSocketServer | null = null;
   private automationEngine: AutomationEngine;
   private sessionTokenManager: SessionTokenManager | null = null;
+  private helperRegistry: HelperRegistry | null = null;
   private port: number;
   private logs: LogEntry[] = [];
   private requestCount: number = 0;
@@ -37,10 +43,13 @@ export class HttpServerWithDashboard {
   private securityPolicy: SecurityPolicy | null = null;
   private verboseLogging: boolean = true; // Enabled by default
   private config: any = {}; // Configuration storage
+  private processHashCache: Map<string, { hash: string; mtimeMs: number }> = new Map();
+  private readonly settingsFilePath: string = path.resolve(process.cwd(), 'dashboard-settings.json');
 
-  constructor(automationEngine: AutomationEngine, sessionTokenManager?: SessionTokenManager, port?: number) {
+  constructor(automationEngine: AutomationEngine, sessionTokenManager?: SessionTokenManager, port?: number, helperRegistry?: HelperRegistry) {
     this.automationEngine = automationEngine;
     this.sessionTokenManager = sessionTokenManager || null;
+    this.helperRegistry = helperRegistry || null;
     this.port = port || 3457;
     this.loadSecurityPolicy();
     
@@ -48,8 +57,9 @@ export class HttpServerWithDashboard {
     this.config = {
       scenariosPath: './scenarios',
       securityPath: './security',
-      publicKeyPath: './security/public.key.enc',
-      privateKeyPath: './security/private.key.enc',
+      publicKeyPath: './config/security/public.key.enc',
+      privateKeyPath: './config/security/private.key.enc',
+      helperPaths: ['./dist/win/*.exe'],
       mcpPort: 3457,
       logLevel: 'info',
       tokenExpiry: 60,
@@ -60,12 +70,44 @@ export class HttpServerWithDashboard {
       blockedExecutables: [],
       allowedPaths: [],
       blockedPaths: [],
+      advancedFilters: [],
+      disabledHelpers: [] as string[],
     };
     
     // Register this dashboard as log receiver
     globalLogger.onLog((level, source, message) => {
       this.log(level, source, message);
     });
+
+    // Load persisted settings from disk (overrides defaults)
+    this.loadConfigFromDisk();
+  }
+
+  /**
+   * Load persisted configuration from dashboard-settings.json if it exists.
+   * Only updates fields that are present in the saved file.
+   */
+  private loadConfigFromDisk(): void {
+    try {
+      if (fs.existsSync(this.settingsFilePath)) {
+        const saved = JSON.parse(fs.readFileSync(this.settingsFilePath, 'utf8'));
+        Object.assign(this.config, saved);
+        globalLogger.info('dashboard', `Loaded settings from ${this.settingsFilePath}`);
+      }
+    } catch (err) {
+      globalLogger.warn('dashboard', `Could not load settings file: ${err}`);
+    }
+  }
+
+  /**
+   * Persist current configuration to dashboard-settings.json.
+   */
+  private saveConfigToDisk(): void {
+    try {
+      fs.writeFileSync(this.settingsFilePath, JSON.stringify(this.config, null, 2));
+    } catch (err) {
+      this.log('error', 'settings', `Failed to persist settings: ${err}`);
+    }
   }
 
   /**
@@ -146,18 +188,7 @@ export class HttpServerWithDashboard {
     
     try {
       const formatted = JSON.stringify(data, null, 2);
-      const lines = formatted.split('\n');
-      
-      // Log label
-      this.log(level, source, `${label}:`);
-      
-      // Log formatted JSON (limit to reasonable size)
-      if (lines.length > 50) {
-        this.log(level, source, lines.slice(0, 47).join('\n'));
-        this.log(level, source, `... (${lines.length - 47} more lines)`);
-      } else {
-        this.log(level, source, formatted);
-      }
+      this.log(level, source, `${label}:\n${formatted}`);
     } catch (error) {
       this.log('error', source, `Failed to format JSON for ${label}: ${error}`);
     }
@@ -168,7 +199,7 @@ export class HttpServerWithDashboard {
    */
   private loadSecurityPolicy(): void {
     try {
-      const configPath = path.join(__dirname, '../../security/config.json');
+      const configPath = path.join(__dirname, '../../config/security/config.json');
       if (fs.existsSync(configPath)) {
         const configData = fs.readFileSync(configPath, 'utf8');
         this.securityPolicy = JSON.parse(configData);
@@ -273,8 +304,29 @@ export class HttpServerWithDashboard {
       '/dashboard',
       '/dashboard.css',
       '/dashboard.js',
+      '/favicon.ico',
+      '/favicon.svg',
       '/health',
       '/api/login',
+      '/api/settings',
+      '/api/settings/validate',
+      '/api/workdir',
+      '/api/token/generate',
+      '/api/listWindows',
+      '/api/launchProcess',
+      '/api/queryTree',
+      '/api/clickElement',
+      '/api/setProperty',
+      '/api/readProperty',
+      '/api/getProviders',
+      '/api/process-hash',
+      '/api/listHelpers',
+      '/api/getHelperSchema',
+      '/api/status',
+      '/api/filters',
+      '/api/filters/test',
+      '/api/helpers/disabled',
+      '/api/helpers/toggle',
     ];
 
     return !publicEndpoints.includes(pathname);
@@ -306,11 +358,25 @@ export class HttpServerWithDashboard {
     });
 
     // Send current stats
+    const publicKeyPath = this.config.publicKeyPath || './security/public.key.enc';
+    const privateKeyPath = this.config.privateKeyPath || './security/private.key.enc';
     ws.send(JSON.stringify({
       type: 'status',
       stats: {
         requestCount: this.requestCount,
         uptime: Date.now() - this.startTime,
+        security: {
+          enabled: this.config.securityEnabled !== false,
+          keysPresent: fs.existsSync(publicKeyPath) && fs.existsSync(privateKeyPath),
+          filterCount:
+            (this.config.allowedExecutables?.length || 0) +
+            (this.config.blockedExecutables?.length || 0) +
+            (this.config.allowedPaths?.length || 0) +
+            (this.config.blockedPaths?.length || 0),
+        },
+        helpers: {
+          count: this.helperRegistry ? this.helperRegistry.getAll().length : 0,
+        },
       },
     }));
 
@@ -381,6 +447,9 @@ export class HttpServerWithDashboard {
       if (pathname === '/dashboard' || pathname === '/') {
         return this.serveStaticFile('dashboard.html', res);
       }
+      if (pathname === '/favicon.ico' || pathname === '/favicon.svg') {
+        return this.serveStaticFile('favicon.svg', res);
+      }
       if (pathname === '/dashboard.css') {
         return this.serveStaticFile('dashboard.css', res);
       }
@@ -406,6 +475,12 @@ export class HttpServerWithDashboard {
       if (pathname === '/api/restart' && req.method === 'POST') {
         return this.handleRestart(req, res);
       }
+      if (pathname === '/api/listHelpers' && req.method === 'GET') {
+        return this.handleListHelpers(req, res);
+      }
+      if (pathname === '/api/getHelperSchema' && req.method === 'GET') {
+        return this.handleGetHelperSchema(req, res);
+      }
       if (pathname === '/api/tools' && req.method === 'GET') {
         return this.handleGetTools(req, res);
       }
@@ -423,6 +498,26 @@ export class HttpServerWithDashboard {
       }
       if (pathname === '/api/settings/validate' && req.method === 'GET') {
         return this.handleValidateSettings(req, res);
+      }
+      if (pathname === '/api/filters' && req.method === 'GET') {
+        return this.handleGetFilters(req, res);
+      }
+      if (pathname === '/api/filters' && req.method === 'POST') {
+        return this.handleSaveFilters(req, res);
+      }
+      if (pathname === '/api/filters/test' && req.method === 'POST') {
+        return this.handleTestFilter(req, res);
+      }
+      if (pathname === '/api/helpers/toggle' && req.method === 'POST') {
+        return this.handleToggleHelper(req, res);
+      }
+      if (pathname === '/api/helpers/disabled' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, disabledHelpers: this.config.disabledHelpers || [] }));
+        return;
+      }
+      if (pathname === '/api/workdir' && req.method === 'POST') {
+        return this.handleChangeWorkDir(req, res);
       }
       if (pathname === '/api/token/generate' && req.method === 'POST') {
         return this.handleGenerateToken(req, res);
@@ -443,6 +538,15 @@ export class HttpServerWithDashboard {
       }
       if (pathname === '/api/getProviders' && req.method === 'GET') {
         return this.handleGetProviders(req, res);
+      }
+      if (pathname === '/api/listWindows' && (req.method === 'GET' || req.method === 'POST')) {
+        return this.handleListWindows(req, res);
+      }
+      if (pathname === '/api/launchProcess' && req.method === 'POST') {
+        return this.handleLaunchProcess(req, res);
+      }
+      if (pathname === '/api/process-hash' && req.method === 'POST') {
+        return this.handleProcessHash(req, res);
       }
       if (pathname === '/health' && req.method === 'GET') {
         res.writeHead(200);
@@ -485,6 +589,9 @@ export class HttpServerWithDashboard {
         '.html': 'text/html',
         '.css': 'text/css',
         '.js': 'application/javascript',
+        '.svg': 'image/svg+xml',
+        '.ico': 'image/x-icon',
+        '.png': 'image/png',
       };
       res.setHeader('Content-Type', contentTypes[ext] || 'text/plain');
 
@@ -544,6 +651,26 @@ export class HttpServerWithDashboard {
    * GET /api/status
    */
   private handleGetStatus(req: http.IncomingMessage, res: http.ServerResponse): void {
+    // Check key files
+    const publicKeyPath = this.config.publicKeyPath || './security/public.key.enc';
+    const privateKeyPath = this.config.privateKeyPath || './security/private.key.enc';
+    const publicKeyExists = fs.existsSync(publicKeyPath);
+    const privateKeyExists = fs.existsSync(privateKeyPath);
+    const keysPresent = publicKeyExists && privateKeyExists;
+
+    // Count security filters (legacy lists + advanced rules)
+    const filterCount =
+      (this.config.allowedExecutables?.length || 0) +
+      (this.config.blockedExecutables?.length || 0) +
+      (this.config.allowedPaths?.length || 0) +
+      (this.config.blockedPaths?.length || 0) +
+      (this.config.advancedFilters?.length || 0);
+
+    const securityEnabled = this.config.securityEnabled !== false;
+
+    // Helper count
+    const helperCount = this.helperRegistry ? this.helperRegistry.getAll().length : 0;
+
     res.writeHead(200);
     res.end(JSON.stringify({
       success: true,
@@ -552,6 +679,16 @@ export class HttpServerWithDashboard {
         uptime: Date.now() - this.startTime,
         requestCount: this.requestCount,
         logCount: this.logs.length,
+        security: {
+          enabled: securityEnabled,
+          keysPresent,
+          publicKeyExists,
+          privateKeyExists,
+          filterCount,
+        },
+        helpers: {
+          count: helperCount,
+        },
       },
     }));
   }
@@ -561,7 +698,7 @@ export class HttpServerWithDashboard {
    */
   private handleGetConfig(req: http.IncomingMessage, res: http.ServerResponse): void {
     try {
-      const configPath = path.join(__dirname, '../../security/config.json');
+      const configPath = path.join(__dirname, '../../config/security/config.json');
       const configData = fs.readFileSync(configPath, 'utf8');
       const config = JSON.parse(configData);
 
@@ -620,7 +757,7 @@ export class HttpServerWithDashboard {
       }
 
       // Save configuration
-      const configPath = path.join(__dirname, '../../security/config.json');
+      const configPath = path.join(__dirname, '../../config/security/config.json');
       fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 2));
 
       // Reload security policy
@@ -651,6 +788,50 @@ export class HttpServerWithDashboard {
     setTimeout(() => {
       process.exit(0);
     }, 1000);
+  }
+
+  /**
+   * GET /api/listHelpers
+   * Returns all discovered helper executables and their commands.
+   */
+  private handleListHelpers(req: http.IncomingMessage, res: http.ServerResponse): void {
+    if (!this.helperRegistry) {
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, helpers: [] }));
+      return;
+    }
+    const helpers = this.helperRegistry.getAll().map(s => ({
+      name: s.helper,
+      version: s.version,
+      description: s.description,
+      toolName: s.toolName,
+      filePath: s.filePath,
+      commandCount: s.commands.length,
+      commands: s.commands.map(c => ({ name: c.name, description: c.description })),
+    }));
+    res.writeHead(200);
+    res.end(JSON.stringify({ success: true, helpers }));
+  }
+
+  /**
+   * GET /api/getHelperSchema?name=KeyWin.exe
+   */
+  private handleGetHelperSchema(req: http.IncomingMessage, res: http.ServerResponse): void {
+    const { query: queryParams } = url.parse(req.url || '', true);
+    const helperName = queryParams.name as string;
+    if (!helperName || !this.helperRegistry) {
+      res.writeHead(400);
+      res.end(JSON.stringify({ success: false, error: 'Missing helper name or registry not available' }));
+      return;
+    }
+    const schema = this.helperRegistry.get(helperName);
+    if (!schema) {
+      res.writeHead(404);
+      res.end(JSON.stringify({ success: false, error: `Helper not found: ${helperName}` }));
+      return;
+    }
+    res.writeHead(200);
+    res.end(JSON.stringify({ success: true, schema }));
   }
 
   /**
@@ -685,7 +866,7 @@ export class HttpServerWithDashboard {
         .filter(f => f.endsWith('.json'))
         .map(f => ({
           name: f.replace('.json', ''),
-          path: `scenarios/${f}`,
+          path: `config/scenarios/${f}`,
         }));
 
       res.writeHead(200);
@@ -733,6 +914,9 @@ export class HttpServerWithDashboard {
     const body = await this.readBody(req);
     const { providerName, targetId, options } = JSON.parse(body);
 
+    // Always log query tree requests for debugging
+    this.log('info', 'automation', `queryTree request - Provider: ${providerName}, TargetId: ${targetId}, Options: ${JSON.stringify(options)}`);
+    
     if (this.verboseLogging) {
       this.logJSON('debug', 'automation', 'queryTree request', { providerName, targetId, options });
     }
@@ -744,12 +928,12 @@ export class HttpServerWithDashboard {
         this.logJSON('debug', 'automation', 'queryTree response', tree);
       }
       
-      res.writeHead(200);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ success: true, data: tree }));
     } catch (error) {
       this.log('error', 'automation', `queryTree failed: ${error}`);
-      res.writeHead(400);
-      res.end(JSON.stringify({ success: false, error: String(error) }));
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }));
     }
   }
 
@@ -825,6 +1009,177 @@ export class HttpServerWithDashboard {
     }
   }
 
+  private async handleListWindows(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      this.log('info', 'automation', 'Listing windows');
+      let includeBinaryHash = false;
+      let hashAlgorithm: 'SHA256' | 'MD5' = 'SHA256';
+
+      if (req.method === 'POST') {
+        const body = await this.readBody(req);
+        if (body) {
+          try {
+            const options = JSON.parse(body);
+            includeBinaryHash = Boolean(options?.includeBinaryHash);
+            hashAlgorithm = String(options?.algorithm || 'SHA256').toUpperCase() === 'MD5' ? 'MD5' : 'SHA256';
+          } catch (error) {
+            this.log('warn', 'automation', `Invalid listWindows options: ${error}`);
+          }
+        }
+      }
+
+      const result = await this.automationEngine.listWindows();
+      
+      // Normalize response - KeyWin.exe returns { windows: [...] }
+      const windows = Array.isArray(result) ? result : (result.windows || []);
+
+      if (includeBinaryHash && windows.length > 0) {
+        await this.enrichWindowsWithHashes(windows, hashAlgorithm);
+      }
+      
+      if (this.verboseLogging) {
+        this.logJSON('debug', 'automation', 'listWindows response', { count: windows.length });
+      }
+      
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: true, data: windows }));
+    } catch (error) {
+      this.log('error', 'automation', `listWindows failed: ${error}`);
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }));
+    }
+  }
+
+  private async handleLaunchProcess(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const body = await this.readBody(req);
+      const { executable, args } = JSON.parse(body);
+
+      this.log('info', 'automation', `Launching process: ${executable}`);
+      
+      if (this.verboseLogging) {
+        this.logJSON('debug', 'automation', 'launchProcess request', { executable, args });
+      }
+
+      const result = await this.automationEngine.launchProcess(executable, args);
+      
+      if (this.verboseLogging) {
+        this.logJSON('debug', 'automation', 'launchProcess response', result);
+      }
+      
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, data: result }));
+    } catch (error) {
+      this.log('error', 'automation', `launchProcess failed: ${error}`);
+      res.writeHead(400);
+      res.end(JSON.stringify({ success: false, error: String(error) }));
+    }
+  }
+
+  private async handleProcessHash(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      if (process.platform !== 'win32') {
+        throw new Error('Process hash is only supported on Windows hosts');
+      }
+
+      const body = await this.readBody(req);
+      const { processId, processName, algorithm } = JSON.parse(body || '{}');
+
+      if (!processId && !processName) {
+        throw new Error('processId or processName is required');
+      }
+
+      const normalizedAlgorithm: 'SHA256' | 'MD5' =
+        String(algorithm || 'SHA256').toUpperCase() === 'MD5' ? 'MD5' : 'SHA256';
+
+      const executablePath = await this.resolveProcessPath(
+        processId ? Number(processId) : undefined,
+        processName ? String(processName) : undefined
+      );
+
+      const hash = this.getFileHash(executablePath, normalizedAlgorithm);
+
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        success: true,
+        algorithm: normalizedAlgorithm,
+        hash,
+        path: executablePath,
+      }));
+    } catch (error) {
+      this.log('error', 'security', `process-hash failed: ${error}`);
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }));
+    }
+  }
+
+  private async enrichWindowsWithHashes(windows: any[], algorithm: 'SHA256' | 'MD5'): Promise<void> {
+    for (const win of windows) {
+      try {
+        const pid = win?.pid ? Number(win.pid) : (win?.processId ? Number(win.processId) : undefined);
+        const processName = win?.processName ? String(win.processName) : undefined;
+
+        const executablePath = await this.resolveProcessPath(pid, processName);
+        const hash = this.getFileHash(executablePath, algorithm);
+        win.binaryHash = `${algorithm}:${hash}`;
+        win.processPath = executablePath;
+      } catch (error) {
+        win.binaryHash = null;
+        if (this.verboseLogging) {
+          this.log('debug', 'security', `Skipping hash for window (pid=${win?.pid}): ${error}`);
+        }
+      }
+    }
+  }
+
+  private async resolveProcessPath(processId?: number, processName?: string): Promise<string> {
+    if (process.platform !== 'win32') {
+      throw new Error('Process path resolution is only supported on Windows hosts');
+    }
+
+    if (!processId && !processName) {
+      throw new Error('processId or processName is required');
+    }
+
+    const name = processName ? processName.replace(/\.exe$/i, '') : undefined;
+    const escapedName = name ? name.replace(/'/g, "''") : undefined;
+    const command = processId
+      ? `(Get-Process -Id ${processId} -ErrorAction Stop | Select-Object -ExpandProperty Path)`
+      : `(Get-Process -Name '${escapedName}' -ErrorAction Stop | Select-Object -First 1 -ExpandProperty Path)`;
+
+    const { stdout } = await execFileAsync('powershell', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      command,
+    ], {
+      windowsHide: true,
+    });
+
+    const resolved = String(stdout || '').trim();
+    if (!resolved) {
+      throw new Error('Executable path not found for process');
+    }
+
+    return resolved;
+  }
+
+  private getFileHash(filePath: string, algorithm: 'SHA256' | 'MD5'): string {
+    const normalizedAlgorithm = algorithm === 'MD5' ? 'md5' : 'sha256';
+    const stat = fs.statSync(filePath);
+    const cacheKey = `${normalizedAlgorithm}|${filePath.toLowerCase()}`;
+    const cached = this.processHashCache.get(cacheKey);
+
+    if (cached && cached.mtimeMs === stat.mtimeMs) {
+      return cached.hash;
+    }
+
+    const content = fs.readFileSync(filePath);
+    const hash = crypto.createHash(normalizedAlgorithm).update(content).digest('hex');
+    this.processHashCache.set(cacheKey, { hash, mtimeMs: stat.mtimeMs });
+    return hash;
+  }
+
   private readBody(req: http.IncomingMessage): Promise<string> {
     return new Promise((resolve, reject) => {
       let data = '';
@@ -849,6 +1204,7 @@ export class HttpServerWithDashboard {
           security: this.config.securityPath || './security',
           publicKey: this.config.publicKeyPath || './security/public.key.enc',
           privateKey: this.config.privateKeyPath || './security/private.key.enc',
+          helperPaths: this.config.helperPaths || ['./dist/win/*.exe'],
         },
         security: {
           requireSignature: this.config.requireBinarySignature || false,
@@ -866,6 +1222,7 @@ export class HttpServerWithDashboard {
           logLevel: this.config.logLevel || 'info',
           tokenExpiry: this.config.tokenExpiry || 60,
         },
+        currentWorkingDir: process.cwd(),
         currentToken: this.sessionTokenManager?.generateToken() || null,
       };
 
@@ -889,6 +1246,9 @@ export class HttpServerWithDashboard {
         this.config.securityPath = settings.paths.security;
         this.config.publicKeyPath = settings.paths.publicKey;
         this.config.privateKeyPath = settings.paths.privateKey;
+        if (Array.isArray(settings.paths.helperPaths)) {
+          this.config.helperPaths = settings.paths.helperPaths;
+        }
       }
 
       if (settings.security) {
@@ -907,7 +1267,8 @@ export class HttpServerWithDashboard {
         this.config.tokenExpiry = settings.server.tokenExpiry;
       }
 
-      // TODO: Persist settings to config file
+      // Persist settings to dashboard-settings.json
+      this.saveConfigToDisk();
       this.log('info', 'settings', 'Settings updated successfully');
 
       res.writeHead(200);
@@ -962,6 +1323,21 @@ export class HttpServerWithDashboard {
         message: 'Session token manager',
       });
 
+      // Check helper executables paths
+      const helperPaths = Array.isArray(this.config.helperPaths) && this.config.helperPaths.length > 0
+        ? this.config.helperPaths
+        : ['./dist/win/*.exe'];
+
+      const helperChecks = helperPaths.map((pattern: string) => {
+        const baseDir = path.dirname(pattern);
+        const exists = fs.existsSync(baseDir);
+        return {
+          status: exists ? 'ok' : 'warning',
+          message: `Helper path: ${pattern}`,
+        };
+      });
+      checks.push(...helperChecks);
+
       // Check security filters
       const hasFilters =
         (this.config.allowedExecutables?.length || 0) > 0 ||
@@ -983,6 +1359,148 @@ export class HttpServerWithDashboard {
     }
   }
 
+  /**
+   * GET /api/filters
+   * Returns the advanced security filter list
+   */
+  private handleGetFilters(req: http.IncomingMessage, res: http.ServerResponse): void {
+    res.writeHead(200);
+    res.end(JSON.stringify({
+      success: true,
+      filters: this.config.advancedFilters || [],
+    }));
+  }
+
+  /**
+   * POST /api/filters
+   * Saves the advanced security filter list
+   * Body: { filters: FilterRule[] }
+   */
+  /**
+   * Match a glob pattern (supports * and ?) against text — case-insensitive
+   */
+  private wildcardMatch(pattern: string, text: string): boolean {
+    if (!pattern || pattern === '*') return true;
+    const safe = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+    return new RegExp(`^${safe}$`, 'i').test(text);
+  }
+
+  /**
+   * POST /api/filters/test  — dry-run: which filter would fire for given inputs?
+   */
+  private async handleTestFilter(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const body = await this.readBody(req);
+      const { process: proc, helper, command, parameter } = JSON.parse(body);
+      const filters: any[] = this.config.advancedFilters || [];
+
+      // Strip {BRACES} from command if present, matching same logic as mcpServer
+      const cmdType = (command || '').replace(/^\{|\}$/g, '');
+
+      let verdict: 'ALLOW' | 'DENY' = 'ALLOW'; // permissive default
+      let matchedFilter: any = null;
+      let reason = 'No rule matched — default ALLOW';
+
+      for (const f of filters) {
+        if (!this.wildcardMatch(f.process || '*', proc || '')) continue;
+        const filterCmd = (f.command || '*').replace(/^\{|\}$/g, '');
+        if (filterCmd !== '*' && !this.wildcardMatch(filterCmd, cmdType)) continue;
+        if (!this.wildcardMatch(f.pattern || '*', parameter || '')) continue;
+        // Also check helper if set
+        if (f.helper && f.helper !== '*' && !this.wildcardMatch(f.helper, helper || '')) continue;
+
+        matchedFilter = f;
+        if (f.action === 'deny') {
+          verdict = 'DENY';
+          reason = `Matched DENY rule #${f.id}: ${f.description || f.action + ' ' + f.process + ' → ' + f.helper + '::' + f.command + '/' + f.pattern}`;
+          break; // DENY wins
+        } else {
+          verdict = 'ALLOW';
+          reason = `Matched ALLOW rule #${f.id}: ${f.description || f.action + ' ' + f.process + ' → ' + f.helper + '::' + f.command + '/' + f.pattern}`;
+          // Don't break — a later DENY could override
+        }
+      }
+
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, verdict, reason, matchedFilter }));
+    } catch (error) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ success: false, error: String(error) }));
+    }
+  }
+
+  private async handleToggleHelper(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const body = await this.readBody(req);
+      const { name, disabled } = JSON.parse(body) as { name: string; disabled: boolean };
+
+      if (!name || typeof name !== 'string') {
+        res.writeHead(400);
+        res.end(JSON.stringify({ success: false, error: 'name is required' }));
+        return;
+      }
+
+      if (!Array.isArray(this.config.disabledHelpers)) {
+        this.config.disabledHelpers = [];
+      }
+
+      const idx = this.config.disabledHelpers.indexOf(name);
+      if (disabled && idx === -1) {
+        this.config.disabledHelpers.push(name);
+      } else if (!disabled && idx !== -1) {
+        this.config.disabledHelpers.splice(idx, 1);
+      }
+
+      this.saveConfigToDisk();
+      const state = disabled ? 'disabled' : 'enabled';
+      this.log('info', 'settings', `Helper ${name} ${state}`);
+
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, name, disabled, disabledHelpers: this.config.disabledHelpers }));
+    } catch (err) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ success: false, error: String(err) }));
+    }
+  }
+
+  private async handleSaveFilters(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const body = await this.readBody(req);
+      const { filters } = JSON.parse(body);
+
+      if (!Array.isArray(filters)) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ success: false, error: 'filters must be an array' }));
+        return;
+      }
+
+      // Validate each filter entry
+      for (const f of filters) {
+        if (!f.action || !['allow', 'deny'].includes(f.action)) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error: `Invalid action: ${f.action}` }));
+          return;
+        }
+        if (!f.helper || typeof f.helper !== 'string') {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error: 'Each filter must have a helper' }));
+          return;
+        }
+      }
+
+      this.config.advancedFilters = filters;
+      this.log('info', 'security', `Saved ${filters.length} advanced security filter(s)`);
+      this.saveConfigToDisk();
+
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, count: filters.length }));
+    } catch (error) {
+      this.log('error', 'security', `Failed to save filters: ${error}`);
+      res.writeHead(500);
+      res.end(JSON.stringify({ success: false, error: String(error) }));
+    }
+  }
+
   private async handleGenerateToken(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     try {
       if (!this.sessionTokenManager) {
@@ -997,6 +1515,39 @@ export class HttpServerWithDashboard {
     } catch (error) {
       this.log('error', 'security', `Token generation failed: ${error}`);
       res.writeHead(500);
+      res.end(JSON.stringify({ success: false, error: String(error) }));
+    }
+  }
+
+  private async handleChangeWorkDir(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const body = await this.readBody(req);
+      const { path } = JSON.parse(body);
+
+      if (!path || typeof path !== 'string') {
+        throw new Error('Invalid path');
+      }
+
+      const fs = await import('fs');
+      const pathModule = await import('path');
+      
+      // Resolve to absolute path
+      const absolutePath = pathModule.resolve(path);
+      
+      // Check if directory exists
+      if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isDirectory()) {
+        throw new Error(`Directory does not exist: ${absolutePath}`);
+      }
+
+      // Change working directory
+      process.chdir(absolutePath);
+      this.log('info', 'settings', `Working directory changed to: ${absolutePath}`);
+
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, path: process.cwd() }));
+    } catch (error) {
+      this.log('error', 'settings', `Failed to change directory: ${error}`);
+      res.writeHead(400);
       res.end(JSON.stringify({ success: false, error: String(error) }));
     }
   }

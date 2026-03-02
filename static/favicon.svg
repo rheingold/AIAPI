@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Robot body -->
+  <rect x="3" y="8" width="26" height="20" rx="4" fill="#007acc"/>
+  <!-- Antenna base -->
+  <rect x="14" y="2" width="4" height="6" rx="1" fill="#007acc"/>
+  <!-- Antenna globe -->
+  <circle cx="16" cy="2" r="3" fill="#1e8ad6"/>
+  <circle cx="16" cy="2" r="1.5" fill="#89d185"/>
+  <!-- Eyes background -->
+  <ellipse cx="11" cy="17" rx="4" ry="4" fill="#1a1a2e"/>
+  <ellipse cx="21" cy="17" rx="4" ry="4" fill="#1a1a2e"/>
+  <!-- Eye glow -->
+  <circle cx="11" cy="17" r="2.5" fill="#007acc" opacity="0.6"/>
+  <circle cx="21" cy="17" r="2.5" fill="#007acc" opacity="0.6"/>
+  <!-- Eye pupils -->
+  <circle cx="11" cy="17" r="1.5" fill="#89d185"/>
+  <circle cx="21" cy="17" r="1.5" fill="#89d185"/>
+  <!-- Mouth pixels -->
+  <rect x="7"  y="23" width="3" height="2" rx="0.5" fill="white" opacity="0.8"/>
+  <rect x="11" y="23" width="3" height="2" rx="0.5" fill="white" opacity="0.8"/>
+  <rect x="15" y="23" width="3" height="2" rx="0.5" fill="white" opacity="0.8"/>
+  <rect x="19" y="23" width="3" height="2" rx="0.5" fill="white" opacity="0.8"/>
+  <!-- Ear bolts -->
+  <rect x="0" y="13" width="3" height="4" rx="1" fill="#1e8ad6"/>
+  <rect x="29" y="13" width="3" height="4" rx="1" fill="#1e8ad6"/>
+</svg>

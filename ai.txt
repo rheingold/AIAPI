@@ -1,0 +1,103 @@
+# CRITICAL AI CONTEXT - Terminal Management
+
+## ⚠️ TERMINAL USAGE RULES - MANDATORY READ
+
+### 🚨 DO NOT CREATE HIDDEN TERMINALS
+**NEVER set `"isBackground": true` when the user wants to see what's happening or interact with the process.**
+
+### ✅ CORRECT Terminal Usage:
+```json
+{
+  "command": "node start-server.js",
+  "explanation": "Starting the server",
+  "goal": "Launch server for testing", 
+  "isBackground": false,  // ← USER CAN SEE OUTPUT
+  "timeout": 30000
+}
+```
+
+### ❌ WRONG Terminal Usage:
+```json
+{
+  "command": "node start-server.js",
+  "explanation": "Starting the server",
+  "goal": "Launch server for testing",
+  "isBackground": true,   // ← CREATES HIDDEN TERMINAL - BAD!
+  "timeout": 0
+}
+```
+
+### 📟 MULTIPLE TERMINAL MANAGEMENT IN VSCode
+
+#### How to check existing terminals:
+The terminal context will show available terminals like:
+```
+Terminal: powershell
+Terminal: powershell  
+Terminal: powershell
+```
+
+#### Proper workflow for multiple terminals:
+1. **Server Terminal**: Use `isBackground: false` to start server visibly
+2. **Command Terminal**: Use the same existing terminal OR use `isBackground: false` for new visible terminal
+3. **NEVER** use `isBackground: true` unless explicitly requested for background processes
+
+#### Testing scenario with multiple terminals:
+1. Terminal 1: `node dist/start-mcp-server.js` (server running, keep alive)
+2. Terminal 2: Use existing or create NEW VISIBLE terminal for commands
+3. Test automation commands in Terminal 2 while server runs in Terminal 1
+
+### When to use isBackground=true:
+- Long-running processes that don't need user interaction
+- Build processes that can run silently
+- When explicitly asked to run something in background
+
+### When to use isBackground=false:
+- Server startup (user needs to see status)
+- Interactive commands
+- Debugging/testing scenarios
+- When user wants to observe progress
+- **DEFAULT CHOICE when unsure**
+- **ALWAYS for command testing while server is running**
+
+### 🚫 NEVER:
+- Create multiple hidden terminals repeatedly
+- Hide important output from the user
+- Use background terminals for interactive processes
+- Create background terminals when user specifically asks for visible testing
+
+## Project-Specific Notes
+
+### File Structure (Updated Feb 2026):
+- Source: `src/` 
+- Compiled: `dist/` (NOT `dist/src/`)
+- Configs: `config/security/`, `config/scenarios/`
+- Docs: `docs/api/`, `docs/guides/`, `docs/specs/`
+- Tests: `tests/integration/`
+
+### Server Startup:
+```bash
+# Development mode (bypasses security):
+$env:SKIP_CONFIG_SIGNATURE='true'
+$env:SKIP_BINARY_INTEGRITY='true' 
+node dist/start-mcp-server.js
+
+# Normal startup requires security config
+```
+
+### Emergency Admin Mode:
+```bash
+node dist/start-mcp-server.js --emergency-admin-mode
+```
+
+### Helper API Discovery:
+```bash
+.\dist\win\KeyWin.exe --api-schema
+```
+
+## Completed Major Features:
+- ✅ Project organization & cleanup
+- ✅ Command detection & security validation  
+- ✅ Privileged mode (admin tokens + emergency override)
+- ✅ Dynamic helper API discovery foundation
+- ✅ File restructuring (docs/, config/, tests/)

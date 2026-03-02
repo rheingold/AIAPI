@@ -38,15 +38,7 @@ export class Logger {
 
     try {
       const formatted = JSON.stringify(data, null, 2);
-      const lines = formatted.split('\n');
-
-      // Log the entire JSON as a single message with label
-      if (lines.length > 50) {
-        const truncated = lines.slice(0, 47).join('\n') + `\n... (${lines.length - 47} more lines)`;
-        this.log(level, source, `${label}:\n${truncated}`);
-      } else {
-        this.log(level, source, `${label}:\n${formatted}`);
-      }
+      this.log(level, source, `${label}:\n${formatted}`);
     } catch (error) {
       this.log('error', source, `Failed to format JSON for ${label}: ${error}`);
     }

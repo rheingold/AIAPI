@@ -1217,6 +1217,8 @@ Each target shares the same TypeScript core; only the entry-point and service-wr
 | Linux `init.d` script | Linux | LOW | legacy distros (RHEL 7, Ubuntu 14) |
 | macOS `launchd` daemon | macOS | LOW | `launchctl load ~/Library/LaunchAgents/...` |
 | Standalone console app | Lin / Mac | MEDIUM | same binary packaged with `pkg` for each OS |
+| Linux GUI tray app (KDE/GNOME) | Linux | LOW | AppIndicator / KStatusNotifierItem; start/stop/open-dashboard |
+| Windows Explorer shell extension | Windows | LOW | Right-click context menu "Automate with AIAPI" → opens Dashboard |
 
 > **Cross-platform note:** Linux/macOS targets will be built on a separate
 > machine (or CI runner) where the platform-specific helpers
@@ -1290,6 +1292,35 @@ Each target shares the same TypeScript core; only the entry-point and service-wr
 - [ ] macOS helpers: `KeyMac` (AX API + AppleScript) and `BrowserMac` (CDP)
   compile on the macOS host
 - [ ] macOS code-signing and notarisation notes (required for Gatekeeper)
+
+### Linux: GUI Tray App (KDE / GNOME / XWindow)
+> **Build on Linux machine / separate VS Code Remote host**
+- [ ] C or C++ (GTK3 + `libappindicator3`) tray application (`tools/tray/TrayAppLin.c`):
+  - `AppIndicator` / `KStatusNotifierItem` for cross-desktop compatibility (KDE, GNOME 3+, XFCE)
+  - Right-click menu: Start / Stop / Restart / Open Dashboard / View Logs / Exit
+  - Icon states: grey (stopped) → green (running) → red (error)
+  - "Open Dashboard" calls `xdg-open http://127.0.0.1:3458`
+- [ ] Spawns `aiapi-server` (packaged Linux binary) as a child process, monitors stdout/stderr
+- [ ] Autostart file: `~/.config/autostart/aiapi-tray.desktop`
+  ```ini
+  [Desktop Entry]
+  Type=Application
+  Name=AIAPI Tray
+  Exec=/usr/local/bin/aiapi-tray
+  X-GNOME-Autostart-enabled=true
+  ```
+- [ ] Built separately on Linux host; included in Linux package alongside `aiapi-server`
+
+### Windows: Explorer Shell Extension (Context-Menu)
+> **Low priority — comfort feature for non-CLI users**
+- [ ] COM in-process shell extension (`tools/shellext/AiapiShellExt.cs` — C# with `SharpShell` or
+  native C++ `IContextMenu` + `IShellExtInit`)
+- [ ] Right-click on any file/folder in Windows Explorer → "Automate with AIAPI" sub-menu:
+  - "Open Dashboard" → `http://127.0.0.1:3458`
+  - "Run scenario…" → opens a small picker dialog listing available app scenarios
+  - "Launch server" (if not running) → starts `aiapi-server.exe` silently
+- [ ] Must be registered via `regsvr32` or included in the NSIS installer as optional component
+- [ ] Requires COM signing for Windows 11 compatibility (same codesign cert as the main exe)
 
 ### Windows Installer (MSI / NSIS)
 - [ ] NSIS script (`scripts/installer/aiapi-setup.nsi`) or WiX `.wxs` file

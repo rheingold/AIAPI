@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  apptemplates/chrome/tree.xml
+  Annotated control/DOM tree for Google Chrome (desktop, Windows).
+  Helper: BrowserWin.exe  Target: chrome (browser identifier), or PAGE:<tabId>
+
+  Chrome automation is NOT based on UIA AutomationIds (unlike KeyWin desktop apps).
+  BrowserWin uses the Chrome DevTools Protocol (CDP) over a debug port.
+
+  Interaction model:
+    - LISTBROWSERS  → find running Chrome instances / tabs
+    - LAUNCH        → start Chrome (or attach if already running)
+    - NEWPAGE       → open a new tab; returns PAGE:<tabId>
+    - NAVIGATE      → navigate a tab to a URL
+    - READ          → read page text content (body innerText) or DOM element value
+    - SENDKEYS      → focus element and type
+    - CLICKID       → click element by CSS selector or #id
+    - EXECUTE       → run arbitrary JavaScript in the page context
+    - QUERYTREE     → DOM accessibility/structure tree (limited depth via CDP)
+    - SCREENSHOT    → capture tab as image
+    - CLOSEPAGE     → close a tab
+
+  Targeting nomenclature:
+    "chrome"             — the browser itself (for LAUNCH, LISTBROWSERS)
+    "chrome:PAGE:N"      — specific tab by index (0-based)
+    "chrome:URL:<url>"   — tab matching URL prefix
+    "chrome:TITLE:<t>"   — tab matching title substring
+-->
+<AppTree app="chrome" version="120+" os="win" helper="BrowserWin.exe"
+         protocol="CDP" window_mode="multi_tab" process="chrome.exe">
+
+  <meta>
+    <description lang="en">
+      Google Chrome browser.  Multi-tab, CDP-based automation via BrowserWin.exe.
+      Supports page navigation, DOM interaction, clipboard, screenshots, and JS execution.
+    </description>
+    <description lang="ai">
+      Chrome is automated via BrowserWin.exe using the Chrome DevTools Protocol (CDP).
+      There are NO UIA AutomationIds for browser content — all element targeting uses
+      CSS selectors, XPath, or semantic role queries via CDP / accessibility tree.
+
+      Entry point:
+        LISTBROWSERS target="SYSTEM"  → list running browser instances (chrome/edge/firefox)
+        LAUNCH       target="chrome"  → launch Chrome (or attach); returns tab list
+        NEWPAGE      target="chrome"  → open a blank new tab; returns PAGE:&lt;id&gt;
+
+      Per-tab operations (use PAGE:&lt;id&gt; or chrome:TITLE:&lt;text&gt;):
+        NAVIGATE     parameter="https://..."    navigate to URL
+        READ         parameter=""               read body text (innerText)
+        READ         parameter="css:#id"        read element text or value
+        SENDKEYS     parameter="css:#inp|text"  focus element by selector, then type
+        CLICKID      parameter="css:#btn"       click element by CSS selector
+        EXECUTE      parameter="&lt;js code&gt;"  run JS; returns serialized result
+        QUERYTREE    parameter=""               returns DOM accessibility/snapshot tree
+        SCREENSHOT   parameter=""               returns base64 PNG of full tab
+        CLOSEPAGE    target="PAGE:&lt;id&gt;"      close a specific tab
+
+      Selector syntax for parameter:
+        "css:&lt;sel&gt;"   CSS selector       e.g. "css:#username"
+        "css:&lt;sel&gt;|&lt;text&gt;" focus by sel, type text  
+        "xpath:&lt;expr&gt;" XPath expression
+        "role:&lt;role&gt;" ARIA role          e.g. "role:button[Find]"
+        ""           no specific element (page-level for READ/SENDKEYS)
+
+      Keyboard shortcuts (via SENDKEYS with no element / window-level):
+        {CTRL+T}  new tab       {CTRL+W}  close tab    {CTRL+L}  focus address bar
+        {CTRL+R}  reload        {F5}      reload        {ESCAPE}  cancel/dismiss
+        {TAB}     next field    {ENTER}   submit        {F12}     DevTools
+        {CTRL+F}  find in page  {ALT+LEFT} back         {ALT+RIGHT} forward
+    </description>
+    <binaries>
+      <binary path="C:\Program Files\Google\Chrome\Application\chrome.exe"
+              sha256="" version="120+" note="Hash blank — runtime version"/>
+    </binaries>
+    <embeddings>
+      <engine name="openai-ada-002"          file="embeddings/openai-ada-002.bin"          dims="1536" optional="true"/>
+      <engine name="ollama-nomic-embed-text" file="embeddings/ollama-nomic-embed-text.json" dims="768"  optional="true"/>
+    </embeddings>
+  </meta>
+
+  <!-- ═══════════════════════════════════════
+       BROWSER-LEVEL CONTROLS
+       ═══════════════════════════════════════ -->
+
+  <Control id="_browser_" type="BrowserInstance" scope="browser-level">
+    <label lang="en">The Chrome browser process.  Target: "chrome".</label>
+    <label lang="ai">
+      Use for browser-level operations: LAUNCH, LISTBROWSERS, NEWPAGE.
+      The response to NEWPAGE includes a PAGE:&lt;id&gt; token for further tab operations.
+    </label>
+    <action command="LISTBROWSERS" target="SYSTEM"  parameter=""           note="list all running browser instances"/>
+    <action command="LAUNCH"       target="chrome"  parameter=""           note="launch or attach; returns tab list"/>
+    <action command="NEWPAGE"      target="chrome"  parameter=""           note="open blank tab; returns PAGE:id"/>
+    <action command="NEWPAGE"      target="chrome"  parameter="{{url}}"    note="open tab at URL; returns PAGE:id"/>
+  </Control>
+
+  <!-- ═══════════════════════════════════════
+       TAB-LEVEL CONTROLS (per-page)
+       ═══════════════════════════════════════ -->
+
+  <Control id="_tab_" type="BrowserTab" scope="tab-level" target="PAGE:{{tabId}}">
+    <label lang="en">A single Chrome tab.  Target: PAGE:&lt;tabId&gt;.</label>
+    <label lang="ai">
+      All content operations target a specific tab via PAGE:&lt;id&gt;.
+      Use NAVIGATE to load a URL.
+      Use QUERYTREE for DOM snapshot (returns accessibility tree — limited depth).
+      Use READ for visible text.  Use EXECUTE for arbitrary JS.
+    </label>
+    <action command="NAVIGATE"   parameter="{{url}}"         note="navigate to a URL"/>
+    <action command="READ"       parameter=""                note="read body.innerText"/>
+    <action command="READ"       parameter="css:{{sel}}"     note="read element text/value"/>
+    <action command="SENDKEYS"   parameter="{{text}}"        note="type text (no focus change)"/>
+    <action command="SENDKEYS"   parameter="css:{{sel}}|{{text}}" note="focus element, then type"/>
+    <action command="CLICKID"    parameter="css:{{sel}}"     note="click element by CSS selector"/>
+    <action command="CLICKID"    parameter="role:{{role}}"   note="click by ARIA role"/>
+    <action command="EXECUTE"    parameter="{{jsCode}}"      note="run JS; returns result"/>
+    <action command="QUERYTREE"  parameter=""                note="DOM/accessibility snapshot"/>
+    <action command="SCREENSHOT" parameter=""                note="full-page PNG (base64)"/>
+    <action command="CLOSEPAGE"  parameter=""                note="close this tab"/>
+  </Control>
+
+  <!-- ═══════════════════════════════════════
+       COMMON PAGE ELEMENTS (semantic IDs)
+       These are semantic role/marker names, not real AutomationIds.
+       Use as CSS selector targets.
+       ═══════════════════════════════════════ -->
+
+  <Control id="addressBar" type="Input" scope="browser-chrome"
+           selector="omnibox"
+           note="Chrome address / omnibox bar — not in DOM; use SENDKEYS {CTRL+L}">
+    <label lang="en">Chrome address bar (omnibar).</label>
+    <label lang="ai">
+      Not a DOM element.  Focus with {CTRL+L} via SENDKEYS on the tab.
+      Then type URL and press {ENTER} to navigate.
+      Alternatively use NAVIGATE command directly (preferred).
+    </label>
+    <action command="SENDKEYS" parameter="{CTRL+L}"   note="focus address bar"/>
+    <action command="SENDKEYS" parameter="{{url}}{ENTER}" note="then type URL and navigate"/>
+  </Control>
+
+  <Control id="formInput"  type="Input"  scope="page-content" selector="css:input[type=text],input:not([type])">
+    <label lang="en">Generic text input field on a web page.</label>
+    <label lang="ai">
+      Target: use specific CSS selector or id for the actual input.
+      SENDKEYS with "css:#fieldId|text" focuses and types.
+      Use CLICKID first if the field needs a click to activate (e.g. custom dropdowns).
+      Check with EXECUTE: document.querySelector('#id').value to verify.
+    </label>
+    <action command="SENDKEYS" parameter="css:{{sel}}|{{value}}" note="focus and type into input"/>
+    <action command="CLICKID"  parameter="css:{{sel}}"           note="click to focus/activate"/>
+    <action command="EXECUTE"  parameter="document.querySelector('{{sel}}').value = '{{value}}'" note="set value via JS (no events)"/>
+    <action command="EXECUTE"  parameter="document.querySelector('{{sel}}').value"               note="read current field value"/>
+  </Control>
+
+  <Control id="submitButton" type="Button" scope="page-content" selector="css:button[type=submit],input[type=submit]">
+    <label lang="en">Form submit button.</label>
+    <label lang="ai">
+      Most forms: CLICKID "css:button[type=submit]" or SENDKEYS {ENTER} on focused input.
+      Verify submission by READ or checking URL change via EXECUTE: window.location.href.
+    </label>
+    <action command="CLICKID"  parameter="css:button[type=submit]" note="click submit button"/>
+    <action command="SENDKEYS" parameter="{ENTER}"                 note="submit from focused input"/>
+  </Control>
+
+  <Control id="pageBody" type="Document" scope="page-content" selector="css:body">
+    <label lang="en">The page body — all visible text content.</label>
+    <label lang="ai">
+      READ with no parameter returns body.innerText (all visible text).
+      For specific sections use READ with css: selector.
+      For structured data use EXECUTE: JSON.stringify(…) to return arrays/objects.
+      innerText includes only visible text; use innerHTML or textContent via EXECUTE for more.
+    </label>
+    <action command="READ"    parameter=""          note="returns body.innerText"/>
+    <action command="EXECUTE" parameter="document.title"            note="get page title"/>
+    <action command="EXECUTE" parameter="window.location.href"      note="get current URL"/>
+    <action command="EXECUTE" parameter="document.body.innerText.substring(0,500)" note="first 500 chars"/>
+  </Control>
+
+</AppTree>

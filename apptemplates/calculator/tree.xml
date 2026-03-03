@@ -1,0 +1,270 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  apptemplates/calculator/tree.xml
+  Annotated UIA control tree for the Windows 11 Calculator (UWP).
+  AutomationIds captured live via QUERYTREE depth=5 on Windows 11 23H2.
+  Helper: KeyWin.exe  Target: calc.exe  (window_mode: single_session)
+
+  Usage:
+    - Call RESET before any sequence to ensure a clean state.
+    - Click digit/operator buttons by their AutomationId with CLICKID.
+    - Read the current expression from CalculatorExpression (READ or CLICKID).
+    - Read the current result from CalculatorResults or its TextContainer child.
+    - All button names/labels here are English equivalents; actual localised name
+      depends on OS locale — always use automationId (stable across locales).
+-->
+<AppTree app="calculator" version="11.2302" os="win11" helper="KeyWin.exe"
+         window_mode="single_session" process="calc.exe">
+
+  <meta>
+    <description lang="en">
+      Windows Calculator (Modern UWP). Single-session app — one instance at a time.
+      Use RESET to clear state before reuse instead of closing and relaunching.
+      Standard mode buttons shown here; other modes (Scientific, Programmer) add extra controls.
+    </description>
+    <description lang="ai">
+      Single-session UWP calculator. One process, one window.
+      Numeric buttons use AutomationId numXButton (X = 0–9).
+      Operator buttons: plusButton, minusButton, multiplyButton, divideButton, equalButton.
+      Clear buttons: clearButton (AC — clears all), clearEntryButton (CE — clears entry),
+        backSpaceButton (backspace last digit).
+      Result display: CalculatorResults (click or READ to get result string like "Zobrazuje se 32").
+      Expression display: CalculatorExpression (shows full expression like "4 × 8 =").
+      TextContainer inside CalculatorResults shows just the number: "32".
+      RESET: clicks clearButton (or clearEntryButton); falls back to Ctrl+Z×20.
+      Always call LISTWINDOWS first — reuse existing calculator window; never KILL.
+    </description>
+    <!-- Live hash captured 2026-03-03; update after OS/app upgrades -->
+    <binaries>
+      <binary path="C:\Windows\SystemApps\Microsoft.WindowsCalculator_*\Calculator.exe"
+              sha256="" version="11.2302.x.0" note="Hash intentionally blank — update after capture"/>
+    </binaries>
+    <!-- Vector embeddings for semantic control search — generated separately per engine -->
+    <embeddings>
+      <engine name="openai-ada-002"          file="embeddings/openai-ada-002.bin"          dims="1536" optional="true"/>
+      <engine name="ollama-nomic-embed-text" file="embeddings/ollama-nomic-embed-text.json" dims="768"  optional="true"/>
+    </embeddings>
+  </meta>
+
+  <!-- ── Display ───────────────────────────────────────────────────────────── -->
+
+  <Control id="CalculatorResults" type="Text">
+    <label lang="en">Result / answer display. Shows the current expression result.</label>
+    <label lang="ai">
+      Read this to get the result after pressing equalButton.
+      Value format localised, e.g. "Zobrazuje se 32" (Czech) or "Display is 32" (English).
+      Parse the trailing number.  Alternatively read TextContainer child for just the number.
+    </label>
+    <action command="READ"    parameter=""/>
+    <action command="CLICKID" parameter="CalculatorResults"/>
+  </Control>
+
+  <Control id="TextContainer" type="Pane" parent="CalculatorResults">
+    <label lang="en">Raw numeric display pane inside CalculatorResults.</label>
+    <label lang="ai">
+      Child of CalculatorResults. Name property is the pure numeric result ("32").
+      Query via QUERYTREE and read Name attribute — no action needed.
+    </label>
+  </Control>
+
+  <Control id="CalculatorExpression" type="Text">
+    <label lang="en">Expression display — shows the current in-progress expression, e.g. "4 × 8 =".</label>
+    <label lang="ai">
+      Shows the full expression being built. Use READ on the window to read both
+      expression and result together.  Generally not needed for read-back — use
+      CalculatorResults or TextContainer for the answer.
+    </label>
+    <action command="CLICKID" parameter="CalculatorExpression"/>
+  </Control>
+
+  <!-- ── Clear / Backspace ─────────────────────────────────────────────────── -->
+
+  <Control id="clearButton" type="Button">
+    <label lang="en">Clear / AC — clears both current entry and the expression.</label>
+    <label lang="ai">
+      Click to fully reset the calculator state.  Equivalent to pressing C or AC.
+      Preferred target for RESET fallback.  After clicking, CalculatorResults
+      shows 0 and CalculatorExpression is blank.
+    </label>
+    <action command="CLICKID" parameter="clearButton"/>
+  </Control>
+
+  <Control id="clearEntryButton" type="Button">
+    <label lang="en">Clear Entry / CE — clears only the most-recently entered value.</label>
+    <label lang="ai">
+      Use to erase a mistyped digit/number without losing the pending operator.
+      Difference from clearButton: clearEntryButton leaves the operator and first
+      operand in place; clearButton resets everything.
+    </label>
+    <action command="CLICKID" parameter="clearEntryButton"/>
+  </Control>
+
+  <Control id="backSpaceButton" type="Button">
+    <label lang="en">Backspace — removes the last entered digit.</label>
+    <label lang="ai">Removes one digit at a time from the current entry. Equivalent to {BACK} key.</label>
+    <action command="CLICKID" parameter="backSpaceButton"/>
+  </Control>
+
+  <!-- ── Digit Buttons (0–9) ───────────────────────────────────────────────── -->
+
+  <Control id="num0Button" type="Button">
+    <label lang="en">Digit 0</label>
+    <label lang="ai">Type digit 0. CLICKID num0Button.</label>
+    <action command="CLICKID" parameter="num0Button"/>
+  </Control>
+  <Control id="num1Button" type="Button">
+    <label lang="en">Digit 1</label>
+    <label lang="ai">Type digit 1. CLICKID num1Button.</label>
+    <action command="CLICKID" parameter="num1Button"/>
+  </Control>
+  <Control id="num2Button" type="Button">
+    <label lang="en">Digit 2</label>
+    <label lang="ai">Type digit 2. CLICKID num2Button.</label>
+    <action command="CLICKID" parameter="num2Button"/>
+  </Control>
+  <Control id="num3Button" type="Button">
+    <label lang="en">Digit 3</label>
+    <label lang="ai">Type digit 3. CLICKID num3Button.</label>
+    <action command="CLICKID" parameter="num3Button"/>
+  </Control>
+  <Control id="num4Button" type="Button">
+    <label lang="en">Digit 4</label>
+    <label lang="ai">Type digit 4. CLICKID num4Button.</label>
+    <action command="CLICKID" parameter="num4Button"/>
+  </Control>
+  <Control id="num5Button" type="Button">
+    <label lang="en">Digit 5</label>
+    <label lang="ai">Type digit 5. CLICKID num5Button.</label>
+    <action command="CLICKID" parameter="num5Button"/>
+  </Control>
+  <Control id="num6Button" type="Button">
+    <label lang="en">Digit 6</label>
+    <label lang="ai">Type digit 6. CLICKID num6Button.</label>
+    <action command="CLICKID" parameter="num6Button"/>
+  </Control>
+  <Control id="num7Button" type="Button">
+    <label lang="en">Digit 7</label>
+    <label lang="ai">Type digit 7. CLICKID num7Button.</label>
+    <action command="CLICKID" parameter="num7Button"/>
+  </Control>
+  <Control id="num8Button" type="Button">
+    <label lang="en">Digit 8</label>
+    <label lang="ai">Type digit 8. CLICKID num8Button.</label>
+    <action command="CLICKID" parameter="num8Button"/>
+  </Control>
+  <Control id="num9Button" type="Button">
+    <label lang="en">Digit 9</label>
+    <label lang="ai">Type digit 9. CLICKID num9Button.</label>
+    <action command="CLICKID" parameter="num9Button"/>
+  </Control>
+
+  <Control id="decimalSeparatorButton" type="Button">
+    <label lang="en">Decimal point / separator</label>
+    <label lang="ai">Type decimal separator (locale-dependent: '.' or ','). CLICKID decimalSeparatorButton.</label>
+    <action command="CLICKID" parameter="decimalSeparatorButton"/>
+  </Control>
+
+  <Control id="negateButton" type="Button">
+    <label lang="en">Negate — toggle positive/negative on current entry.</label>
+    <label lang="ai">Applies ± to the current entry. CLICKID negateButton.</label>
+    <action command="CLICKID" parameter="negateButton"/>
+  </Control>
+
+  <!-- ── Operator Buttons ─────────────────────────────────────────────────── -->
+
+  <Control id="plusButton" type="Button">
+    <label lang="en">Addition (+)</label>
+    <label lang="ai">Press after first operand to begin addition. CLICKID plusButton.</label>
+    <action command="CLICKID" parameter="plusButton"/>
+  </Control>
+  <Control id="minusButton" type="Button">
+    <label lang="en">Subtraction (−)</label>
+    <label lang="ai">Press after first operand to begin subtraction. CLICKID minusButton.</label>
+    <action command="CLICKID" parameter="minusButton"/>
+  </Control>
+  <Control id="multiplyButton" type="Button">
+    <label lang="en">Multiplication (×)</label>
+    <label lang="ai">Press after first operand to begin multiplication. CLICKID multiplyButton.</label>
+    <action command="CLICKID" parameter="multiplyButton"/>
+  </Control>
+  <Control id="divideButton" type="Button">
+    <label lang="en">Division (÷)</label>
+    <label lang="ai">Press after first operand to begin division. CLICKID divideButton.</label>
+    <action command="CLICKID" parameter="divideButton"/>
+  </Control>
+  <Control id="equalButton" type="Button">
+    <label lang="en">Equals (=) — evaluates the expression.</label>
+    <label lang="ai">
+      Press after second operand to compute the result.
+      After pressing, CalculatorResults shows the answer.
+      Alternatively send {ENTER} via SENDKEYS.
+      CLICKID equalButton.
+    </label>
+    <action command="CLICKID" parameter="equalButton"/>
+    <action command="SENDKEYS" parameter="{ENTER}" note="keyboard equivalent"/>
+  </Control>
+
+  <!-- ── Unary / Standard Functions ─────────────────────────────────────────── -->
+
+  <Control id="percentButton" type="Button">
+    <label lang="en">Percent (%)</label>
+    <label lang="ai">Convert current entry to percent. CLICKID percentButton.</label>
+    <action command="CLICKID" parameter="percentButton"/>
+  </Control>
+  <Control id="invertButton" type="Button">
+    <label lang="en">Reciprocal (1/x)</label>
+    <label lang="ai">Compute 1 ÷ current entry. CLICKID invertButton.</label>
+    <action command="CLICKID" parameter="invertButton"/>
+  </Control>
+  <Control id="xpower2Button" type="Button">
+    <label lang="en">Square (x²)</label>
+    <label lang="ai">Compute x² on current entry. CLICKID xpower2Button.</label>
+    <action command="CLICKID" parameter="xpower2Button"/>
+  </Control>
+  <Control id="squareRootButton" type="Button">
+    <label lang="en">Square root (√x)</label>
+    <label lang="ai">Compute √x on current entry. CLICKID squareRootButton.</label>
+    <action command="CLICKID" parameter="squareRootButton"/>
+  </Control>
+
+  <!-- ── Memory ────────────────────────────────────────────────────────────── -->
+
+  <Control id="memButton" type="Button">
+    <label lang="en">Memory Store (MS) — save current value into memory.</label>
+    <label lang="ai">Stores current display value into memory slot. CLICKID memButton.</label>
+    <action command="CLICKID" parameter="memButton"/>
+  </Control>
+  <Control id="MemRecall" type="Button">
+    <label lang="en">Memory Recall (MR) — paste stored value into display.</label>
+    <label lang="ai">Retrieves stored memory value into current entry. CLICKID MemRecall.</label>
+    <action command="CLICKID" parameter="MemRecall"/>
+  </Control>
+  <Control id="MemPlus" type="Button">
+    <label lang="en">Memory Add (M+) — add current value to stored memory.</label>
+    <label lang="ai">Adds current display value to the memory slot. CLICKID MemPlus.</label>
+    <action command="CLICKID" parameter="MemPlus"/>
+  </Control>
+  <Control id="MemMinus" type="Button">
+    <label lang="en">Memory Subtract (M−) — subtract current value from stored memory.</label>
+    <label lang="ai">Subtracts current display value from the memory slot. CLICKID MemMinus.</label>
+    <action command="CLICKID" parameter="MemMinus"/>
+  </Control>
+  <Control id="ClearMemoryButton" type="Button">
+    <label lang="en">Memory Clear (MC) — erase the memory slot.</label>
+    <label lang="ai">Clears the memory slot entirely. CLICKID ClearMemoryButton.</label>
+    <action command="CLICKID" parameter="ClearMemoryButton"/>
+  </Control>
+
+  <!-- ── Navigation / Mode ─────────────────────────────────────────────────── -->
+
+  <Control id="TogglePaneButton" type="Button">
+    <label lang="en">Open navigation pane (hamburger menu).</label>
+    <label lang="ai">
+      Opens the left navigation panel to switch modes (Standard, Scientific, Programmer, etc.).
+      Usually leave this alone during standard arithmetic sequences.
+      CLICKID TogglePaneButton.
+    </label>
+    <action command="CLICKID" parameter="TogglePaneButton"/>
+  </Control>
+
+</AppTree>

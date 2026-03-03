@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  apptemplates/notepad/tree.xml
+  Annotated UIA tree for Windows 11 Notepad (UWP, tabbed).
+  Helper: KeyWin.exe  Target: notepad.exe or HANDLE:<hwnd>
+  Window mode: multi_document (each tab is a document; use NEWDOC for a new tab)
+
+  NOTE: Windows 11 Notepad (com.microsoft.windowsnotepad) is a UWP / WinUI 3 app.
+  It does NOT expose named AutomationIds for the main text edit area via UIA.
+  The primary interaction model is:
+    - READ the window  → returns the full document text
+    - SENDKEYS         → types text or sends keyboard shortcuts
+    - NEWDOC           → opens a new tab (Ctrl+N), returns the new window HANDLE:
+    - QUERYTREE        → returns limited structure (TitleBar, Pane children); no text-edit Id
+  There is no stable AutomationId for the text editor itself — target is the window handle.
+-->
+<AppTree app="notepad" version="11.2309" os="win11" helper="KeyWin.exe"
+         window_mode="multi_document" process="notepad.exe">
+
+  <meta>
+    <description lang="en">
+      Windows 11 Notepad (Tabbed UWP). Multi-document app — multiple tabs per window.
+      Use NEWDOC to open a new tab instead of launching a second process.
+      Use SENDKEYS for typing, clipboard operations (Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+Z).
+      Use READ to read the full document text.
+      Use QUERYTREE to inspect top-level structure (limited AutomationId exposure).
+    </description>
+    <description lang="ai">
+      Multi-document tabbed Notepad (Windows 11 UWP).  One process, many tabs.
+      Main interaction:
+        READ        → entire document text as a string
+        SENDKEYS    → type characters or keyboard shortcuts
+        NEWDOC      → new tab (returns HANDLE: of new or existing window)
+        QUERYTREE   → structural info only (TitleBar, Pane children); no text-edit AutomationId
+      Key SENDKEYS shortcuts:
+        {CTRL+A}  select all    {CTRL+C}  copy    {CTRL+V}  paste
+        {CTRL+Z}  undo          {CTRL+S}  save    {CTRL+W}  close tab
+        {CTRL+N}  new tab (same as NEWDOC)         {CTRL+P}  print
+        {ENTER}   newline       {BACK}    backspace {DELETE}  delete
+      Targeting: use HANDLE:&lt;hwnd&gt; for precise tab targeting after NEWDOC.
+      Window title pattern: "&lt;filename&gt; – Poznámkový blok" (Czech) or
+        "&lt;filename&gt; – Notepad" (English); "Bez názvu" / "Untitled" = unsaved.
+      To read clipboard: SENDKEYS {CTRL+A}{CTRL+C} then READ is unreliable for
+        large text; prefer READ directly on the window for full content.
+    </description>
+    <binaries>
+      <binary path="C:\Program Files\WindowsApps\Microsoft.WindowsNotepad_*\Notepad\Notepad.exe"
+              sha256="" version="11.2309.x.0" note="Hash blank — update after capture"/>
+    </binaries>
+    <embeddings>
+      <engine name="openai-ada-002"          file="embeddings/openai-ada-002.bin"          dims="1536" optional="true"/>
+      <engine name="ollama-nomic-embed-text" file="embeddings/ollama-nomic-embed-text.json" dims="768"  optional="true"/>
+    </embeddings>
+  </meta>
+
+  <!--
+    The main document / text edit area has no stable AutomationId in Windows 11 Notepad.
+    All text operations target the window directly.
+    The controls below are the structural elements that DO have IDs.
+  -->
+
+  <Control id="TitleBar" type="TitleBar">
+    <label lang="en">Title bar — shows current document name and unsaved-changes indicator (*)</label>
+    <label lang="ai">
+      Name property = window title, e.g. "Untitled – Notepad" or "* myfile.txt – Notepad".
+      The leading asterisk (*) indicates unsaved changes.
+      Not directly actionable for text editing.
+    </label>
+  </Control>
+
+  <!-- Synthetic "window" control — the target for READ and SENDKEYS -->
+  <Control id="_window_" type="Window" note="synthetic — target is the hwnd, not an AutomationId">
+    <label lang="en">The Notepad window / document area.  READ returns full text content.</label>
+    <label lang="ai">
+      Target: use window title or HANDLE:&lt;hwnd&gt;.
+      READ    → multi-line string with full document text.
+      SENDKEYS → types at current cursor position.
+      To append to end: SENDKEYS {CTRL+END} first to move cursor to end.
+      To select all:    SENDKEYS {CTRL+A}.
+      To replace all:   SENDKEYS {CTRL+A} then type new text (replaces selection).
+    </label>
+    <action command="READ"     parameter=""       note="reads full document text"/>
+    <action command="SENDKEYS" parameter="{text}" note="types at current cursor position"/>
+    <action command="SENDKEYS" parameter="{CTRL+A}" note="select all"/>
+    <action command="SENDKEYS" parameter="{CTRL+C}" note="copy selection to clipboard"/>
+    <action command="SENDKEYS" parameter="{CTRL+V}" note="paste from clipboard"/>
+    <action command="SENDKEYS" parameter="{CTRL+Z}" note="undo"/>
+    <action command="SENDKEYS" parameter="{CTRL+S}" note="save (Ctrl+S)"/>
+    <action command="NEWDOC"   parameter=""       note="open new tab; returns HANDLE:"/>
+  </Control>
+
+</AppTree>

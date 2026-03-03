@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  apptemplates/calculator/scenarios.xml
+  Reusable scenario templates for Windows Calculator (single-session UWP).
+  Partner file to tree.xml — cross-references AutomationIds defined there.
+
+  Wire format for each Step/action attribute matches the AIAPI helper wire protocol:
+    { "target": "...", "command": "COMMAND", "parameter": "value" }
+  Placeholders: {{hwnd}} is bound at runtime from the intro step's LISTWINDOWS result.
+  Recursive composition: <ScenarioRef ref="intro"/> runs the intro scenario inline.
+-->
+<ScenarioLibrary app="calculator" version="1.0" helper="KeyWin.exe">
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       intro — Lead-in: ensure Calculator is running and in a clean state.
+       ALWAYS include <ScenarioRef ref="intro"/> as the first step in any
+       calculator scenario.  It is idempotent and fast (~50 ms if already open).
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <Scenario id="intro" label="Start / Lead-in">
+    <description lang="en">
+      Ensure Calculator is open and in a clean state.
+      Reuses existing instance if found; launches a new one otherwise.
+      Clears any pending expression via RESET.
+    </description>
+    <description lang="ai">
+      Lead-in for every calculator scenario.
+      1. LISTWINDOWS on SYSTEM to find existing calc window.
+      2. If absent: send SENDKEYS to run calc.exe (or use LAUNCH if available); wait 1 s.
+         LISTWINDOWS again to get the new hwnd.
+      3. RESET on the window to clear any pending expression.
+      Bind the resolved hwnd to {{hwnd}} for subsequent steps.
+    </description>
+    <Steps>
+      <Step command="LISTWINDOWS" target="SYSTEM"     parameter=""      note="discover existing calc window; bind hwnd if title contains 'Calculator' or 'Kalkulačka'"/>
+      <Step command="SENDKEYS"    target="SYSTEM"     parameter="calc"  note="launch if absent — sends to Start/Run; skip if window already found" conditional="absent"/>
+      <Step command="WAIT"        target=""           parameter="1000"  note="wait for window to appear" conditional="absent"/>
+      <Step command="LISTWINDOWS" target="SYSTEM"     parameter=""      note="re-discover after launch" conditional="absent"/>
+      <Step command="RESET"       target="{{hwnd}}"   parameter=""      note="clear state — idempotent"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       compute — Type an arithmetic expression and read the result.
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <Scenario id="compute" label="Compute Expression">
+    <description lang="en">
+      Type an arithmetic expression into Calculator and return the result.
+      Supports basic arithmetic: +, -, *, /.
+      Example: expression="7 * 6" → result "42".
+    </description>
+    <description lang="ai">
+      Use this to arithmetically evaluate an expression on the live Calculator window.
+      Steps:
+        1. intro (reset to clean state)
+        2. SENDKEYS the expression digits and operators character by character.
+           Operator mapping: + → SENDKEYS +, - → SENDKEYS -, * → SENDKEYS *, / → SENDKEYS /.
+           Digits map directly to numXButton characters.
+        3. SENDKEYS {ENTER} (or CLICKID equalButton) to evaluate.
+        4. READ the window to get the result string.
+      The result appears in CalculatorResults; the numeric value in TextContainer.
+      Expression "{{expression}}" — replace placeholder with actual expression string.
+    </description>
+    <Parameters>
+      <Param name="expression" type="string" required="true"
+             example="7 * 6"
+             note="Space-separated arithmetic expression. Operators: + - * /"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef ref="intro"/>
+      <Step command="SENDKEYS" target="{{hwnd}}" parameter="{{expression}}" note="type expression — digits and operators go directly to the focussed window"/>
+      <Step command="SENDKEYS" target="{{hwnd}}" parameter="{ENTER}"        note="evaluate"/>
+      <Step command="READ"     target="{{hwnd}}" parameter=""               note="read full window text including result"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       click-compute — Click-based expression entry (most reliable).
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <Scenario id="click-compute" label="Click-Based Computation">
+    <description lang="en">
+      Compute a simple two-operand arithmetic expression by clicking buttons.
+      Slower than SENDKEYS but immune to locale keyboard-layout differences.
+    </description>
+    <description lang="ai">
+      Most reliable method for simple expressions (no floating-point, no parentheses).
+      Steps:
+        1. intro
+        2. CLICKID numXButton for each digit of first operand.
+        3. CLICKID &lt;operatorButton&gt; (plusButton / minusButton / multiplyButton / divideButton).
+        4. CLICKID numXButton for each digit of second operand.
+        5. CLICKID equalButton (or SENDKEYS {ENTER}).
+        6. READ result from window.
+      Use this approach when SENDKEYS key-mapping is uncertain (non-English locale).
+      Parameters: operand1, operator (one of: plus, minus, multiply, divide), operand2.
+    </description>
+    <Parameters>
+      <Param name="operand1"  type="string" required="true"  example="42"       note="First  operand — digits only"/>
+      <Param name="operator"  type="string" required="true"  example="multiply" note="plus | minus | multiply | divide"/>
+      <Param name="operand2"  type="string" required="true"  example="7"        note="Second operand — digits only"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef ref="intro"/>
+      <!-- Click each digit of operand1; the AI resolves each char to numXButton -->
+      <Step command="CLICKID" target="{{hwnd}}" parameter="num{{operand1[0]}}Button" note="first digit of operand1 — expand per-digit at runtime"/>
+      <!-- ... (remaining digits omitted; AI expands at runtime per char) ... -->
+      <Step command="CLICKID" target="{{hwnd}}" parameter="{{operator}}Button"       note="e.g. multiplyButton"/>
+      <!-- Click each digit of operand2 -->
+      <Step command="CLICKID" target="{{hwnd}}" parameter="num{{operand2[0]}}Button" note="first digit of operand2 — expand per-digit at runtime"/>
+      <Step command="CLICKID" target="{{hwnd}}" parameter="equalButton"/>
+      <Step command="READ"    target="{{hwnd}}" parameter=""/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       read-display — Just read the current display value without changing state.
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <Scenario id="read-display" label="Read Current Display">
+    <description lang="en">Read the current value shown in Calculator without pressing any buttons.</description>
+    <description lang="ai">
+      Use when you need to know what is currently on the display without performing
+      any operation.  Calls READ on the window; the response contains both the
+      expression string and the result string.
+    </description>
+    <Steps>
+      <Step command="READ" target="{{hwnd}}" parameter=""/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       teardown-leave-open — Non-destructive teardown (default).
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <Scenario id="teardown-leave-open" label="Teardown: Leave Open">
+    <description lang="en">Leave Calculator open after the test sequence (default teardown).</description>
+    <description lang="ai">
+      No-op teardown.  Calculator remains open and in the post-sequence state.
+      Use when subsequent tests will reuse the same window (RESET at start of next test).
+    </description>
+    <Steps/>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       teardown-reset — Reset to clean state but leave Calculator open.
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <Scenario id="teardown-reset" label="Teardown: Reset State">
+    <description lang="en">Reset Calculator state (AC) but leave the window open.</description>
+    <description lang="ai">
+      Presses AC/clearButton to leave Calculator at 0 with empty expression.
+      Use to clean up after a test without closing the application.
+      Equivalent to RESET command.
+    </description>
+    <Steps>
+      <Step command="CLICKID" target="{{hwnd}}" parameter="clearButton" note="AC — clear all"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       teardown-close — Close Calculator completely.
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <Scenario id="teardown-close" label="Teardown: Close App">
+    <description lang="en">Close Calculator completely (teardown_policy=close_app).</description>
+    <description lang="ai">
+      Sends Alt+F4 to close the Calculator window.  Use only when explicitly
+      required — prefer teardown-leave-open or teardown-reset to avoid slow relaunch.
+    </description>
+    <Steps>
+      <Step command="SENDKEYS" target="{{hwnd}}" parameter="{ALT+F4}"/>
+    </Steps>
+  </Scenario>
+
+</ScenarioLibrary>

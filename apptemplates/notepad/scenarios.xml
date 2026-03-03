@@ -1,0 +1,270 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  apptemplates/notepad/scenarios.xml
+  Reusable scenario fragments for Windows 11 Notepad (UWP, tabbed).
+  Helper: KeyWin.exe  Process: notepad.exe
+
+  Placeholders:
+    {{hwnd}}      — HANDLE:<number> of the target Notepad window/tab
+    {{text}}      — text to type into the document
+    {{filename}}  — expected window-title fragment (e.g. "myfile.txt")
+    {{filepath}}  — full save path for Save-As dialog (e.g. "C:\Users\x\doc.txt")
+
+  Composition: Use <ScenarioRef ref="…"/> to embed prerequisite scenarios.
+-->
+<Scenarios app="notepad" helper="KeyWin.exe" process="notepad.exe">
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       intro  — find an open Notepad window, or launch a new one
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="intro" effect="idempotent">
+    <description lang="en">
+      Find an existing Notepad window by process name or title pattern,
+      or launch Notepad if none is open.  Sets {{hwnd}} for subsequent steps.
+    </description>
+    <description lang="ai">
+      Prerequisite for almost all Notepad scenarios.
+      1. LISTWINDOWS → look for a window whose title contains "Notepad" or "Poznámkový blok".
+      2. If found: record HANDLE:&lt;hwnd&gt; as {{hwnd}}.
+      3. If NOT found: LAUNCH notepad.exe → wait for window → record HANDLE as {{hwnd}}.
+      Exactly one tab / window is expected after this step.
+    </description>
+    <steps>
+      <step action="LISTWINDOWS" target="SYSTEM" parameter=""
+            note="scan open windows for Notepad"/>
+      <!-- Caller selects matching HANDLE from response and assigns {{hwnd}} -->
+    </steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       new-document  — open a new blank tab
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="new-document" effect="creates-new-tab">
+    <ScenarioRef ref="intro"/>
+    <description lang="en">Open a new blank tab in the existing Notepad window.</description>
+    <description lang="ai">
+      Calls NEWDOC on {{hwnd}}.
+      Win11 Notepad opens a new tab (internally Ctrl+N).
+      After NEWDOC, the response contains the HANDLE: of the window that now holds the new tab.
+      Reassign {{hwnd}} if the new tab is in a different window.
+    </description>
+    <steps>
+      <step action="NEWDOC" target="{{hwnd}}" parameter=""
+            note="opens a new blank tab; returns window HANDLE"/>
+    </steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       type-text  — type content into current document
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="type-text" effect="modifies-document">
+    <ScenarioRef ref="intro"/>
+    <description lang="en">Type {{text}} into the current Notepad document (at cursor position).</description>
+    <description lang="ai">
+      Sends {{text}} via SENDKEYS to {{hwnd}}.
+      Text is typed at the CURRENT cursor position.
+      To append: use scenario "move-to-end" first.
+      To replace ALL content: use scenario "clear-document" first.
+      Accepts plain text including newlines as {ENTER} tokens.
+    </description>
+    <steps>
+      <step action="SENDKEYS" target="{{hwnd}}" parameter="{{text}}"
+            note="types the given text at cursor position"/>
+    </steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       move-to-end  — position cursor at end of document
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="move-to-end" effect="cursor-position">
+    <description lang="en">Move the cursor to the very end of the document.</description>
+    <steps>
+      <step action="SENDKEYS" target="{{hwnd}}" parameter="{CTRL+END}"
+            note="moves cursor to end of document"/>
+    </steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       read-content  — read full document text
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="read-content" effect="read-only">
+    <ScenarioRef ref="intro"/>
+    <description lang="en">Read and return the full text content of the current document.</description>
+    <description lang="ai">
+      Uses READ on {{hwnd}}.
+      Returns entire document as a string (multi-line).
+      Does not modify document state.
+      Preferred over clipboard read (Ctrl+A, Ctrl+C) for reliability.
+    </description>
+    <steps>
+      <step action="READ" target="{{hwnd}}" parameter=""
+            note="returns full document text"/>
+    </steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       select-all  — select all text in the document
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="select-all" effect="selection-state">
+    <description lang="en">Select all text in the document (Ctrl+A).</description>
+    <steps>
+      <step action="SENDKEYS" target="{{hwnd}}" parameter="{CTRL+A}"
+            note="selects all text; prerequisite for copy/cut/replace"/>
+    </steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       clear-document  — remove all text from current document
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="clear-document" effect="modifies-document">
+    <description lang="en">Select all text and delete it, leaving an empty document.</description>
+    <steps>
+      <step action="SENDKEYS" target="{{hwnd}}" parameter="{CTRL+A}"
+            note="select all"/>
+      <step action="SENDKEYS" target="{{hwnd}}" parameter="{DELETE}"
+            note="delete selection → document is now empty"/>
+    </steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       copy-all  — copy full document content to clipboard
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="copy-all" effect="clipboard-write">
+    <description lang="en">Select all text and copy to clipboard (Ctrl+A, Ctrl+C).</description>
+    <steps>
+      <step action="SENDKEYS" target="{{hwnd}}" parameter="{CTRL+A}"
+            note="select all"/>
+      <step action="SENDKEYS" target="{{hwnd}}" parameter="{CTRL+C}"
+            note="copy to clipboard"/>
+    </steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       paste-text  — paste clipboard content at cursor
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="paste-text" effect="modifies-document">
+    <description lang="en">Paste clipboard content at current cursor position (Ctrl+V).</description>
+    <steps>
+      <step action="SENDKEYS" target="{{hwnd}}" parameter="{CTRL+V}"
+            note="paste from clipboard"/>
+    </steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       undo  — undo last operation
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="undo" effect="modifies-document">
+    <description lang="en">Undo the last edit operation (Ctrl+Z).</description>
+    <steps>
+      <step action="SENDKEYS" target="{{hwnd}}" parameter="{CTRL+Z}"
+            note="undo last operation"/>
+    </steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       save-file  — save current document (Ctrl+S)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="save-file" effect="persists-document">
+    <description lang="en">
+      Save the current document.  If the file has not been saved before,
+      this opens the Save As dialog — handle that case with scenario "save-as".
+    </description>
+    <description lang="ai">
+      For an already-saved file: Ctrl+S saves silently.
+      For a new/unsaved document ("Untitled"): Ctrl+S opens the Save As dialog.
+      Use Ctrl+Shift+S for explicit Save As even on existing files.
+    </description>
+    <steps>
+      <step action="SENDKEYS" target="{{hwnd}}" parameter="{CTRL+S}"
+            note="saves file; may open Save As dialog for new documents"/>
+    </steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       save-as  — Save As dialog (Ctrl+Shift+S)
+       NOTE: dialog interaction requires SENDKEYS to type the filename
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="save-as" effect="persists-document">
+    <description lang="en">
+      Open Save As dialog (Ctrl+Shift+S), type {{filepath}}, press Enter.
+    </description>
+    <description lang="ai">
+      Opens Save As dialog with Ctrl+Shift+S.
+      Then types the full path {{filepath}} directly (replaces the filename field).
+      Then presses {ENTER} to confirm.
+      Warning: the file dialog does not expose AutomationIds reliably in all locales;
+      typing the path and pressing Enter is the most portable approach.
+    </description>
+    <steps>
+      <step action="SENDKEYS" target="{{hwnd}}" parameter="{CTRL+SHIFT+S}"
+            note="Open Save As dialog"/>
+      <step action="SENDKEYS" target="{{hwnd}}" parameter="{{filepath}}"
+            note="type the full filepath"/>
+      <step action="SENDKEYS" target="{{hwnd}}" parameter="{ENTER}"
+            note="confirm save"/>
+    </steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       close-tab  — close current tab (Ctrl+W)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="close-tab" effect="closes-tab">
+    <description lang="en">
+      Close the current tab (Ctrl+W).
+      If the document has unsaved changes, a save dialog may appear.
+    </description>
+    <description lang="ai">
+      Sends Ctrl+W to {{hwnd}}.
+      If unsaved changes: Win11 Notepad shows a dialog "Save changes?".
+      To discard changes before closing: use "clear-document" first, then close-tab.
+      To save before closing: use "save-file" first, then close-tab.
+    </description>
+    <steps>
+      <step action="SENDKEYS" target="{{hwnd}}" parameter="{CTRL+W}"
+            note="close current tab"/>
+    </steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       teardown-leave-open  — leave document open, do nothing
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="teardown-leave-open" effect="no-side-effect">
+    <description lang="en">Leave the Notepad window open.  No teardown action.</description>
+    <description lang="ai">
+      No-op teardown.  Use when you want to keep the document for the user to review.
+    </description>
+    <steps>
+      <!-- intentionally empty -->
+    </steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       teardown-clear  — clear document, leave tab open
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="teardown-clear" effect="modifies-document">
+    <description lang="en">Clear document content and leave the tab open and empty.</description>
+    <ScenarioRef ref="clear-document"/>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       teardown-close-tab  — discard changes and close tab
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="teardown-close-tab" effect="closes-tab">
+    <description lang="en">
+      Discard all changes in the current document and close the tab.
+      Selects all and deletes first to avoid the "save changes?" dialog.
+    </description>
+    <description lang="ai">
+      1. Clear document content (avoids save-changes dialog).
+      2. Close the tab with Ctrl+W.
+      If only one tab remains and it is empty, Win11 Notepad keeps the window open
+      (instead of closing — the app always keeps at least one tab).
+    </description>
+    <ScenarioRef ref="clear-document"/>
+    <steps>
+      <step action="SENDKEYS" target="{{hwnd}}" parameter="{CTRL+W}"
+            note="close now-empty tab (no unsaved-changes dialog)"/>
+    </steps>
+  </Scenario>
+
+</Scenarios>

@@ -21,6 +21,8 @@ test-results.txt
 test-run*.txt
 server.err
 test-sessions/
+# dev capture artifacts
+*-live.json
 *.vsix
 .DS_Store
 *.log

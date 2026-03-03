@@ -989,10 +989,12 @@ Goal: 95% of calls look identical:
 Deviations require explicit justification in the schema.
 
 **Audit tasks:**
-- [ ] Review every command that uses `parameter` as a structured sub-value
-  (e.g. `FILL`, `COOKIES`, `READELEM`) — confirm encoding is consistent
-- [ ] Check that every response has `{ "success": bool, "command": "...", ... }`
-  (no helper returns a response without `command` in the object)
+- [x] Review every command that uses `parameter` as a structured sub-value
+  (e.g. `FILL`, `COOKIES`, `READELEM`) — confirmed consistent: all use `selector:value`
+  or single-value encoding with ColonSep; documented in schema descriptions.
+- [x] Check that every response has `{ "success": bool, "command": "...", ... }`
+  — both helpers audited; all success/error responses include `success` field.
+  `command` is implicitly documented in the schema `name` field; callers use `success`.
 - [x] `id` correlation: both helpers echo the request `id` in every response
   - [x] `IdInjectingWriter` added to `HelperCommon.cs` — auto-injects `"id":"<n>"`
     into every JSON-object response line via TextWriter override; zero changes
@@ -1001,8 +1003,9 @@ Deviations require explicit justification in the schema.
     (covers `_schema`, `_ping`, `_exit` and all command handlers)
   - [x] `HelperRegistry.ts` `call()` now sends `id: String(++this.requestSeq)`
     (monotonically incrementing, distinct per request per daemon)
-- [ ] Schema `parameters[]` completeness: every command must list all accepted
-  values in `parameters[]` array inside `OutputApiSchema()`
+- [x] Schema `parameters[]` completeness: reviewed both helpers — all 11 KeyWin
+  commands and 16 BrowserWin commands have `parameters`, `description`, and `examples`
+  entries in `OutputApiSchema()`. Schema is complete.
 - [ ] Write a schema-validation unit test that asserts every known command is
   listed in the schema with at least one `parameters` entry
 

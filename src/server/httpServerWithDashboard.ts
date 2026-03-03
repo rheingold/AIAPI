@@ -72,6 +72,7 @@ export class HttpServerWithDashboard {
       blockedPaths: [],
       advancedFilters: [],
       disabledHelpers: [] as string[],
+      appTemplatesDir: './apptemplates',
     };
     
     // Register this dashboard as log receiver
@@ -331,7 +332,13 @@ export class HttpServerWithDashboard {
       '/api/session/start',
       '/api/session/finish',
       '/api/session/status',
+      '/api/appTemplates',
     ];
+
+    // Also allow /api/appTemplates/* prefix without auth
+    if (pathname.startsWith('/api/appTemplates/')) {
+      return false;
+    }
 
     return !publicEndpoints.includes(pathname);
   }
@@ -502,6 +509,12 @@ export class HttpServerWithDashboard {
       }
       if (pathname === '/api/scenarios' && req.method === 'GET') {
         return this.handleGetScenarios(req, res);
+      }
+      if (pathname === '/api/appTemplates' && req.method === 'GET') {
+        return this.handleListAppTemplates(req, res);
+      }
+      if (pathname.startsWith('/api/appTemplates/') && req.method === 'GET') {
+        return this.handleGetAppTemplate(req, res, pathname);
       }
       if (pathname === '/api/scenarios/run' && req.method === 'POST') {
         return this.handleRunScenario(req, res);
@@ -950,6 +963,87 @@ export class HttpServerWithDashboard {
   /**
    * GET /api/scenarios
    */
+  /**
+   * GET /api/appTemplates
+   * Lists all available app templates (subdirectories of appTemplatesDir).
+   */
+  private handleListAppTemplates(_req: http.IncomingMessage, res: http.ServerResponse): void {
+    try {
+      const templatesDir = path.resolve(
+        process.cwd(),
+        this.config.appTemplatesDir || './apptemplates'
+      );
+      if (!fs.existsSync(templatesDir)) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, apps: [] }));
+        return;
+      }
+      const entries = fs.readdirSync(templatesDir, { withFileTypes: true });
+      const apps = entries
+        .filter(e => e.isDirectory())
+        .map(e => ({
+          name: e.name,
+          hasTree: fs.existsSync(path.join(templatesDir, e.name, 'tree.xml')),
+          hasScenarios: fs.existsSync(path.join(templatesDir, e.name, 'scenarios.xml')),
+        }));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, apps }));
+    } catch (error) {
+      this.log('error', 'appTemplates', `Failed to list app templates: ${error}`);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: String(error) }));
+    }
+  }
+
+  /**
+   * GET /api/appTemplates/{app}/tree    → tree.xml content
+   * GET /api/appTemplates/{app}/scenarios → scenarios.xml content
+   */
+  private handleGetAppTemplate(
+    _req: http.IncomingMessage,
+    res: http.ServerResponse,
+    pathname: string
+  ): void {
+    // pathname = /api/appTemplates/<app>/<file>  where file = "tree" | "scenarios"
+    const parts = pathname.replace('/api/appTemplates/', '').split('/');
+    if (parts.length !== 2) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Expected /api/appTemplates/{app}/{tree|scenarios}' }));
+      return;
+    }
+    const [appName, fileKey] = parts;
+    if (fileKey !== 'tree' && fileKey !== 'scenarios') {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: `Unknown file key '${fileKey}'. Use 'tree' or 'scenarios'.` }));
+      return;
+    }
+    // Sanitise: prevent path traversal
+    if (!appName || appName.includes('..') || appName.includes('/') || appName.includes('\\')) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Invalid app name' }));
+      return;
+    }
+    const templatesDir = path.resolve(
+      process.cwd(),
+      this.config.appTemplatesDir || './apptemplates'
+    );
+    const xmlFile = path.join(templatesDir, appName, `${fileKey}.xml`);
+    if (!fs.existsSync(xmlFile)) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: `${fileKey}.xml not found for app '${appName}'` }));
+      return;
+    }
+    try {
+      const content = fs.readFileSync(xmlFile, 'utf8');
+      res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8' });
+      res.end(content);
+    } catch (error) {
+      this.log('error', 'appTemplates', `Failed to read ${fileKey}.xml for ${appName}: ${error}`);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: String(error) }));
+    }
+  }
+
   private handleGetScenarios(req: http.IncomingMessage, res: http.ServerResponse): void {
     try {
       const scenariosDir = path.join(__dirname, '../../scenarios');

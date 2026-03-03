@@ -230,6 +230,31 @@ class HelperDaemon {
 // HelperRegistry
 // ---------------------------------------------------------------------------
 
+/** One row written to session.log (JSONL) per helper call. */
+interface SessionLogEntry {
+  ts: string;
+  seq: number;
+  helper: string;
+  target: string;
+  command: string;
+  parameter: string;
+  success: boolean;
+  durationMs: number;
+  error?: string;
+  screenshotFile?: string;
+}
+
+/** State kept for the currently-open test session. */
+interface ActiveSession {
+  name: string;
+  dir: string;
+  logPath: string;
+  logFd: number;        // open file descriptor → JSONL append
+  startTime: number;
+  commandCount: number;
+  failCount: number;
+}
+
 /**
  * Discovers .exe helpers via --api-schema, registers them as MCP tools,
  * and routes tool calls to persistent daemon processes.
@@ -240,6 +265,10 @@ export class HelperRegistry {
   private sessionToken: string | undefined;
   private sessionSecret: string | undefined;
   private searchPaths: string[] = [];
+  /** Active test-session recording state; null when no session is open. */
+  private activeSession: ActiveSession | null = null;
+  /** Base directory where session folders are created. */
+  private sessionBaseDir: string = './test-sessions';
 
   constructor(sessionToken?: string, sessionSecret?: string) {
     this.sessionToken = sessionToken;
@@ -319,6 +348,76 @@ export class HelperRegistry {
     await this.discoverHelpers(this.searchPaths);
     const helpers = this.getAll().map(s => s.helper);
     return { reloaded: helpers.length, helpers };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Test-Session Recording
+  // ---------------------------------------------------------------------------
+
+  /** Override the base directory where session folders are created. */
+  setSessionBaseDir(dir: string): void {
+    this.sessionBaseDir = dir;
+  }
+
+  /**
+   * Open a new test session.  All subsequent `callCommand()` calls will be
+   * logged to `<sessionDir>/session.log` (JSONL, one entry per call).
+   * If a session is already open it is finished first.
+   *
+   * @param name       Short label embedded in the folder name.
+   * @param overrideDir  Override the base directory for this session only.
+   */
+  startSession(name: string, overrideDir?: string): { sessionDir: string } {
+    if (this.activeSession) this.finishSession();
+
+    const base = path.resolve(overrideDir || this.sessionBaseDir);
+    const ts   = new Date().toISOString().replace(/[:.TZ]/g, (c) =>
+      c === 'T' ? '_' : c === 'Z' ? '' : '-').slice(0, 19);      // YYYY-MM-DD_HH-mm-ss
+    const safeName   = name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
+    const sessionDir = path.join(base, `${ts}_${safeName}`);
+
+    fs.mkdirSync(sessionDir, { recursive: true });
+    const logPath = path.join(sessionDir, 'session.log');
+    const logFd   = fs.openSync(logPath, 'a');
+
+    this.activeSession = { name, dir: sessionDir, logPath, logFd,
+                           startTime: Date.now(), commandCount: 0, failCount: 0 };
+
+    globalLogger.info('Session', `Started "${name}" → ${sessionDir}`);
+    return { sessionDir };
+  }
+
+  /**
+   * Close the active test session, flush logs, and write `summary.json`.
+   * Returns null if no session was open.
+   */
+  finishSession(): { sessionDir: string; logLines: number; durationMs: number; passed: number; failed: number } | null {
+    const s = this.activeSession;
+    if (!s) return null;
+    this.activeSession = null;
+
+    const durationMs = Date.now() - s.startTime;
+    const passed     = s.commandCount - s.failCount;
+    const summary    = {
+      name: s.name, passed, failed: s.failCount,
+      total: s.commandCount, durationMs,
+      startTime: new Date(s.startTime).toISOString(),
+      endTime:   new Date().toISOString(),
+    };
+
+    try {
+      fs.writeFileSync(path.join(s.dir, 'summary.json'), JSON.stringify(summary, null, 2));
+      fs.closeSync(s.logFd);
+    } catch { /* best-effort */ }
+
+    globalLogger.info('Session',
+      `Finished "${s.name}": ${passed}/${s.commandCount} ok, ${s.failCount} fail, ${durationMs}ms → ${s.dir}`);
+    return { sessionDir: s.dir, logLines: s.commandCount, durationMs, passed, failed: s.failCount };
+  }
+
+  /** Return the currently-active session dir (or null). */
+  getActiveSessionDir(): string | null {
+    return this.activeSession?.dir ?? null;
   }
 
   // ---------------------------------------------------------------------------
@@ -406,9 +505,46 @@ export class HelperRegistry {
     const daemon = this.daemons.get(helperName);
     if (!daemon) throw new Error(`No daemon for helper: ${helperName}`);
 
+    const t0     = Date.now();
     const result = await daemon.call(target, action, timeoutMs);
+    const durationMs = Date.now() - t0;
+
     globalLogger.info('keywin', `<< ${helperName}  success=${result?.success}`);
     globalLogger.logJSON('debug', 'keywin', 'Response', result);
+
+    // ── Session recording ──────────────────────────────────────────────────
+    const s = this.activeSession;
+    if (s) {
+      const success = result?.success !== false;
+      const entry: SessionLogEntry = {
+        ts: new Date().toISOString(),
+        seq: ++s.commandCount,
+        helper: helperName, target, command, parameter,
+        success, durationMs,
+        ...(success ? {} : { error: String(result?.error ?? 'unknown') }),
+      };
+      if (!success) s.failCount++;
+
+      // Write JSONL line
+      try { fs.writeSync(s.logFd, JSON.stringify(entry) + '\n'); } catch { /* best-effort */ }
+
+      // Auto-screenshot on failure for BrowserWin calls when we can infer the CDP target
+      if (!success && helperName === 'BrowserWin.exe' && /:\d+/.test(target)) {
+        try {
+          const safeName = command.replace(/[^a-zA-Z0-9_]/g, '_');
+          const ssTs     = entry.ts.replace(/[:.]/g, '-').slice(0, 19);
+          const ssFile   = path.join(s.dir, `fail_${ssTs}_${safeName}.png`);
+          const ss       = await daemon.call(target, `{SCREENSHOT:${ssFile}}`, 15000).catch(() => null);
+          if (ss?.success) {
+            entry.screenshotFile = ssFile;
+            globalLogger.info('Session', `Auto-screenshot: ${ssFile}`);
+            // Patch the JSONL line with the screenshot path (best-effort append note)
+            try { fs.writeSync(s.logFd, JSON.stringify({ seq: entry.seq, screenshotFile: ssFile }) + '\n'); } catch { /* ignore */ }
+          }
+        } catch { /* best-effort */ }
+      }
+    }
+
     return result;
   }
 

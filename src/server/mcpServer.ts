@@ -86,6 +86,9 @@ export class MCPServer {
         const saved = JSON.parse(fs.readFileSync(this.settingsPath, 'utf8'));
         this.advancedFilters = Array.isArray(saved.advancedFilters) ? saved.advancedFilters : [];
         this.disabledHelpers = Array.isArray(saved.disabledHelpers) ? saved.disabledHelpers : [];
+        if (saved.testSessionDir && typeof saved.testSessionDir === 'string') {
+          this.helperRegistry.setSessionBaseDir(saved.testSessionDir);
+        }
         globalLogger.info('Security', `Loaded ${this.advancedFilters.length} advanced filter rule(s) from dashboard-settings.json`);
         if (this.disabledHelpers.length > 0) {
           globalLogger.info('HelperRegistry', `Disabled helpers: ${this.disabledHelpers.join(', ')}`);
@@ -784,6 +787,18 @@ export class MCPServer {
 
         case 'helpers/reload':
           result = await this.helperRegistry.reloadHelpers();
+          break;
+
+        case 'session/start': {
+          const sessionName = args.name || 'unnamed';
+          const sessionDir  = args.dir as string | undefined;
+          result = { success: true, ...this.helperRegistry.startSession(sessionName, sessionDir) };
+          break;
+        }
+
+        case 'session/finish':
+          result = this.helperRegistry.finishSession() ?? { success: false, error: 'No active session' };
+          if (!('success' in result)) result = { success: true, ...result };
           break;
 
         case 'getHelperSchema': {

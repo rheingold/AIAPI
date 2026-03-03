@@ -328,6 +328,9 @@ export class HttpServerWithDashboard {
       '/api/helpers/disabled',
       '/api/helpers/toggle',
       '/api/helpers/reload',
+      '/api/session/start',
+      '/api/session/finish',
+      '/api/session/status',
     ];
 
     return !publicEndpoints.includes(pathname);
@@ -481,6 +484,15 @@ export class HttpServerWithDashboard {
       }
       if (pathname === '/api/helpers/reload' && req.method === 'POST') {
         return this.handleReloadHelpers(req, res);
+      }
+      if (pathname === '/api/session/start' && req.method === 'POST') {
+        return this.handleSessionStart(req, res);
+      }
+      if (pathname === '/api/session/finish' && req.method === 'POST') {
+        return this.handleSessionFinish(req, res);
+      }
+      if (pathname === '/api/session/status' && req.method === 'GET') {
+        return this.handleSessionStatus(req, res);
       }
       if (pathname === '/api/getHelperSchema' && req.method === 'GET') {
         return this.handleGetHelperSchema(req, res);
@@ -838,6 +850,60 @@ export class HttpServerWithDashboard {
         res.writeHead(500);
         res.end(JSON.stringify({ success: false, error: String(err) }));
       });
+  }
+
+  /**
+   * POST /api/session/start { "name": "<session-name>", "dir"?: "<override-base-dir>" }
+   * Opens a new test-session recording folder and starts JSONL logging.
+   */
+  private handleSessionStart(req: http.IncomingMessage, res: http.ServerResponse): void {
+    if (!this.helperRegistry) {
+      res.writeHead(503);
+      res.end(JSON.stringify({ success: false, error: 'HelperRegistry not available' }));
+      return;
+    }
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const { name = 'unnamed', dir } = body ? JSON.parse(body) : {};
+        const result = this.helperRegistry!.startSession(String(name), dir ? String(dir) : undefined);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, ...result }));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, error: String(e) }));
+      }
+    });
+  }
+
+  /**
+   * POST /api/session/finish
+   * Closes the active test session and writes summary.json.
+   */
+  private handleSessionFinish(req: http.IncomingMessage, res: http.ServerResponse): void {
+    if (!this.helperRegistry) {
+      res.writeHead(503);
+      res.end(JSON.stringify({ success: false, error: 'HelperRegistry not available' }));
+      return;
+    }
+    const result = this.helperRegistry.finishSession();
+    res.writeHead(200);
+    if (result) {
+      res.end(JSON.stringify({ success: true, ...result }));
+    } else {
+      res.end(JSON.stringify({ success: false, error: 'No active session' }));
+    }
+  }
+
+  /**
+   * GET /api/session/status
+   * Returns the current session directory (or null).
+   */
+  private handleSessionStatus(req: http.IncomingMessage, res: http.ServerResponse): void {
+    const dir = this.helperRegistry?.getActiveSessionDir() ?? null;
+    res.writeHead(200);
+    res.end(JSON.stringify({ success: true, sessionActive: dir !== null, sessionDir: dir }));
   }
 
   /**

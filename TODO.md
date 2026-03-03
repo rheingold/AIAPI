@@ -1040,6 +1040,271 @@ config/                 ← dashboard-settings.json (was root/)
   `"chore: reconcile project folder layout"`
 
 ---
+## 📚 App Knowledge Base — App Templates & Scenario Library (PRIORITY 2.9)
+**Trigger:** After folder-structure reconciliation. Drives AI-guided automation without
+per-session trial-and-error tree exploration.
+**Goal:** Ship a deployable folder of per-application knowledge: known control trees with
+semantic annotations, reusable scenario templates, and optional embedding vectors for
+LLM-assisted matching — all in a structured XML format that helpers can query at runtime.
+
+### Concept
+
+Each supported application gets its own sub-folder inside `apptemplates/`:
+
+```
+apptemplates/
+  calculator/
+    tree.xml           ← annotated control tree (see schema below)
+    scenarios.xml      ← reusable scenario templates
+    embeddings/        ← optional: per-engine vector files (.npy / .bin / .json)
+      openai-ada-002.bin
+      ollama-nomic-embed-text.json
+  notepad/
+    tree.xml
+    scenarios.xml
+  msword/
+    tree.xml
+    scenarios.xml
+    embeddings/
+  chrome/
+    tree.xml
+    scenarios.xml
+  ...
+```
+
+The base path is configured in `dashboard-settings.json` → `"appTemplatesDir"`.
+A Windows installer (or VS Code extension install hook) deploys a default set.
+
+---
+
+### tree.xml — Annotated Control Tree Schema
+
+```xml
+<AppTree app="calculator" version="11.2302" os="win11" helper="KeyWin.exe">
+  <meta>
+    <description lang="en">Windows Calculator (Modern UWP). Single-session app — use RESET to clear state.</description>
+    <description lang="ai">Single-session UWP calculator. Numeric buttons use AutomationId numXButton. Operator buttons: plus, minus, multiply, divide. Result read from CalculatorResults. Reset via AC button (clearEntryButton or clearButton).</description>
+    <!-- Optional per-engine embeddings inline or as external file reference -->
+    <embeddings>
+      <engine name="openai-ada-002" file="embeddings/openai-ada-002.bin" dims="1536"/>
+      <engine name="ollama-nomic-embed-text" file="embeddings/ollama-nomic-embed-text.json" dims="768"/>
+    </embeddings>
+    <!-- Known binary hashes for integrity / version identification -->
+    <binaries>
+      <binary path="C:\Windows\SystemApps\Microsoft.WindowsCalculator_*\Calculator.exe"
+              sha256="..." version="11.2302.x.0"/>
+    </binaries>
+  </meta>
+
+  <Control id="num7Button" name="Seven" role="Button" automationId="num7Button">
+    <label lang="en">The digit 7 button</label>
+    <label lang="ai">Numeric button 7; sends CLICKID num7Button to type digit 7 in current expression</label>
+    <action command="CLICKID" parameter="num7Button"/>
+  </Control>
+  <!-- ... all other controls ... -->
+  <Control id="CalculatorResults" name="Display" role="Text">
+    <label lang="en">Result display — shows current expression value</label>
+    <label lang="ai">Read this control with READ to get the current expression or result as a string</label>
+    <action command="READ" parameter=""/>
+  </Control>
+</AppTree>
+```
+
+**Tasks:**
+- [ ] Define `tree.xsd` schema (Controls, meta, embeddings, binaries sections)
+- [ ] Author `apptemplates/calculator/tree.xml` (full control set, human + AI labels)
+- [ ] Author `apptemplates/notepad/tree.xml`
+- [ ] Author `apptemplates/chrome/tree.xml` (CDP-aware, BrowserWin targets)
+- [ ] `HelperRegistry` / MCP server: expose `GET /api/appTemplates` endpoint listing all known apps
+- [ ] `GET /api/appTemplates/{app}/tree` — return the tree XML (or parsed JSON)
+- [ ] Tree diff: on first connection compare live QUERYTREE hash to stored tree hash;
+  warn if control set changed (helper version upgrade detected)
+
+---
+
+### scenarios.xml — Reusable Scenario Template Library
+
+```xml
+<ScenarioLibrary app="calculator" version="1.0">
+
+  <!-- Generic lead-in: ensure app is running and in clean state -->
+  <Scenario id="intro" label="Start / Lead-in">
+    <description lang="en">Ensure Calculator is open and in a clean state before any test.</description>
+    <description lang="ai">Check LISTWINDOWS for calc; if absent LAUNCH calc.exe; then RESET to clear expression. Use as the first step in any Calculator scenario.</description>
+    <Steps>
+      <Step action="LISTWINDOWS" target="SYSTEM" parameter=""/>
+      <Step action="LAUNCH"      target="calc.exe" parameter="" onlyIfAbsent="true"/>
+      <Step action="RESET"       target="{window}" parameter=""/>
+    </Steps>
+  </Scenario>
+
+  <!-- Generic: compute expression -->
+  <Scenario id="compute" label="Compute Expression">
+    <description lang="en">Type an arithmetic expression and read the result.</description>
+    <description lang="ai">Use SENDKEYS to type digits and operators, then SENDKEYS {ENTER} to evaluate. Read result with READ on the window.</description>
+    <Parameters>
+      <Param name="expression" type="string" example="7 * 6"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef ref="intro"/>
+      <Step action="SENDKEYS" target="{window}" parameter="{expression}"/>
+      <Step action="SENDKEYS" target="{window}" parameter="{ENTER}"/>
+      <Step action="READ"     target="{window}" parameter=""/>
+    </Steps>
+  </Scenario>
+
+  <!-- Generic teardown -->
+  <Scenario id="teardown-leave-open" label="Teardown: leave open">
+    <description lang="en">Leave Calculator open (default: non-destructive teardown).</description>
+    <Steps/>  <!-- no-op -->
+  </Scenario>
+
+</ScenarioLibrary>
+```
+
+**Key design choices:**
+- `<ScenarioRef ref="..."/>` allows recursive composition (scenario includes other scenarios)
+- `{window}` is a runtime-bound parameter filled from the intro step's LISTWINDOWS result
+- Each scenario has both `lang="en"` (human narrative) and `lang="ai"` (LLM-optimised) descriptions
+- Embedding vectors for semantic retrieval are stored in `embeddings/` alongside the tree
+
+**Tasks:**
+- [ ] Define `scenarios.xsd` schema (Scenario, Steps, Step, ScenarioRef, Parameters)
+- [ ] Author `apptemplates/calculator/scenarios.xml` with: `intro`, `compute`, `teardown-*`
+- [ ] Author `apptemplates/notepad/scenarios.xml` with: `intro`, `new-document`, `type-text`, `save`, `close-window`, `teardown-*`
+- [ ] Author `apptemplates/chrome/scenarios.xml` with: `intro`, `navigate`, `fill-form`, `read-page`, `close-tab`, `teardown-*`
+- [ ] MCP tool `executeScenario` enhancement: resolve `<ScenarioRef>` recursively at runtime
+- [ ] `GET /api/appTemplates/{app}/scenarios` REST endpoint
+- [ ] `POST /api/appTemplates/{app}/scenarios/{id}/run` — execute a named scenario template
+- [ ] Dashboard Settings tab: "App Templates" card showing loaded apps + scenario counts
+- [ ] Scenario editor: visual step builder (drag-drop reorder, ScenarioRef picker)
+
+---
+
+### Embedding Vectors (Optional, Per-Engine)
+
+Vectors allow LLM-assisted control discovery ("find the button that submits the form")
+without exact AutomationId knowledge.
+
+- [ ] Define embedding file format: JSON array `[{"id":"...", "label":"...", "vec":[...]}]`
+  or binary `.bin` (float32 LE, prepended with a small JSON header)
+- [ ] CLI tool `node tools/embed-tree.js --app calculator --engine openai-ada-002 --out apptemplates/calculator/embeddings/`
+  that calls the target engine's embedding API for each control's `lang="ai"` label
+- [ ] At runtime: `POST /api/appTemplates/{app}/tree/search` with `{"query":"...","engine":"...","topK":5}`
+  returns the top-K controls whose label vectors are closest to the query embedding
+- [ ] Multiple engines can coexist in the same `embeddings/` folder (different files)
+- [ ] Keep vectors as separate files (not inlined in tree.xml) to avoid bloating the
+  human-readable XML; `<embeddings>` in `<meta>` holds only the file references
+
+---
+
+## 🚀 Deployment Targets & Packaging (PRIORITY 3.5)
+**Trigger:** After core feature parity is stable on Windows (all current priority 2.x items done).
+**Goal:** The AIAPI server can be deployed in any environment without requiring VS Code.
+Each target shares the same TypeScript core; only the entry-point and service-wrapper differ.
+
+### Current State
+- ✅ **VS Code Extension** — primary target, works today (`src/extension.ts` activates the server)
+
+### Target Matrix
+
+| Target | OS | Priority | Notes |
+|---|---|---|---|
+| VS Code Extension | Win / Lin / Mac | ✅ done | primary target |
+| Standalone console .exe | Windows | HIGH | single `.exe`, no Node required (pkg/nexe) |
+| Windows Service | Windows | HIGH | `sc create` or NSSM wrapper; auto-start |
+| Standalone GUI tray app | Windows | MEDIUM | system-tray icon, start/stop, log viewer |
+| Linux `systemd` daemon | Linux | MEDIUM | separate machine / separate branch |
+| Linux `init.d` script | Linux | LOW | legacy distros (RHEL 7, Ubuntu 14) |
+| macOS `launchd` daemon | macOS | LOW | `launchctl load ~/Library/LaunchAgents/...` |
+| Standalone console app | Lin / Mac | MEDIUM | same binary packaged with `pkg` for each OS |
+
+> **Cross-platform note:** Linux/macOS targets will be built on a separate
+> machine (or CI runner) where the platform-specific helpers
+> (`KeyLin`, `BrowserLin`, `KeyMac`, `BrowserMac`) can be compiled.
+> The TypeScript MCP server itself is already cross-platform — only the helper
+> `.exe` launcher paths and the service-wrapper code are OS-specific.
+
+---
+
+### Windows: Standalone Console App
+- [ ] `pkg` or `nexe` config to bundle `dist/start-mcp-server.js` + `node_modules` into
+  a single `aiapi-server.exe`
+- [ ] Embed `static/` dashboard files
+- [ ] Auto-detect `dist/win/KeyWin.exe` and `dist/browser/BrowserWin.exe` relative to the bundle
+- [ ] `--port`, `--no-auth`, `--log-level`, `--session-dir` CLI flags passed through
+- [ ] CI artifact: `dist/release/aiapi-server-win-x64.exe`
+
+### Windows: Windows Service
+- [ ] NSSM-based service definition (`scripts/install-service-win.ps1`):
+  ```powershell
+  nssm install AIAPI "C:\Program Files\AIAPI\aiapi-server.exe"
+  nssm set AIAPI AppParameters "--port 3457"
+  nssm set AIAPI Start SERVICE_AUTO_START
+  nssm start AIAPI
+  ```
+- [ ] Alternatively: pure SC + wrapper `.exe` that calls `SetConsoleCtrlHandler` + `StartServiceCtrlDispatcher`
+- [ ] Windows Event Log integration (errors + startup banner written to Application log)
+- [ ] Installer (`scripts/install-win.ps1`) that: copies files, installs service, opens firewall port
+- [ ] Uninstaller (`scripts/uninstall-win.ps1`)
+
+### Windows: System-Tray GUI App
+- [ ] C# `SystemTray` wrapper (`tools/tray/TrayApp.cs`) using `NotifyIcon` + `ContextMenuStrip`
+  - Right-click menu: Start / Stop / Restart / Open Dashboard / View Logs / Exit
+  - Icon changes: grey (stopped) → green (running) → red (error)
+- [ ] Spawns `aiapi-server.exe` as a child process, monitors stdout/stderr
+- [ ] "Open Dashboard" opens `http://127.0.0.1:3458` in default browser
+- [ ] Built by `build-all.ps1` alongside KeyWin.exe and BrowserWin.exe
+
+### Linux: systemd Daemon
+> **Build on Linux machine / separate VS Code Remote host**
+- [ ] `scripts/linux/aiapi.service` systemd unit file:
+  ```ini
+  [Unit]
+  Description=AIAPI MCP Automation Server
+  After=network.target
+  [Service]
+  Type=simple
+  ExecStart=/usr/local/bin/aiapi-server --port 3457
+  Restart=on-failure
+  [Install]
+  WantedBy=multi-user.target
+  ```
+- [ ] `scripts/linux/install.sh`: copies binary, installs unit, `systemctl enable aiapi`
+- [ ] Linux helpers: `KeyLin` (AT-SPI2 / xdotool) and `BrowserLin` (CDP same as Windows)
+  compile on the Linux host and are bundled with the Linux package
+- [ ] CI: GitHub Actions job `build-linux` on `ubuntu-latest` runner
+
+### Linux: init.d Script (Legacy)
+- [ ] `/etc/init.d/aiapi` LSB-compliant init script (start / stop / restart / status)
+- [ ] Compatible with RHEL 6, Ubuntu 12, Debian 7 (sysvinit)
+
+### macOS: launchd Plist
+> **Build on macOS machine / separate VS Code Remote host**
+- [ ] `scripts/macos/com.rheingold.aiapi.plist` LaunchAgent:
+  ```xml
+  <key>ProgramArguments</key>
+  <array><string>/usr/local/bin/aiapi-server</string><string>--port</string><string>3457</string></array>
+  <key>RunAtLoad</key><true/>
+  ```
+- [ ] `scripts/macos/install.sh`: copies plist to `~/Library/LaunchAgents/`, `launchctl load`
+- [ ] macOS helpers: `KeyMac` (AX API + AppleScript) and `BrowserMac` (CDP)
+  compile on the macOS host
+- [ ] macOS code-signing and notarisation notes (required for Gatekeeper)
+
+### Windows Installer (MSI / NSIS)
+- [ ] NSIS script (`scripts/installer/aiapi-setup.nsi`) or WiX `.wxs` file
+  - Bundles: `aiapi-server.exe`, `KeyWin.exe`, `BrowserWin.exe`, `dashboard.html/css/js`, `apptemplates/`
+  - Install path: `C:\Program Files\AIAPI\`
+  - Start Menu shortcut → TrayApp
+  - Optional: install as Windows Service (checkbox)
+  - Optional: add firewall rule for port 3457/3458
+  - Uninstall: removes service, firewall rule, files
+- [ ] Version number injected from `package.json` → `package.version`
+- [ ] CI artifact: `dist/release/aiapi-setup-<version>-win-x64.exe`
+
+---
+
 
 ## �📄 MS Office Automation (PRIORITY 3)
 **Goal:** Control Word, Excel, PowerPoint with document structure access

@@ -132,6 +132,48 @@ async function reloadHelpers(expectedCount = 1, timeoutMs = 15000) {
   throw new Error(`reloadHelpers: timed out waiting for ${expectedCount} helper(s) after ${timeoutMs}ms`);
 }
 
+/**
+ * Thin wrapper around POST /api/session/start and /api/session/finish on the
+ * dashboard REST port.  Allows the test runner to open/close a session folder
+ * that HelperRegistry uses to write per-call JSONL logs + auto-screenshots.
+ */
+const testSession = {
+  /** Open a new recording session. Returns { success, sessionDir }. */
+  async start(name, overrideDir) {
+    return new Promise((resolve, reject) => {
+      const body = JSON.stringify({ name, ...(overrideDir ? { dir: overrideDir } : {}) });
+      const req  = http.request(
+        { hostname: '127.0.0.1', port: DASHBOARD_PORT, path: '/api/session/start', method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } },
+        res => { let d=''; res.on('data',c=>d+=c); res.on('end',()=>{ try{resolve(JSON.parse(d));}catch{resolve({success:false});} }); }
+      );
+      req.on('error', reject); req.write(body); req.end();
+    });
+  },
+
+  /** Close the active recording session. Returns { success, sessionDir, logLines, ... }. */
+  async finish() {
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        { hostname: '127.0.0.1', port: DASHBOARD_PORT, path: '/api/session/finish', method: 'POST' },
+        res => { let d=''; res.on('data',c=>d+=c); res.on('end',()=>{ try{resolve(JSON.parse(d));}catch{resolve({success:false});} }); }
+      );
+      req.on('error', reject); req.end();
+    });
+  },
+
+  /** Get current session dir without opening/closing. */
+  async status() {
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        { hostname: '127.0.0.1', port: DASHBOARD_PORT, path: '/api/session/status', method: 'GET' },
+        res => { let d=''; res.on('data',c=>d+=c); res.on('end',()=>{ try{resolve(JSON.parse(d));}catch{resolve({success:false});} }); }
+      );
+      req.on('error', reject); req.end();
+    });
+  },
+};
+
 // ─── test sections ──────────────────────────────────────────────────────────
 
 async function testListWindows() {
@@ -832,6 +874,13 @@ async function main() {
     process.exit(1);
   }
 
+  // ── Open test-session for log + auto-screenshots ──────────────────────────
+  const sessionLabel = `full-stack_${Date.now()}`;
+  const sessionResult = await testSession.start(sessionLabel).catch(() => null);
+  if (sessionResult?.sessionDir) {
+    console.log(` Session log: ${sessionResult.sessionDir}`);
+  }
+
   try {
     await testListWindows();
     await testListBrowsers();
@@ -841,6 +890,13 @@ async function main() {
   } catch (e) {
     console.error('\nFatal error:', e.stack || e.message);
     failed++;
+  }
+
+  // ── Close test-session and print summary ──────────────────────────────────
+  const sessionSummary = await testSession.finish().catch(() => null);
+  if (sessionSummary?.sessionDir) {
+    console.log(`\n Session log written to: ${sessionSummary.sessionDir}`);
+    console.log(`   Commands: ${sessionSummary.logLines}  |  Failed: ${sessionSummary.failed}  |  Duration: ${(sessionSummary.durationMs/1000).toFixed(1)}s`);
   }
 
   // ── 3. Teardown: stop self-hosted server if we started it ────────────────

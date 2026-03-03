@@ -911,11 +911,15 @@ Allow tests and scripts to trigger daemon restart without a full server restart:
 - [x] `test-full-stack-stdin.js` helper function `reloadHelpers()`: ✅ DONE
   - `DASHBOARD_PORT = MCP_PORT + 1` constant added
   - Calls `POST /api/helpers/reload` via HTTP, then polls `GET /api/listHelpers` (300 ms interval) until `helpers.length >= expectedCount`; default timeout 15 s
-- [ ] `--self-hosted` flag for test runner: spawns `node dist/start-mcp-server.js`,
-  polls 127.0.0.1:3457 until ready, runs full suite, then sends SIGINT for clean shutdown;
-  enables fully unattended CI runs (no manual server start required)
-- [ ] `--rebuild-first` flag: stops helpers, runs `build-all.ps1`, waits for server restart,
-  then runs tests — guarantees tests always run against the latest compiled binary
+- [x] `--self-hosted` flag for test runner ✅ DONE:
+  - Spawns `node dist/start-mcp-server.js` as child process, streams stdout/stderr with `[server]` prefix
+  - `pollUntilReady(45s)` polls tools/list until both `helper_KeyWin` and `helper_BrowserWin` appear
+  - `stopServer()`: sends SIGINT (clean shutdown) with 5 s SIGKILL fallback
+  - Tested live: spawn→poll→ready→SIGINT→graceful stop ✓
+- [x] `--rebuild-first` flag ✅ DONE:
+  - Runs `PowerShell -ExecutionPolicy Bypass -File build-all.ps1` synchronously before tests
+  - Exits test process with code 1 if build fails
+  - Combine with `--self-hosted` for fully unattended CI: `node test-full-stack-stdin.js --rebuild-first --self-hosted`
 
 ### Test-Session Recording (`_start` / `_finish` built-ins)
 **Goal:** each test run (and optionally each individual test step) creates a dated folder

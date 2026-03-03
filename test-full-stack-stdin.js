@@ -27,16 +27,27 @@
  * Change TEARDOWN_POLICY below to adjust behaviour for this run.
  */
 'use strict';
-const http = require('http');
-const fs   = require('fs');
+const http  = require('http');
+const fs    = require('fs');
+const path  = require('path');
+const { spawn, spawnSync } = require('child_process');
 
-const MCP_PORT = 3457;
+const MCP_PORT       = 3457;
 const DASHBOARD_PORT = MCP_PORT + 1; // dashboard REST API (listHelpers, helpers/reload, etc.)
 let passed = 0, failed = 0;
+
+// ── CLI flags ────────────────────────────────────────────────────────────────
+const SELF_HOSTED    = process.argv.includes('--self-hosted');
+const REBUILD_FIRST  = process.argv.includes('--rebuild-first');
+const SESSION_DIR_ARG = (process.argv.find(a => a.startsWith('--session-dir=')) || '').replace('--session-dir=', '');
+
+/** Child-process handle when --self-hosted spawns the server. */
+let _serverProc = null;
 
 // ── Teardown policy (user-configurable) ──────────────────────────────────────
 // Options: 'leave_open' | 'discard_doc' | 'close_app'
 const TEARDOWN_POLICY = 'leave_open';
+
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -693,7 +704,109 @@ async function testBrowsers() {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+/**
+ * Poll MCP_PORT until tools/list includes both helper_KeyWin and helper_BrowserWin.
+ * Used by --self-hosted to wait for server warm-up.
+ */
+function pollUntilReady(timeoutMs = 40000) {
+  const deadline = Date.now() + timeoutMs;
+  return new Promise((resolve, reject) => {
+    function attempt() {
+      if (Date.now() > deadline) {
+        reject(new Error(`Server not ready after ${timeoutMs / 1000}s`));
+        return;
+      }
+      const body = JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'tools/list', params: {} });
+      const req = http.request(
+        { hostname: '127.0.0.1', port: MCP_PORT, path: '/', method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } },
+        res => {
+          let d = '';
+          res.on('data', c => d += c);
+          res.on('end', () => {
+            try {
+              const tools = JSON.parse(d).result?.tools || [];
+              const names = tools.filter(t => t.name.startsWith('helper_')).map(t => t.name);
+              if (names.includes('helper_KeyWin') && names.includes('helper_BrowserWin')) {
+                resolve(names);
+              } else {
+                setTimeout(attempt, 700);
+              }
+            } catch { setTimeout(attempt, 700); }
+          });
+        }
+      );
+      req.setTimeout(3000, () => { req.destroy(); setTimeout(attempt, 700); });
+      req.on('error', () => setTimeout(attempt, 700));
+      req.write(body); req.end();
+    }
+    attempt();
+  });
+}
+
+/**
+ * Gracefully stop the self-hosted server process if we spawned one.
+ */
+function stopServer() {
+  if (!_serverProc) return Promise.resolve();
+  return new Promise(resolve => {
+    _serverProc.on('close', resolve);
+    // SIGINT triggers the clean-shutdown handler in start-mcp-server.ts
+    _serverProc.kill('SIGINT');
+    // Fallback hard-kill after 5 s
+    setTimeout(() => { try { _serverProc.kill('SIGKILL'); } catch {} resolve(); }, 5000);
+  });
+}
+
 async function main() {
+  // ── 0. Optional: rebuild binaries before running ──────────────────────────
+  if (REBUILD_FIRST) {
+    console.log('============================================================');
+    console.log(' Rebuilding binaries (--rebuild-first)…');
+    console.log('============================================================');
+    const buildScript = path.join(__dirname, 'build-all.ps1');
+    const result = spawnSync(
+      'PowerShell',
+      ['-ExecutionPolicy', 'Bypass', '-File', buildScript],
+      { stdio: 'inherit', encoding: 'utf8' }
+    );
+    if (result.status !== 0) {
+      console.error('Build failed — aborting tests');
+      process.exit(1);
+    }
+    console.log('Build OK\n');
+  }
+
+  // ── 1. Optional: spawn the server ourselves (--self-hosted) ───────────────
+  if (SELF_HOSTED) {
+    console.log('============================================================');
+    console.log(' Starting server (--self-hosted)…');
+    console.log('============================================================');
+    const serverJs = path.join(__dirname, 'dist', 'start-mcp-server.js');
+    _serverProc = spawn(process.execPath, [serverJs], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, MCP_PORT: String(MCP_PORT) },
+    });
+    _serverProc.stdout.on('data', d => process.stdout.write('[server] ' + d));
+    _serverProc.stderr.on('data', d => process.stderr.write('[server] ' + d));
+    _serverProc.on('close', code => {
+      if (code !== 0 && code !== null) console.error(`[server] exited with code ${code}`);
+    });
+
+    process.on('exit', () => { try { _serverProc?.kill('SIGKILL'); } catch {} });
+
+    console.log('Waiting for server + helpers to be ready…');
+    try {
+      await pollUntilReady(45000);
+      console.log('Server ready\n');
+    } catch (e) {
+      console.error('ERROR:', e.message);
+      await stopServer();
+      process.exit(1);
+    }
+  }
+
+  // ── 2. Run the test suite ─────────────────────────────────────────────────
   console.log('============================================================');
   console.log(' Full-stack MCP test  —  stdin transport (Step 1)');
   console.log('============================================================');
@@ -728,6 +841,12 @@ async function main() {
   } catch (e) {
     console.error('\nFatal error:', e.stack || e.message);
     failed++;
+  }
+
+  // ── 3. Teardown: stop self-hosted server if we started it ────────────────
+  if (_serverProc) {
+    console.log('\nStopping self-hosted server…');
+    await stopServer();
   }
 
   console.log('\n============================================================');

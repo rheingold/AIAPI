@@ -140,6 +140,80 @@ public static class HcJson
     }
 }
 
+// ── IdInjectingWriter ─────────────────────────────────────────────────────────
+/// <summary>
+/// A TextWriter wrapper that injects  "id":"&lt;CurrentId&gt;"  into every
+/// JSON-object response line (lines starting with '{') before writing to the
+/// inner writer.  Set CurrentId to the request id before each command dispatch.
+/// Lines that already contain the "id" key are passed through unchanged.
+/// Non-JSON lines (not starting with '{') are also passed through unchanged.
+///
+/// This gives us id-correlation on every response (success AND error) without
+/// touching a single Console.WriteLine inside the individual command handlers.
+/// </summary>
+public sealed class IdInjectingWriter : System.IO.TextWriter
+{
+    private readonly System.IO.TextWriter _inner;
+    private readonly StringBuilder _buf = new StringBuilder();
+
+    /// <summary>The request id injected into the next response line(s). Set before each dispatch.</summary>
+    public string CurrentId = "";
+
+    public IdInjectingWriter(System.IO.TextWriter inner) { _inner = inner; }
+
+    public override Encoding Encoding { get { return _inner.Encoding; } }
+
+    // Buffer char-by-char; flush at each newline.
+    public override void Write(char value)
+    {
+        if (value == '\n')
+            FlushBuf();
+        else if (value != '\r')
+            _buf.Append(value);
+    }
+
+    public override void Write(string value)
+    {
+        if (value == null) return;
+        foreach (char c in value) Write(c);
+    }
+
+    public override void WriteLine(string value)
+    {
+        Write(value);
+        FlushBuf();
+    }
+
+    public override void WriteLine()
+    {
+        FlushBuf();
+    }
+
+    private void FlushBuf()
+    {
+        string line = _buf.ToString();
+        _buf.Clear();
+
+        // Inject id into JSON objects when id is set and not already present.
+        if (line.Length > 0 && line[0] == '{'
+            && !string.IsNullOrEmpty(CurrentId)
+            && line.IndexOf("\"id\"", StringComparison.Ordinal) < 0)
+        {
+            line = "{\"id\":\"" + HcJson.EscapeStr(CurrentId) + "\"," + line.Substring(1);
+        }
+
+        _inner.WriteLine(line);
+        _inner.Flush();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (_buf.Length > 0) FlushBuf();
+        if (disposing) _inner.Dispose();
+        base.Dispose(disposing);
+    }
+}
+
 // ── HelperCommon ─────────────────────────────────────────────────────────────
 /// <summary>
 /// Shared CLI-flag helpers and stdin listener loop.
@@ -197,7 +271,11 @@ public static class HelperCommon
         var utf8    = new System.Text.UTF8Encoding(false);   // no BOM
         var stdin   = new System.IO.StreamReader(Console.OpenStandardInput(),  utf8);
         var stdoutW = new System.IO.StreamWriter(Console.OpenStandardOutput(), utf8) { AutoFlush = true };
-        Console.SetOut(stdoutW);   // all Console.WriteLine() calls now go through UTF-8
+        // Wrap the raw UTF-8 writer with the auto-id-injector so that every
+        // JSON object response gets the request "id" echoed automatically —
+        // no changes needed to individual command handlers.
+        var injectingWriter = new IdInjectingWriter(stdoutW);
+        Console.SetOut(injectingWriter);
 
         string line;
         while ((line = stdin.ReadLine()) != null)
@@ -208,6 +286,9 @@ public static class HelperCommon
             string id     = HcJson.GetString(line, "id")     ?? "";
             string action = HcJson.GetString(line, "action") ?? "";
             string target = HcJson.GetString(line, "target") ?? "";
+
+            // Set the current request id BEFORE any writes (covers _schema, _ping, etc.)
+            injectingWriter.CurrentId = id;
 
             // ── Built-in actions ────────────────────────────────────────────
             if (action == "_schema")

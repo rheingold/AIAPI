@@ -62,6 +62,8 @@ class HelperDaemon {
   /** Promise chain used to serialise concurrent callCommand() calls */
   private queueTail: Promise<void> = Promise.resolve();
   private shuttingDown = false;
+  /** Monotonically-incrementing request sequence — echoed by HelperCommon as "id" */
+  private requestSeq = 0;
 
   constructor(
     public readonly exePath: string,
@@ -212,7 +214,8 @@ class HelperDaemon {
           if (pr) { releaseQueue(); pr({ success: false, error: `helper_timeout: no response after ${timeoutMs}ms` }); }
         }, timeoutMs);
 
-        const msg = JSON.stringify({ id: '1', target, action }) + '\n';
+        const reqId = String(++this.requestSeq);
+        const msg = JSON.stringify({ id: reqId, target, action }) + '\n';
         try {
           this.proc!.stdin!.write(msg);
         } catch (e) {

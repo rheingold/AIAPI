@@ -921,37 +921,36 @@ Allow tests and scripts to trigger daemon restart without a full server restart:
   - Exits test process with code 1 if build fails
   - Combine with `--self-hosted` for fully unattended CI: `node test-full-stack-stdin.js --rebuild-first --self-hosted`
 
-### Test-Session Recording (`_start` / `_finish` built-ins)
-**Goal:** each test run (and optionally each individual test step) creates a dated folder
-holding log lines and screenshots so failures can be diagnosed after the fact.
+### Test-Session Recording ✅ DONE (TypeScript-only, no C# rebuild needed)
+**Implemented as a pure TypeScript intercept in `HelperRegistry.callCommand()`.**
+The C#-based `_start`/`_finish` approach from the original spec was replaced by a
+server-side intercept that is simpler and works across all helpers uniformly.
 
-- [ ] Config key `"testSessionDir"` in `dashboard-settings.json`:
-  - Absolute or relative path where session folders are written
-  - Default: `./test-sessions`
-  - Exposed in Dashboard Settings tab as a browseable path field
-
-- [ ] `{"action":"_start","session":"<name>"}` built-in (HelperCommon.cs + HelperDaemon):
+- [x] `HelperRegistry.startSession(name, overrideDir?)`:
   - Creates `<testSessionDir>/<YYYY-MM-DD_HH-mm-ss>_<name>/` folder
-  - Begins buffering: every request+response pair is appended to `session.log` as JSONL
-  - Response: `{"success":true,"sessionDir":"<path>"}`
-  - Resets any previous open session; nested calls rotate to a new folder
-
-- [ ] `{"action":"_finish","session":"<name>"}` built-in:
-  - Flushes and closes the log file
-  - Writes `summary.json`: `{passed, failed, durationMs, helper, commands[]}`
-  - Response: `{"success":true,"sessionDir":"<path>","logLines":<n>}`
-
-- [ ] Auto-SCREENSHOT on failure:
-  - After any CDP command that returns `"success":false`, if a CDP port is available,
-    automatically call `CmdScreenshot()` and save the file into the session folder
-  - Filename: `fail_<YYYY-MM-DD_HH-mm-ss>_<command>.png`
-  - Only fires when a session is open (`_start` was called)
-
-- [ ] `test-full-stack-stdin.js` integration:
-  - `testSession.start(name)` — sends `_start` to each active daemon
-  - `testSession.finish(name, result)` — sends `_finish` to each active daemon
-  - Add to test runner preamble and epilogue
-  - `--session-dir=<path>` CLI flag overrides config value for this run
+  - Opens `session.log` (JSONL, append mode)
+  - If a session is already open, closes it first
+- [x] `HelperRegistry.finishSession()`:
+  - Closes `session.log`, writes `summary.json` `{name,passed,failed,total,durationMs,startTime,endTime}`
+  - Returns `{sessionDir,logLines,durationMs,passed,failed}`
+- [x] `HelperRegistry.getActiveSessionDir()` — status query
+- [x] `HelperRegistry.callCommand()` intercept: logs every call →
+  `{ts,seq,helper,target,command,parameter,success,durationMs,error?}`
+- [x] Auto-SCREENSHOT on failure for BrowserWin calls (when target has `:PORT`):
+  saves `fail_<ts>_<command>.png` into session folder
+- [x] `setSessionBaseDir(dir)` — called from `loadAdvancedFilters()` when
+  `dashboard-settings.json` has a `"testSessionDir"` key; default `./test-sessions`
+- [x] REST endpoints on dashboard port:
+  - `POST /api/session/start  { name, dir? }` → `{success,sessionDir}`
+  - `POST /api/session/finish`               → `{success,sessionDir,logLines,durationMs,passed,failed}`
+  - `GET  /api/session/status`               → `{success,sessionActive,sessionDir|null}`
+- [x] MCP cases `session/start` and `session/finish` in `mcpServer.ts` tools/call dispatch
+- [x] `test-full-stack-stdin.js`:
+  - `testSession.start(name, overrideDir?)` / `testSession.finish()` / `testSession.status()`
+  - `main()` opens session before test sections, closes it after with summary printout
+  - `--session-dir=<path>` CLI override: SESSION_DIR_ARG constant (wiring with testSession pending)
+- [ ] Dashboard Settings tab: `testSessionDir` path field (deferred — dashboard already reads
+  it from `dashboard-settings.json` via `setSessionBaseDir`)
 
 ---
 

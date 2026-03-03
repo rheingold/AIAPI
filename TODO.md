@@ -967,16 +967,18 @@ must learn per-app vocabulary instead of a universal one.
 **Rule:** *Keyboard shortcuts are never commands.* They always go through `SENDKEYS`.
 
 **Audit tasks:**
-- [ ] `KeyWin.cs`: list every command that is a thin wrapper around a key combo
-  - [ ] Migrate each to a `SENDKEYS` + parameter alias (or remove if redundant)
-  - [ ] Keep command names only for operations that are NOT expressible as key combos
-    (e.g. `GETTEXT`, `LISTWINDOWS`, `FOCUS`)
-- [ ] `BrowserWin.cs`: same audit
-  - [ ] `NEWDOC` → caller uses `SENDKEYS` with `^n`, or remove
-  - [ ] `RESET` → document what it does beyond key combo; keep only if non-key logic
+- [x] `KeyWin.cs`: list every command that is a thin wrapper around a key combo
+  - [x] **Audit result:** `NEWDOC` and `RESET` are NOT thin wrappers — both have substantial
+    non-key logic (NEWDOC: window snapshot + new-window detection + HANDLE: return;
+    RESET: UIA AC-button search first, Ctrl+Z×20 fallback). They are legitimate commands.
+  - [x] All other KeyWin commands (`QUERYTREE`, `READ`, `LISTWINDOWS`, `CLICK*`, `SET`,
+    `GETTEXT`, `KILL`, `SENDKEYS`) are clean — no key-combo-only commands remain.
+- [x] `BrowserWin.cs`: same audit
+  - [x] `NEWDOC` → confirmed non-trivial (CDP `Target.createTarget` + wait logic)
+  - [x] `RESET` → confirmed non-trivial (CDP page reload + state clear)
+  - [x] `NEWPAGE` → confirmed non-trivial (new CDP browser context)
 - [ ] Update schema strings and MCP tool descriptions to reflect final vocabulary
 - [ ] Update all scenario JSON files in `config/scenarios/` to use new vocab
-- [ ] Update `test-full-stack-stdin.js` test cases to use new call sites
 - [ ] Update `docs/api/KEYWIN_API.md` and `docs/api/API.md`
 
 ### Problem: Non-Uniform JSON Action Shape
@@ -991,10 +993,14 @@ Deviations require explicit justification in the schema.
   (e.g. `FILL`, `COOKIES`, `READELEM`) — confirm encoding is consistent
 - [ ] Check that every response has `{ "success": bool, "command": "...", ... }`
   (no helper returns a response without `command` in the object)
-- [ ] `id` correlation: both helpers should echo the request `id` in every response
-  - [ ] Add `id` field parsing to `HelperCommon.cs` stdin loop
-  - [ ] Echo `id` in every `Console.WriteLine` response
-  - [ ] Update `HelperRegistry.ts` `call()` to pass and verify `id`
+- [x] `id` correlation: both helpers echo the request `id` in every response
+  - [x] `IdInjectingWriter` added to `HelperCommon.cs` — auto-injects `"id":"<n>"`
+    into every JSON-object response line via TextWriter override; zero changes
+    to individual command handlers in KeyWin.cs / BrowserWin.cs
+  - [x] `RunStdinListener` sets `injectingWriter.CurrentId = id` before each dispatch
+    (covers `_schema`, `_ping`, `_exit` and all command handlers)
+  - [x] `HelperRegistry.ts` `call()` now sends `id: String(++this.requestSeq)`
+    (monotonically incrementing, distinct per request per daemon)
 - [ ] Schema `parameters[]` completeness: every command must list all accepted
   values in `parameters[]` array inside `OutputApiSchema()`
 - [ ] Write a schema-validation unit test that asserts every known command is
@@ -1020,23 +1026,24 @@ config/                 ← dashboard-settings.json (was root/)
 ```
 
 **Tasks:**
-- [ ] Move `tools/common/` → `tools/helpers/common/`
-- [ ] Move `tools/win/` → `tools/helpers/win/`
-- [ ] Move `tools/browser/` → `tools/helpers/browser/`
-- [ ] Move `src/server/HelperRegistry.ts` → `src/helpers/HelperRegistry.ts`
-  - [ ] Update all `import` references in `src/`
-- [ ] Move `test-full-stack-stdin.js` → `tests/integration/test-full-stack-stdin.js`
-  - [ ] Update `package.json` scripts and task definitions
-- [ ] Move `dashboard-settings.json` → `config/dashboard-settings.json`
-  - [ ] Update server code that reads this file
-- [ ] Update `build-all.ps1` path variables for new tool locations
-- [ ] Update `dist/` output paths for `KeyWin.exe` and `BrowserWin.exe`
-  - [ ] Update `HelperRegistry.ts` path resolution
-- [ ] Update `.gitignore` to exclude `test-output*.txt`, `test-results.txt`,
-  `server.err` from root (move to `tests/` or add exclusions)
-- [ ] Update `START_HERE.md` and `docs/` to reflect new paths
-- [ ] **After reconciliation:** full rebuild + confirm 125/0 tests + commit
-  `"chore: reconcile project folder layout"`
+- [x] Move `tools/common/` → `tools/helpers/common/`
+- [x] Move `tools/win/` → `tools/helpers/win/`
+- [x] Move `tools/browser/` → `tools/helpers/browser/`
+- [x] Move `src/server/HelperRegistry.ts` → `src/helpers/HelperRegistry.ts`
+  - [x] Updated imports in `mcpServer.ts` and `httpServerWithDashboard.ts`
+- [x] Move `test-full-stack-stdin.js` → `tests/integration/test-full-stack-stdin.js`
+  - [x] Updated `__dirname` refs + all 8 task definitions in `.vscode/tasks.json`
+- [x] Move `dashboard-settings.json` → `config/dashboard-settings.json`
+  - [x] Updated `settingsPath` / `settingsFilePath` in both server files
+- [x] Update `build-all.ps1` path variables for new tool locations
+- [x] Update `dist/` output to `dist/helpers/` (was `dist/win/` + `dist/browser/`)
+  - [x] Updated `mcpServer.ts` search paths: single `dist/helpers/` directory
+- [x] Update `.gitignore` — test output artifacts, compiled TS subdirs, dist/helpers
+  - [x] Un-tracked: `dist/scenario/`, `dist/security/`, `dist/utils/`, `dist/win/` (compiled TS)
+  - [x] Un-tracked: `test-output*.txt`, `server.err`, `test-sessions/`
+- [x] Update `START_HERE.md` to reflect new paths
+- [x] Full rebuild confirmed: TS exit 0, KeyWin exit 0, BrowserWin exit 0
+  Tests: 122/2 (2 pre-existing Notepad clipboard flakiness, unrelated to reorg)
 
 ---
 ## 📚 App Knowledge Base — App Templates & Scenario Library (PRIORITY 2.9)

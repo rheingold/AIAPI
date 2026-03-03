@@ -6,7 +6,7 @@ import { QueryOptions } from '../types';
 import { ScenarioReplayer } from '../scenario/replayer';
 import { SessionTokenManager } from '../security/SessionTokenManager';
 import { globalLogger } from '../utils/Logger';
-import { HelperRegistry } from './HelperRegistry';
+import { HelperRegistry } from '../helpers/HelperRegistry';
 
 /**
  * MCP (Model Context Protocol) compliant JSON-RPC 2.0 server
@@ -33,7 +33,7 @@ export class MCPServer {
     description?: string;
   }> = [];
   private disabledHelpers: string[] = [];
-  private readonly settingsPath = path.resolve(process.cwd(), 'dashboard-settings.json');
+  private readonly settingsPath = path.resolve(process.cwd(), 'config', 'dashboard-settings.json');
 
   constructor(automationEngine?: AutomationEngine, port: number = 3457) {
     // Initialize session token manager first
@@ -67,9 +67,7 @@ export class MCPServer {
     // Initialise helper registry and discover helpers asynchronously
     this.helperRegistry = new HelperRegistry(token, secret);
     const helperSearchPaths = [
-      path.join(__dirname, '..', '..', 'dist', 'win'),
-      path.join(__dirname, '..', '..', 'dist', 'browser'),
-      path.join(__dirname, '..', '..', 'dist', 'office'),
+      path.join(__dirname, '..', '..', 'dist', 'helpers'),
     ];
     this.helperRegistry.discoverHelpers(helperSearchPaths).catch(e =>
       globalLogger.warn('HelperRegistry', `Discovery error: ${e}`)

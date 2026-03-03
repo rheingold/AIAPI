@@ -6,7 +6,21 @@ dist/*.d.ts.map
 dist/engine/
 dist/providers/
 dist/server/
-!dist/win/
+dist/scenario/
+dist/security/
+dist/utils/
+dist/win/
+dist/helpers/*.js
+dist/helpers/*.js.map
+dist/helpers/*.d.ts
+dist/helpers/*.d.ts.map
+# test output artifacts
+test-output*.txt
+test-out-*.txt
+test-results.txt
+test-run*.txt
+server.err
+test-sessions/
 *.vsix
 .DS_Store
 *.log

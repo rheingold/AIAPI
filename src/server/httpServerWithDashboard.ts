@@ -11,7 +11,7 @@ import { UIObject, ActionResult, QueryOptions } from '../types';
 import { SessionTokenManager } from '../security/SessionTokenManager';
 import { SecurityPolicy } from '../security/types';
 import { globalLogger } from '../utils/Logger';
-import { HelperRegistry } from './HelperRegistry';
+import { HelperRegistry } from '../helpers/HelperRegistry';
 
 const execFileAsync = promisify(execFile);
 
@@ -44,7 +44,7 @@ export class HttpServerWithDashboard {
   private verboseLogging: boolean = true; // Enabled by default
   private config: any = {}; // Configuration storage
   private processHashCache: Map<string, { hash: string; mtimeMs: number }> = new Map();
-  private readonly settingsFilePath: string = path.resolve(process.cwd(), 'dashboard-settings.json');
+  private readonly settingsFilePath: string = path.resolve(process.cwd(), 'config', 'dashboard-settings.json');
 
   constructor(automationEngine: AutomationEngine, sessionTokenManager?: SessionTokenManager, port?: number, helperRegistry?: HelperRegistry) {
     this.automationEngine = automationEngine;

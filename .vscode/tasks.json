@@ -51,13 +51,13 @@
 		{
 			"label": "run-full-test",
 			"type": "shell",
-			"command": "node test-full-stack-stdin.js",
+			"command": "node tests/integration/test-full-stack-stdin.js",
 			"isBackground": false
 		},
 		{
 			"label": "run-full-test-2",
 			"type": "shell",
-			"command": "node test-full-stack-stdin.js",
+			"command": "node tests/integration/test-full-stack-stdin.js",
 			"isBackground": false
 		},
 		{
@@ -75,19 +75,19 @@
 		{
 			"label": "build-and-test-newdoc",
 			"type": "shell",
-			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1 ; node test-full-stack-stdin.js",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1 ; node tests/integration/test-full-stack-stdin.js",
 			"isBackground": false
 		},
 		{
 			"label": "build-test-specialkeys",
 			"type": "shell",
-			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1 ; node test-full-stack-stdin.js",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1 ; node tests/integration/test-full-stack-stdin.js",
 			"isBackground": false
 		},
 		{
 			"label": "build-test-sendkeys-translate",
 			"type": "shell",
-			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1 ; node test-full-stack-stdin.js",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1 ; node tests/integration/test-full-stack-stdin.js",
 			"isBackground": false
 		},
 		{
@@ -98,7 +98,7 @@
 		{
 			"label": "test-with-browseruia",
 			"type": "shell",
-			"command": "node test-full-stack-stdin.js"
+			"command": "node tests/integration/test-full-stack-stdin.js"
 		},
 		{
 			"label": "build-wincommon-fix",
@@ -108,14 +108,14 @@
 		{
 			"label": "build-test-browser-uia",
 			"type": "shell",
-			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1 ; node test-full-stack-stdin.js"
+			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1 ; node tests/integration/test-full-stack-stdin.js"
 		},
 		{
 			"label": "test-uia-form",
 			"type": "shell",
 			"command": "node",
 			"args": [
-				"test-full-stack-stdin.js"
+				"tests/integration/test-full-stack-stdin.js"
 			]
 		}
 	]

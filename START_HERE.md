@@ -152,9 +152,9 @@ AIAPI/
 │   ├── server/                # MCP server + HelperRegistry
 │   ├── engine/                # Automation engine
 │   └── providers/             # Platform providers
-├── tools/win/KeyWin.cs        # KeyWin source
-├── tools/browser/BrowserWin.cs # BrowserWin source
-├── tools/common/HelperCommon.cs # Shared helper transport code
+├── tools/helpers/win/KeyWin.cs        # KeyWin source
+├── tools/helpers/browser/BrowserWin.cs # BrowserWin source
+├── tools/helpers/common/HelperCommon.cs # Shared helper transport code
 ├── scripts/                   # Build scripts
 ├── package.json               # Dependencies
 ├── tsconfig.json              # TypeScript config

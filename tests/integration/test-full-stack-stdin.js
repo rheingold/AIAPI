@@ -806,7 +806,7 @@ async function main() {
     console.log('============================================================');
     console.log(' Rebuilding binaries (--rebuild-first)…');
     console.log('============================================================');
-    const buildScript = path.join(__dirname, 'build-all.ps1');
+    const buildScript = path.join(__dirname, '..', '..', 'build-all.ps1');
     const result = spawnSync(
       'PowerShell',
       ['-ExecutionPolicy', 'Bypass', '-File', buildScript],
@@ -824,7 +824,7 @@ async function main() {
     console.log('============================================================');
     console.log(' Starting server (--self-hosted)…');
     console.log('============================================================');
-    const serverJs = path.join(__dirname, 'dist', 'start-mcp-server.js');
+    const serverJs = path.join(__dirname, '..', '..', 'dist', 'start-mcp-server.js');
     _serverProc = spawn(process.execPath, [serverJs], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, MCP_PORT: String(MCP_PORT) },

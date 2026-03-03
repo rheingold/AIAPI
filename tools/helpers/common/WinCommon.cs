@@ -1,4 +1,4 @@
-// tools/common/WinCommon.cs
+// tools/helpers/common/WinCommon.cs
 // ─────────────────────────────────────────────────────────────────────────────
 // Win32 P/Invokes, UIA helpers and input utilities shared between KeyWin.exe
 // and BrowserWin.exe.  Compiled into each executable as source — NOT a DLL.

@@ -899,17 +899,18 @@ Add to `HelperCommon.cs` `RunStdinListener()` alongside the existing `_exit`:
 ### MCP Server `helpers/reload` Endpoint
 Allow tests and scripts to trigger daemon restart without a full server restart:
 
-- [ ] Add `POST /api/helpers/reload` to `httpServerWithDashboard.ts`:
-  - Calls `helperRegistry.shutdownAll()` then `helperRegistry.discoverHelpers(searchPaths)`
-  - Returns `{"reloaded": N, "helpers": [...names...]}` with the freshly discovered list
-  - Lets AI assistants hot-reload helpers after a code change without restarting Node
-- [ ] Expose as JSON-RPC method `helpers/reload` in `mcpServer.ts` (same payload)
-- [ ] Dashboard UI: "♻️ Reload Helpers" button in the Helpers card of the Settings tab
+- [x] Add `POST /api/helpers/reload` to `httpServerWithDashboard.ts`: ✅ DONE
+  - `HelperRegistry.reloadHelpers()`: stores `searchPaths`, calls `shutdownAll()` + `schemas.clear()` + re-`discoverHelpers()`
+  - Returns `{"success":true,"reloaded": N, "helpers": [...names...]}` — confirmed live
+  - Added to `publicEndpoints` whitelist (no auth required)
+- [x] Expose as JSON-RPC method `helpers/reload` in `mcpServer.ts` (same payload) ✅ DONE
+- [x] Dashboard UI: "♻️ Reload Helpers" button in the Helpers card of the Settings tab ✅ DONE
+  - `reloadHelpers()` in `dashboard.js`: disables button during reload, shows status, re-runs `scanHelpers()` after
 
 ### Test File Self-Sufficiency
-- [ ] `test-full-stack-stdin.js` helper function `reloadHelpers()`:
-  - Calls `POST /api/helpers/reload` and waits (polls `GET /api/listHelpers`) until both
-    helpers appear, then continues — for tests that need a freshly-spawned daemon
+- [x] `test-full-stack-stdin.js` helper function `reloadHelpers()`: ✅ DONE
+  - `DASHBOARD_PORT = MCP_PORT + 1` constant added
+  - Calls `POST /api/helpers/reload` via HTTP, then polls `GET /api/listHelpers` (300 ms interval) until `helpers.length >= expectedCount`; default timeout 15 s
 - [ ] `--self-hosted` flag for test runner: spawns `node dist/start-mcp-server.js`,
   polls 127.0.0.1:3457 until ready, runs full suite, then sends SIGINT for clean shutdown;
   enables fully unattended CI runs (no manual server start required)

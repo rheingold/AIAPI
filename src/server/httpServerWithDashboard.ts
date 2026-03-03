@@ -327,6 +327,7 @@ export class HttpServerWithDashboard {
       '/api/filters/test',
       '/api/helpers/disabled',
       '/api/helpers/toggle',
+      '/api/helpers/reload',
     ];
 
     return !publicEndpoints.includes(pathname);
@@ -477,6 +478,9 @@ export class HttpServerWithDashboard {
       }
       if (pathname === '/api/listHelpers' && req.method === 'GET') {
         return this.handleListHelpers(req, res);
+      }
+      if (pathname === '/api/helpers/reload' && req.method === 'POST') {
+        return this.handleReloadHelpers(req, res);
       }
       if (pathname === '/api/getHelperSchema' && req.method === 'GET') {
         return this.handleGetHelperSchema(req, res);
@@ -811,6 +815,29 @@ export class HttpServerWithDashboard {
     }));
     res.writeHead(200);
     res.end(JSON.stringify({ success: true, helpers }));
+  }
+
+  /**
+   * POST /api/helpers/reload
+   * Shuts down all running daemon processes, clears the registry, then
+   * re-discovers helper executables from the same search paths used at startup.
+   * Use this after rebuilding helper .exe files without restarting the server.
+   */
+  private handleReloadHelpers(req: http.IncomingMessage, res: http.ServerResponse): void {
+    if (!this.helperRegistry) {
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, reloaded: 0, helpers: [] }));
+      return;
+    }
+    this.helperRegistry.reloadHelpers()
+      .then(result => {
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, ...result }));
+      })
+      .catch(err => {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, error: String(err) }));
+      });
   }
 
   /**

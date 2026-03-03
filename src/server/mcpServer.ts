@@ -782,6 +782,10 @@ export class MCPServer {
           };
           break;
 
+        case 'helpers/reload':
+          result = await this.helperRegistry.reloadHelpers();
+          break;
+
         case 'getHelperSchema': {
           const schema = this.helperRegistry.get(args.helperName);
           if (!schema) {

@@ -31,6 +31,7 @@ const http = require('http');
 const fs   = require('fs');
 
 const MCP_PORT = 3457;
+const DASHBOARD_PORT = MCP_PORT + 1; // dashboard REST API (listHelpers, helpers/reload, etc.)
 let passed = 0, failed = 0;
 
 // ── Teardown policy (user-configurable) ──────────────────────────────────────
@@ -79,6 +80,45 @@ function ok(label, r) {
 }
 function skip(label, reason) {
   console.log(`  ⊘  ${label} — ${reason}`);
+}
+
+/**
+ * Hot-reload helpers via POST /api/helpers/reload, then poll GET /api/listHelpers
+ * until the expected count of helpers are online (default: wait for ≥ 1).
+ * Useful in tests that rebuild helper exes and need a fresh daemon without
+ * restarting the whole server.
+ *
+ * @param {number} expectedCount  how many helpers to wait for (default 1)
+ * @param {number} timeoutMs      max wait in ms (default 15 000)
+ */
+async function reloadHelpers(expectedCount = 1, timeoutMs = 15000) {
+  // Trigger reload
+  await new Promise((resolve, reject) => {
+    const req = http.request(
+      { hostname: '127.0.0.1', port: DASHBOARD_PORT, path: '/api/helpers/reload', method: 'POST' },
+      res => { let d = ''; res.on('data', c => d += c); res.on('end', () => resolve(JSON.parse(d))); }
+    );
+    req.on('error', reject);
+    req.end();
+  });
+
+  // Poll until helpers come back online
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const data = await new Promise((resolve, reject) => {
+      const req = http.request(
+        { hostname: '127.0.0.1', port: DASHBOARD_PORT, path: '/api/listHelpers', method: 'GET' },
+        res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({}); } }); }
+      );
+      req.on('error', reject);
+      req.end();
+    });
+    if (data.success && Array.isArray(data.helpers) && data.helpers.length >= expectedCount) {
+      return data.helpers.map(h => h.name);
+    }
+    await new Promise(r => setTimeout(r, 300));
+  }
+  throw new Error(`reloadHelpers: timed out waiting for ${expectedCount} helper(s) after ${timeoutMs}ms`);
 }
 
 // ─── test sections ──────────────────────────────────────────────────────────

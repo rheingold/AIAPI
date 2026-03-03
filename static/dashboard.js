@@ -1862,6 +1862,10 @@ function initializeHelpers() {
     // Auto-scan on load so helpers appear without manual interaction
     scanHelpers();
   }
+  const reloadBtn = document.getElementById('btn-reload-helpers');
+  if (reloadBtn) {
+    reloadBtn.addEventListener('click', () => reloadHelpers());
+  }
 }
 
 async function scanHelpers() {
@@ -1925,6 +1929,35 @@ async function scanHelpers() {
   } catch (e) {
     statusEl.textContent = 'Scan failed';
     listEl.innerHTML = `<div class="helpers-empty error">Failed to connect: ${escapeHtml(String(e))}</div>`;
+  }
+}
+
+/**
+ * POST /api/helpers/reload — shutdown + re-discover + restart all daemons,
+ * then refresh the helpers list in the UI.
+ */
+async function reloadHelpers() {
+  const statusEl = document.getElementById('helpers-scan-status');
+  const listEl   = document.getElementById('helpers-list');
+  const btn      = document.getElementById('btn-reload-helpers');
+  if (statusEl) statusEl.textContent = 'Reloading…';
+  if (listEl)   listEl.innerHTML = '<div class="helpers-empty">Reloading helpers — stopping daemons and re-scanning…</div>';
+  if (btn)      btn.disabled = true;
+  try {
+    const resp = await fetch('/api/helpers/reload', { method: 'POST' });
+    const data = await resp.json();
+    if (data.success) {
+      if (statusEl) statusEl.textContent = `Reloaded ${data.reloaded} helper${data.reloaded !== 1 ? 's' : ''}`;
+    } else {
+      if (statusEl) statusEl.textContent = `Reload failed: ${data.error || 'unknown'}`;
+    }
+    // Refresh the list regardless (even partial reload is useful)
+    await scanHelpers();
+  } catch (e) {
+    if (statusEl) statusEl.textContent = `Reload error: ${e}`;
+    if (listEl)   listEl.innerHTML = `<div class="helpers-empty error">Reload failed: ${escapeHtml(String(e))}</div>`;
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 

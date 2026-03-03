@@ -239,6 +239,7 @@ export class HelperRegistry {
   private daemons: Map<string, HelperDaemon> = new Map();
   private sessionToken: string | undefined;
   private sessionSecret: string | undefined;
+  private searchPaths: string[] = [];
 
   constructor(sessionToken?: string, sessionSecret?: string) {
     this.sessionToken = sessionToken;
@@ -250,6 +251,7 @@ export class HelperRegistry {
   // ---------------------------------------------------------------------------
 
   async discoverHelpers(searchPaths: string[]): Promise<void> {
+    this.searchPaths = searchPaths;  // remember for reloadHelpers()
     for (const dir of searchPaths) {
       if (!fs.existsSync(dir)) continue;
       let entries: string[];
@@ -305,6 +307,18 @@ export class HelperRegistry {
   shutdownAll(): void {
     for (const daemon of this.daemons.values()) daemon.shutdown();
     this.daemons.clear();
+  }
+
+  /**
+   * Hot-reload: shutdown all daemons, clear schema registry, re-discover.
+   * Useful after rebuilding helper .exe files without restarting the server.
+   */
+  async reloadHelpers(): Promise<{ reloaded: number; helpers: string[] }> {
+    this.shutdownAll();
+    this.schemas.clear();
+    await this.discoverHelpers(this.searchPaths);
+    const helpers = this.getAll().map(s => s.helper);
+    return { reloaded: helpers.length, helpers };
   }
 
   // ---------------------------------------------------------------------------

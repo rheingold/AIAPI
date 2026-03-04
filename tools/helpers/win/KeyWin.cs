@@ -175,6 +175,14 @@ namespace KeyWin
                 return "DBLCLICK";
             if (keys.StartsWith("{HOVER:", StringComparison.OrdinalIgnoreCase))
                 return "HOVER";
+            if (keys.StartsWith("{CHECK:", StringComparison.OrdinalIgnoreCase))
+                return "CHECK";
+            if (keys.StartsWith("{UNCHECK:", StringComparison.OrdinalIgnoreCase))
+                return "UNCHECK";
+            if (keys.StartsWith("{MOUSEDOWN:", StringComparison.OrdinalIgnoreCase))
+                return "MOUSEDOWN";
+            if (keys.StartsWith("{MOUSEUP:", StringComparison.OrdinalIgnoreCase))
+                return "MOUSEUP";
             
             // Default: treat as keystroke input
             return "SENDKEYS";
@@ -256,6 +264,30 @@ namespace KeyWin
                 {
                     // Extract selector from "{READELEM:selector}"
                     var m = Regex.Match(keys, @"\{READELEM:([^}]+)\}", RegexOptions.IgnoreCase);
+                    return m.Success ? m.Groups[1].Value : "";
+                }
+
+                case "CHECK":
+                {
+                    var m = Regex.Match(keys, @"\{CHECK:([^}]+)\}", RegexOptions.IgnoreCase);
+                    return m.Success ? m.Groups[1].Value : "";
+                }
+
+                case "UNCHECK":
+                {
+                    var m = Regex.Match(keys, @"\{UNCHECK:([^}]+)\}", RegexOptions.IgnoreCase);
+                    return m.Success ? m.Groups[1].Value : "";
+                }
+
+                case "MOUSEDOWN":
+                {
+                    var m = Regex.Match(keys, @"\{MOUSEDOWN:(.+?)\}", RegexOptions.IgnoreCase);
+                    return m.Success ? m.Groups[1].Value : "";
+                }
+
+                case "MOUSEUP":
+                {
+                    var m = Regex.Match(keys, @"\{MOUSEUP:(.+?)\}", RegexOptions.IgnoreCase);
                     return m.Success ? m.Groups[1].Value : "";
                 }
                 
@@ -2083,6 +2115,44 @@ namespace KeyWin
                     return 5;
                 }
 
+                // ── CHECK / UNCHECK ──────────────────────────────────────────────────────────────
+                // Format: {CHECK:selector} or {UNCHECK:selector}  selector = AutomationId or Name
+                var checkMatch = Regex.Match(keys, @"\{(CHECK|UNCHECK):([^}]+)\}", RegexOptions.IgnoreCase);
+                if (checkMatch.Success)
+                {
+                    bool doCheck = checkMatch.Groups[1].Value.Equals("CHECK", StringComparison.OrdinalIgnoreCase);
+                    string checkSel = checkMatch.Groups[2].Value;
+                    var checkRoot = AutomationElement.FromHandle(hwnd);
+                    bool checkOk = WinUtils.ToggleElement(checkRoot, checkSel, doCheck);
+                    string checkAction = doCheck ? "check" : "uncheck";
+                    Console.WriteLine(checkOk
+                        ? "{\"success\":true,\"action\":\"" + checkAction + "\",\"selector\":\"" + EscapeJson(checkSel) + "\"}"
+                        : "{\"success\":false,\"error\":\"toggle_failed\",\"selector\":\"" + EscapeJson(checkSel) + "\"}");
+                    return checkOk ? 0 : 5;
+                }
+
+                // ── MOUSEDOWN ──────────────────────────────────────────────────────────────────
+                var mdMatch = Regex.Match(keys, @"\{MOUSEDOWN:(\d+),(\d+)\}", RegexOptions.IgnoreCase);
+                if (mdMatch.Success)
+                {
+                    int mdx = int.Parse(mdMatch.Groups[1].Value);
+                    int mdy = int.Parse(mdMatch.Groups[2].Value);
+                    WinUtils.SendMouseDown(mdx, mdy);
+                    Console.WriteLine("{\"success\":true,\"action\":\"mousedown\",\"x\":" + mdx + ",\"y\":" + mdy + "}");
+                    return 0;
+                }
+
+                // ── MOUSEUP ─────────────────────────────────────────────────────────────────────
+                var muMatch = Regex.Match(keys, @"\{MOUSEUP:(\d+),(\d+)\}", RegexOptions.IgnoreCase);
+                if (muMatch.Success)
+                {
+                    int mux = int.Parse(muMatch.Groups[1].Value);
+                    int muy = int.Parse(muMatch.Groups[2].Value);
+                    WinUtils.SendMouseUp(mux, muy);
+                    Console.WriteLine("{\"success\":true,\"action\":\"mouseup\",\"x\":" + mux + ",\"y\":" + muy + "}");
+                    return 0;
+                }
+
                 int? cx, cy;
                 if (TryParseClick(keys, out cx, out cy))
                 {
@@ -2214,7 +2284,11 @@ namespace KeyWin
             sb.AppendLine("    { \"name\": \"DBLCLICK\", \"description\": \"Double left-click at absolute screen coordinates (x,y). Opens items and triggers default actions.\", \"parameters\": [ { \"name\": \"coordinates\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{DBLCLICK:100,200}\"] },");
             sb.AppendLine("    { \"name\": \"HOVER\", \"description\": \"Move mouse cursor to screen coordinates (x,y) without clicking. Triggers hover effects and tooltips.\", \"parameters\": [ { \"name\": \"coordinates\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{HOVER:100,200}\"] },");
             sb.AppendLine("    { \"name\": \"FILL\", \"description\": \"Set value of a UI element by AutomationId or Name (ValuePattern). Fires UIA value-change so JS frameworks see the change. Format: {FILL:selector:value}\", \"parameters\": [ { \"name\": \"selector\", \"type\": \"string\", \"required\": true, \"description\": \"AutomationId or Name of the target element\" }, { \"name\": \"value\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{FILL:searchBox:hello world}\", \"{FILL:Username:admin}\"] },");
-            sb.AppendLine("    { \"name\": \"READELEM\", \"description\": \"Read the current value of a UI element by AutomationId or Name (ValuePattern or Name fallback). Format: {READELEM:selector}\", \"parameters\": [ { \"name\": \"selector\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{READELEM:searchBox}\", \"{READELEM:Username}\"] }");
+            sb.AppendLine("    { \"name\": \"READELEM\", \"description\": \"Read the current value of a UI element by AutomationId or Name (ValuePattern or Name fallback). Format: {READELEM:selector}\", \"parameters\": [ { \"name\": \"selector\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{READELEM:searchBox}\", \"{READELEM:Username}\"] },");
+            sb.AppendLine("    { \"name\": \"CHECK\", \"description\": \"Check a checkbox or radio button by AutomationId or Name. Uses TogglePattern. Idempotent: no-op if already checked.\", \"parameters\": [ { \"name\": \"selector\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{CHECK:rememberMe}\", \"{CHECK:Accept Terms}\"] },");
+            sb.AppendLine("    { \"name\": \"UNCHECK\", \"description\": \"Uncheck a checkbox by AutomationId or Name. Uses TogglePattern. Idempotent: no-op if already unchecked.\", \"parameters\": [ { \"name\": \"selector\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{UNCHECK:rememberMe}\"] },");
+            sb.AppendLine("    { \"name\": \"MOUSEDOWN\", \"description\": \"Press and hold left mouse button at screen coordinates (x,y). Use with MOUSEUP for drag-and-drop. SendInput MOUSEEVENTF_LEFTDOWN.\", \"parameters\": [ { \"name\": \"coordinates\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{MOUSEDOWN:100,200}\"] },");
+            sb.AppendLine("    { \"name\": \"MOUSEUP\", \"description\": \"Release left mouse button at screen coordinates (x,y). Completes a drag started with MOUSEDOWN. SendInput MOUSEEVENTF_LEFTUP.\", \"parameters\": [ { \"name\": \"coordinates\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{MOUSEUP:300,400}\"] }");
             sb.AppendLine("  ]");
             sb.AppendLine("}");
             

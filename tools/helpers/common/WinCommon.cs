@@ -739,6 +739,46 @@ public static class WinUtils
     }
 
     /// <summary>
+    /// Toggle a checkbox/radio button to checked (doCheck=true) or unchecked (doCheck=false).
+    /// Finds by AutomationId → Name → LabeledBy.  Uses TogglePattern; returns true when the
+    /// element reaches the desired state or was already there.  Returns false if not found or
+    /// if the element does not support TogglePattern.
+    /// </summary>
+    public static bool ToggleElement(AutomationElement root, string selector, bool doCheck)
+    {
+        if (root == null || string.IsNullOrEmpty(selector)) return false;
+        AutomationElement elem = null;
+        try
+        {
+            var c = new PropertyCondition(AutomationElement.AutomationIdProperty, selector);
+            elem = root.FindFirst(TreeScope.Descendants, c);
+        }
+        catch { }
+        if (elem == null)
+        {
+            try
+            {
+                var c = new PropertyCondition(AutomationElement.NameProperty, selector);
+                elem = root.FindFirst(TreeScope.Descendants, c);
+            }
+            catch { }
+        }
+        if (elem == null)
+            elem = FindElementByLabel(root, selector);
+        if (elem == null) return false;
+        try
+        {
+            var tp = elem.GetCurrentPattern(TogglePattern.Pattern) as TogglePattern;
+            if (tp == null) return false;
+            bool isChecked = tp.Current.ToggleState != ToggleState.Off;
+            if (doCheck  && !isChecked) { tp.Toggle(); return true; }
+            if (!doCheck && isChecked)  { tp.Toggle(); return true; }
+            return true; // Already in desired state
+        }
+        catch { return false; }
+    }
+
+    /// <summary>
     /// Focus or click an element identified by AutomationId, Name, or associated label text.
     /// For buttons/links: uses InvokePattern.
     /// For inputs, selects, etc.: fires a real SendInput mouse click at the
@@ -1298,5 +1338,27 @@ public static class WinUtils
     {
         SetCursorPos(x, y);
         Thread.Sleep(50);
+    }
+
+    /// <summary>Press and hold left mouse button at coordinates (for drag operations).</summary>
+    public static void SendMouseDown(int x, int y)
+    {
+        SetCursorPos(x, y);
+        Thread.Sleep(30);
+        INPUT[] inp = new INPUT[1];
+        inp[0].type       = INPUT_MOUSE;
+        inp[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+        SendInput(1, inp, Marshal.SizeOf(typeof(INPUT)));
+    }
+
+    /// <summary>Release left mouse button at coordinates (completes a drag).</summary>
+    public static void SendMouseUp(int x, int y)
+    {
+        SetCursorPos(x, y);
+        Thread.Sleep(10);
+        INPUT[] inp = new INPUT[1];
+        inp[0].type       = INPUT_MOUSE;
+        inp[0].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+        SendInput(1, inp, Marshal.SizeOf(typeof(INPUT)));
     }
 }

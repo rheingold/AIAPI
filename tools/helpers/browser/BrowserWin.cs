@@ -261,6 +261,18 @@ namespace BrowserWin
                 case "HOVER":
                     return CmdHover(ExtractParam(command, "HOVER"), port);
 
+                case "CHECK":
+                    return CmdCheck(ExtractParam(command, "CHECK"), port);
+
+                case "UNCHECK":
+                    return CmdUncheck(ExtractParam(command, "UNCHECK"), port);
+
+                case "MOUSEDOWN":
+                    return CmdMouseDown(ExtractParam(command, "MOUSEDOWN"), port);
+
+                case "MOUSEUP":
+                    return CmdMouseUp(ExtractParam(command, "MOUSEUP"), port);
+
                 default:
                     OutputError("Unknown command: " + command);
                     return 1;
@@ -546,6 +558,60 @@ namespace BrowserWin
                     WinUtils.SendMouseHover(hvX, hvY);
                     Console.WriteLine("{\"success\":true,\"command\":\"HOVER\",\"mode\":\"uia\""
                         + ",\"x\":" + hvX + ",\"y\":" + hvY + "}");
+                    return 0;
+                }
+
+                case "CHECK":
+                {
+                    string chSel = ExtractParam(command, "CHECK");
+                    var chRoot = AutomationElement.FromHandle(hwnd);
+                    bool chOk = WinUtils.ToggleElement(chRoot, chSel, true);
+                    Console.WriteLine(chOk
+                        ? "{\"success\":true,\"command\":\"CHECK\",\"mode\":\"uia\",\"selector\":\"" + JsonEscape(chSel) + "\"}"
+                        : "{\"success\":false,\"command\":\"CHECK\",\"error\":\"toggle_failed\",\"selector\":\"" + JsonEscape(chSel) + "\"}");
+                    return chOk ? 0 : 1;
+                }
+
+                case "UNCHECK":
+                {
+                    string uchSel = ExtractParam(command, "UNCHECK");
+                    var uchRoot = AutomationElement.FromHandle(hwnd);
+                    bool uchOk = WinUtils.ToggleElement(uchRoot, uchSel, false);
+                    Console.WriteLine(uchOk
+                        ? "{\"success\":true,\"command\":\"UNCHECK\",\"mode\":\"uia\",\"selector\":\"" + JsonEscape(uchSel) + "\"}"
+                        : "{\"success\":false,\"command\":\"UNCHECK\",\"error\":\"toggle_failed\",\"selector\":\"" + JsonEscape(uchSel) + "\"}");
+                    return uchOk ? 0 : 1;
+                }
+
+                case "MOUSEDOWN":
+                {
+                    string mdCoords = ExtractParam(command, "MOUSEDOWN");
+                    int mdX = 0, mdY = 0;
+                    if (!string.IsNullOrEmpty(mdCoords))
+                    {
+                        var mdp = mdCoords.Split(',');
+                        int px, py;
+                        if (mdp.Length == 2 && int.TryParse(mdp[0].Trim(), out px) && int.TryParse(mdp[1].Trim(), out py))
+                        { mdX = px; mdY = py; }
+                    }
+                    WinUtils.SendMouseDown(mdX, mdY);
+                    Console.WriteLine("{\"success\":true,\"command\":\"MOUSEDOWN\",\"mode\":\"uia\",\"x\":" + mdX + ",\"y\":" + mdY + "}");
+                    return 0;
+                }
+
+                case "MOUSEUP":
+                {
+                    string muCoords = ExtractParam(command, "MOUSEUP");
+                    int muX = 0, muY = 0;
+                    if (!string.IsNullOrEmpty(muCoords))
+                    {
+                        var mup = muCoords.Split(',');
+                        int px, py;
+                        if (mup.Length == 2 && int.TryParse(mup[0].Trim(), out px) && int.TryParse(mup[1].Trim(), out py))
+                        { muX = px; muY = py; }
+                    }
+                    WinUtils.SendMouseUp(muX, muY);
+                    Console.WriteLine("{\"success\":true,\"command\":\"MOUSEUP\",\"mode\":\"uia\",\"x\":" + muX + ",\"y\":" + muY + "}");
                     return 0;
                 }
 
@@ -1919,6 +1985,89 @@ namespace BrowserWin
             return 0;
         }
 
+        static int CmdCheck(string selector, int port)   { return CmdSetChecked(selector, true,  port); }
+        static int CmdUncheck(string selector, int port) { return CmdSetChecked(selector, false, port); }
+
+        static int CmdSetChecked(string selector, bool doCheck, int port)
+        {
+            if (string.IsNullOrEmpty(selector))
+                return OutputError((doCheck ? "CHECK" : "UNCHECK") + " requires a selector: {CHECK:#agree}");
+            string targetId;
+            bool hasCdp = TryGetActiveTarget(port, out targetId);
+            string cmd = doCheck ? "CHECK" : "UNCHECK";
+            if (hasCdp)
+            {
+                string safe = selector.Replace("\\", "\\\\").Replace("'", "\\'");
+                string js = "(function(){var el=document.querySelector('" + safe + "');"
+                    + "if(!el)return JSON.stringify({found:false});"
+                    + "el.checked=" + (doCheck ? "true" : "false") + ";"
+                    + "el.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + "return JSON.stringify({found:true,tag:el.tagName,checked:el.checked});"
+                    + "})()";
+                string result = CdpRuntimeEvaluate(port, targetId, js);
+                bool found = result != null && result.Contains("\"found\":true");
+                Console.WriteLine("{\"success\":" + (found ? "true" : "false") + ",\"command\":\"" + cmd
+                    + "\",\"mode\":\"cdp\",\"selector\":\"" + JsonEscape(selector)
+                    + "\",\"result\":" + (result != null ? result : "null") + "}");
+                return found ? 0 : 1;
+            }
+            Console.WriteLine("{\"success\":false,\"command\":\"" + cmd
+                + "\",\"error\":\"no_cdp\",\"selector\":\"" + JsonEscape(selector) + "\"}");
+            return 1;
+        }
+
+        static int CmdMouseDown(string coords, int port)
+        {
+            int cx = 0, cy = 0;
+            if (!string.IsNullOrEmpty(coords))
+            {
+                var cp = coords.Split(',');
+                int px, py;
+                if (cp.Length == 2 && int.TryParse(cp[0].Trim(), out px) && int.TryParse(cp[1].Trim(), out py))
+                { cx = px; cy = py; }
+            }
+            string targetId;
+            bool hasCdp = TryGetActiveTarget(port, out targetId);
+            if (hasCdp)
+            {
+                string p = "\"type\":\"mousePressed\",\"button\":\"left\",\"x\":" + cx + ",\"y\":" + cy + ",\"clickCount\":1";
+                CdpSendCommand(port, targetId, "Input.dispatchMouseEvent", p);
+                Console.WriteLine("{\"success\":true,\"command\":\"MOUSEDOWN\",\"mode\":\"cdp\",\"x\":" + cx + ",\"y\":" + cy + "}");
+            }
+            else
+            {
+                WinUtils.SendMouseDown(cx, cy);
+                Console.WriteLine("{\"success\":true,\"command\":\"MOUSEDOWN\",\"mode\":\"uia\",\"x\":" + cx + ",\"y\":" + cy + "}");
+            }
+            return 0;
+        }
+
+        static int CmdMouseUp(string coords, int port)
+        {
+            int cx = 0, cy = 0;
+            if (!string.IsNullOrEmpty(coords))
+            {
+                var cp = coords.Split(',');
+                int px, py;
+                if (cp.Length == 2 && int.TryParse(cp[0].Trim(), out px) && int.TryParse(cp[1].Trim(), out py))
+                { cx = px; cy = py; }
+            }
+            string targetId;
+            bool hasCdp = TryGetActiveTarget(port, out targetId);
+            if (hasCdp)
+            {
+                string p = "\"type\":\"mouseReleased\",\"button\":\"left\",\"x\":" + cx + ",\"y\":" + cy + ",\"clickCount\":1";
+                CdpSendCommand(port, targetId, "Input.dispatchMouseEvent", p);
+                Console.WriteLine("{\"success\":true,\"command\":\"MOUSEUP\",\"mode\":\"cdp\",\"x\":" + cx + ",\"y\":" + cy + "}");
+            }
+            else
+            {
+                WinUtils.SendMouseUp(cx, cy);
+                Console.WriteLine("{\"success\":true,\"command\":\"MOUSEUP\",\"mode\":\"uia\",\"x\":" + cx + ",\"y\":" + cy + "}");
+            }
+            return 0;
+        }
+
         // ──────────────────────────────────────────────────────────────────────
         //  CDP helpers  (HTTP-based — no WebSocket dependency for .NET 4.5)
         // ──────────────────────────────────────────────────────────────────────
@@ -2224,6 +2373,10 @@ namespace BrowserWin
             if (Regex.IsMatch(cmd, @"^\{RIGHTCLICK:", RegexOptions.IgnoreCase)) return "RIGHTCLICK";
             if (Regex.IsMatch(cmd, @"^\{DBLCLICK:",   RegexOptions.IgnoreCase)) return "DBLCLICK";
             if (Regex.IsMatch(cmd, @"^\{HOVER:",      RegexOptions.IgnoreCase)) return "HOVER";
+            if (Regex.IsMatch(cmd, @"^\{CHECK:",      RegexOptions.IgnoreCase)) return "CHECK";
+            if (Regex.IsMatch(cmd, @"^\{UNCHECK:",    RegexOptions.IgnoreCase)) return "UNCHECK";
+            if (Regex.IsMatch(cmd, @"^\{MOUSEDOWN:",  RegexOptions.IgnoreCase)) return "MOUSEDOWN";
+            if (Regex.IsMatch(cmd, @"^\{MOUSEUP:",    RegexOptions.IgnoreCase)) return "MOUSEUP";
 
             return "UNKNOWN";
         }
@@ -2302,7 +2455,11 @@ namespace BrowserWin
             sb.AppendLine("    { \"name\": \"KEYPRESS\", \"description\": \"Atomic keydown+keyup for function or navigation keys. Supported: F1-F12, HOME, END, PAGEUP, PAGEDOWN, INSERT, DELETE, ENTER, TAB, ESC, BACK, LEFT, RIGHT, UP, DOWN, APPS.\", \"parameters\": [ { \"name\": \"key\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{KEYPRESS:F5}\", \"{KEYPRESS:HOME}\"] },");
             sb.AppendLine("    { \"name\": \"RIGHTCLICK\", \"description\": \"Right-click at screen coordinates via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Param: x,y.\", \"parameters\": [ { \"name\": \"coords\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{RIGHTCLICK:320,240}\"] },");
             sb.AppendLine("    { \"name\": \"DBLCLICK\", \"description\": \"Double left-click at screen coordinates via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Param: x,y.\", \"parameters\": [ { \"name\": \"coords\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{DBLCLICK:320,240}\"] },");
-            sb.AppendLine("    { \"name\": \"HOVER\", \"description\": \"Move the cursor to screen coordinates without clicking, via CDP Input.dispatchMouseEvent (or SetCursorPos UIA fallback). Param: x,y.\", \"parameters\": [ { \"name\": \"coords\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{HOVER:320,240}\"] }");
+            sb.AppendLine("    { \"name\": \"HOVER\", \"description\": \"Move the cursor to screen coordinates without clicking, via CDP Input.dispatchMouseEvent (or SetCursorPos UIA fallback). Param: x,y.\", \"parameters\": [ { \"name\": \"coords\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{HOVER:320,240}\"] },");
+            sb.AppendLine("    { \"name\": \"CHECK\", \"description\": \"Check a checkbox by CSS selector (CDP JS el.checked=true + change event). Falls back to UIA TogglePattern when no CDP.\", \"parameters\": [ { \"name\": \"selector\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{CHECK:#agreeTerms}\", \"{CHECK:input[name=subscribe]}\"] },");
+            sb.AppendLine("    { \"name\": \"UNCHECK\", \"description\": \"Uncheck a checkbox by CSS selector (CDP JS el.checked=false + change event). Falls back to UIA TogglePattern when no CDP.\", \"parameters\": [ { \"name\": \"selector\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{UNCHECK:#newsletter}\"] },");
+            sb.AppendLine("    { \"name\": \"MOUSEDOWN\", \"description\": \"Press and hold left mouse button at screen coordinates (x,y) via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Use with MOUSEUP for drag operations.\", \"parameters\": [ { \"name\": \"coords\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{MOUSEDOWN:100,200}\"] },");
+            sb.AppendLine("    { \"name\": \"MOUSEUP\", \"description\": \"Release left mouse button at screen coordinates (x,y) via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Completes a drag started with MOUSEDOWN.\", \"parameters\": [ { \"name\": \"coords\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{MOUSEUP:300,400}\"] }");
             sb.AppendLine("  ]");
             sb.AppendLine("}");
 

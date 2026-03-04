@@ -21,6 +21,15 @@ namespace KeyWin
         static extern IntPtr GetForegroundWindow();
 
         [DllImport("user32.dll")]
+        static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+        [DllImport("kernel32.dll")]
+        static extern uint GetCurrentThreadId();
+
+        [DllImport("user32.dll")]
+        static extern bool BringWindowToTop(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
         static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
         delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
@@ -714,8 +723,19 @@ namespace KeyWin
                 // Special tokens present: bring window to foreground and use SendKeys
                 // (which handles {ENTER}, Ctrl combos, etc. natively via Windows message pump)
                 Console.Error.WriteLine("DEBUG: Special tokens present — using SendKeys.SendWait with foreground focus");
+                // AttachThreadInput trick: attach our thread to the foreground thread so
+                // SetForegroundWindow is never silently ignored by Windows focus-stealing prevention.
+                IntPtr fgWnd = GetForegroundWindow();
+                int _fgPid;
+                uint fgThread = (uint)GetWindowThreadProcessId(fgWnd, out _fgPid);
+                uint myThread = GetCurrentThreadId();
+                bool attached = fgThread != 0 && fgThread != myThread &&
+                                AttachThreadInput(fgThread, myThread, true);
+                Console.Error.WriteLine("DEBUG: AttachThreadInput attached=" + attached + " fgThread=" + fgThread + " myThread=" + myThread);
                 SetForegroundWindow(hwnd);
-                System.Threading.Thread.Sleep(200);
+                BringWindowToTop(hwnd);
+                System.Threading.Thread.Sleep(150);
+                if (attached) AttachThreadInput(fgThread, myThread, false);
                 // Translate our {CTRL+X} notation to SendKeys notation
                 // Our syntax:     {CTRL+A}  {CTRL+C} {CTRL+V} {CTRL+Z} {CTRL+S} {CTRL+END} {ENTER} {TAB}
                 // SendKeys syntax: ^a        ^c       ^v       ^z       ^s       ^{END}      {ENTER} {TAB}

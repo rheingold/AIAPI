@@ -4,24 +4,34 @@
   Annotated control/DOM tree for Google Chrome (desktop, Windows).
   Helper: BrowserWin.exe  Target: chrome (browser identifier), or PAGE:<tabId>
 
-  Chrome automation is NOT based on UIA AutomationIds (unlike KeyWin desktop apps).
-  BrowserWin uses the Chrome DevTools Protocol (CDP) over a debug port.
+  Chrome automation uses the Chrome DevTools Protocol (CDP) over the debug port.
+  There are NO UIA AutomationIds for browser content.
 
-  Interaction model:
-    - LISTBROWSERS  → find running Chrome instances / tabs
-    - LAUNCH        → start Chrome (or attach if already running)
-    - NEWPAGE       → open a new tab; returns PAGE:<tabId>
-    - NAVIGATE      → navigate a tab to a URL
-    - READ          → read page text content (body innerText) or DOM element value
-    - SENDKEYS      → focus element and type
-    - CLICKID       → click element by CSS selector or #id
-    - EXECUTE       → run arbitrary JavaScript in the page context
-    - QUERYTREE     → DOM accessibility/structure tree (limited depth via CDP)
-    - SCREENSHOT    → capture tab as image
-    - CLOSEPAGE     → close a tab
+  ════════════════════════════════════════════════════════════
+  COMMAND TAXONOMY (applies to all tree files)
+  ════════════════════════════════════════════════════════════
+  UI-technology primitives (all helpers):
+    SENDKEYS    — emit keystrokes via OS input stack
+    CLICKID     — click a control by AutomationId (UIA) or CSS selector (CDP)
+    READ        — read text content of a control/window/page (body.innerText for browser)
+    LISTWINDOWS — unified session enumeration: KeyWin returns OS HWND list;
+                   BrowserWin returns CDP tab list. Target="SYSTEM" for all, or pass
+                   a helper hint for scoping. Use the "type" field in the response
+                   to distinguish OS windows from browser tabs.
+  CDP-protocol commands (BrowserWin.exe only, prefix CDP_):
+    CDP_NAVIGATE   — CDP Page.navigate(url)         keyboard scenario: {CTRL+L}+url+{ENTER}
+    CDP_NEWPAGE    — CDP Target.createTarget({})    keyboard scenario: SENDKEYS {CTRL+T}
+    CDP_CLOSEPAGE  — CDP Target.closeTarget(id)     keyboard scenario: SENDKEYS {CTRL+W}
+    CDP_EXECUTE    — CDP Runtime.evaluate(code)     no keyboard equivalent
+    CDP_PAGESOURCE — CDP Page.getAccessibilityTree  no keyboard equivalent
+    CDP_SCREENSHOT — CDP Page.captureScreenshot     no keyboard equivalent
+  Application-level compound operations → scenarios.xml ONLY.
+  KILL routing: determined by target type — HANDLE:xxx → KeyWin.exe (process kill);
+    PAGE:xxx or chrome:xxx → BrowserWin.exe (tab/process close via CDP).
+  ════════════════════════════════════════════════════════════
 
   Targeting nomenclature:
-    "chrome"             — the browser itself (for LAUNCH, LISTBROWSERS)
+    "chrome"             — the browser process (LISTWINDOWS, LAUNCH)
     "chrome:PAGE:N"      — specific tab by index (0-based)
     "chrome:URL:<url>"   — tab matching URL prefix
     "chrome:TITLE:<t>"   — tab matching title substring
@@ -39,34 +49,41 @@
       There are NO UIA AutomationIds for browser content — all element targeting uses
       CSS selectors, XPath, or semantic role queries via CDP / accessibility tree.
 
-      Entry point:
-        LISTBROWSERS target="SYSTEM"  → list running browser instances (chrome/edge/firefox)
-        LAUNCH       target="chrome"  → launch Chrome (or attach); returns tab list
-        NEWPAGE      target="chrome"  → open a blank new tab; returns PAGE:&lt;id&gt;
+      Unified commands (shared with KeyWin; routed by helper context):
+        LISTWINDOWS  target="chrome"          → list tabs/instances (BrowserWin handles)
+        LISTWINDOWS  target="SYSTEM"          → list all — returns mix of HWND and PAGE entries
+        LAUNCH       target="chrome"          → launch or attach; returns tab list
+        READ         parameter=""             → body.innerText (full page text)
+        READ         parameter="css:#id"      → element text or input.value
+        SENDKEYS     parameter="css:#inp|text"→ focus element by selector, then type
+        CLICKID      parameter="css:#btn"     → click by CSS selector
+        CLICKID      parameter="role:button[name]" → click by ARIA role
 
-      Per-tab operations (use PAGE:&lt;id&gt; or chrome:TITLE:&lt;text&gt;):
-        NAVIGATE     parameter="https://..."    navigate to URL
-        READ         parameter=""               read body text (innerText)
-        READ         parameter="css:#id"        read element text or value
-        SENDKEYS     parameter="css:#inp|text"  focus element by selector, then type
-        CLICKID      parameter="css:#btn"       click element by CSS selector
-        EXECUTE      parameter="&lt;js code&gt;"  run JS; returns serialized result
-        QUERYTREE    parameter=""               returns DOM accessibility/snapshot tree
-        SCREENSHOT   parameter=""               returns base64 PNG of full tab
-        CLOSEPAGE    target="PAGE:&lt;id&gt;"      close a specific tab
+      CDP protocol commands (BrowserWin.exe only — prefix CDP_):
+        CDP_NAVIGATE    parameter="https://..."→ navigate tab (fast, direct; keyboard alt = {CTRL+L}+url+{ENTER})
+        CDP_NEWPAGE     parameter=""          → open blank tab; returns PAGE:id  (keyboard alt = SENDKEYS {CTRL+T})
+        CDP_CLOSEPAGE   target="PAGE:id"      → close tab  (keyboard alt = SENDKEYS {CTRL+W})
+        CDP_EXECUTE     parameter="&lt;js&gt;" → Runtime.evaluate; returns serialized result
+        CDP_PAGESOURCE  parameter=""          → accessibility tree snapshot (Page.getAccessibilityTree)
+        CDP_SCREENSHOT  parameter=""          → base64 PNG of full tab (Page.captureScreenshot)
 
       Selector syntax for parameter:
-        "css:&lt;sel&gt;"   CSS selector       e.g. "css:#username"
-        "css:&lt;sel&gt;|&lt;text&gt;" focus by sel, type text  
-        "xpath:&lt;expr&gt;" XPath expression
-        "role:&lt;role&gt;" ARIA role          e.g. "role:button[Find]"
-        ""           no specific element (page-level for READ/SENDKEYS)
+        "css:&lt;sel&gt;"            CSS selector          e.g. "css:#username"
+        "css:&lt;sel&gt;|&lt;text&gt;" focus by sel, type   (used with SENDKEYS)
+        "xpath:&lt;expr&gt;"         XPath expression
+        "role:&lt;role&gt;[name]"    ARIA role + name       e.g. "role:button[Search]"
+        ""                          page-level (for READ/SENDKEYS without element target)
 
-      Keyboard shortcuts (via SENDKEYS with no element / window-level):
-        {CTRL+T}  new tab       {CTRL+W}  close tab    {CTRL+L}  focus address bar
-        {CTRL+R}  reload        {F5}      reload        {ESCAPE}  cancel/dismiss
-        {TAB}     next field    {ENTER}   submit        {F12}     DevTools
-        {CTRL+F}  find in page  {ALT+LEFT} back         {ALT+RIGHT} forward
+      KILL routing:
+        KILL on PAGE:&lt;id&gt; or chrome:xxx → BrowserWin.exe (CDP tab/process close)
+        KILL on HANDLE:&lt;hwnd&gt;          → KeyWin.exe     (OS process termination)
+        The HelperRegistry resolves the correct helper by target prefix.
+
+      Keyboard shortcuts (via SENDKEYS — no element target, window-level):
+        {CTRL+T}  new tab       {CTRL+W}  close tab      {CTRL+L}  focus address bar
+        {CTRL+R}  reload        {F5}      reload          {ESCAPE}  cancel
+        {TAB}     next field    {ENTER}   submit          {F12}     DevTools
+        {CTRL+F}  find in page  {ALT+LEFT} back           {ALT+RIGHT} forward
     </description>
     <binaries>
       <binary path="C:\Program Files\Google\Chrome\Application\chrome.exe"
@@ -82,60 +99,69 @@
        BROWSER-LEVEL CONTROLS
        ═══════════════════════════════════════ -->
 
+  <Group id="browser-process" label="Browser process"
+         note="Process-level operations — session discovery, launch, CDP port management."/>
+
   <Control id="_browser_" type="BrowserInstance" scope="browser-level">
     <label lang="en">The Chrome browser process.  Target: "chrome".</label>
     <label lang="ai">
-      Use for browser-level operations: LAUNCH, LISTBROWSERS, NEWPAGE.
-      The response to NEWPAGE includes a PAGE:&lt;id&gt; token for further tab operations.
+      LISTWINDOWS target="chrome" → list open tabs (BrowserWin routes to CDP port discovery).
+      LAUNCH opens Chrome if not running, or attaches to existing instance.
+      CDP_NEWPAGE → open a blank tab (preferred over SENDKEYS {CTRL+T} for reliable PAGE:id return).
+      KILL target="chrome" → terminates the Chrome process via BrowserWin.exe.
     </label>
-    <action command="LISTBROWSERS" target="SYSTEM"  parameter=""           note="list all running browser instances"/>
-    <action command="LAUNCH"       target="chrome"  parameter=""           note="launch or attach; returns tab list"/>
-    <action command="NEWPAGE"      target="chrome"  parameter=""           note="open blank tab; returns PAGE:id"/>
-    <action command="NEWPAGE"      target="chrome"  parameter="{{url}}"    note="open tab at URL; returns PAGE:id"/>
+    <action command="LISTWINDOWS"   target="SYSTEM" parameter=""        note="list all sessions — BrowserWin returns CDP tab list, KeyWin returns HWND list"/>
+    <action command="LAUNCH"        target="chrome" parameter=""        note="launch or attach; returns tab list"/>
+    <action command="CDP_NEWPAGE"   target="chrome" parameter=""        note="open blank tab via CDP; returns PAGE:id  (keyboard alt: SENDKEYS {CTRL+T})"/>
+    <action command="CDP_NEWPAGE"   target="chrome" parameter="{{url}}" note="open tab at URL directly via CDP"/>
   </Control>
 
   <!-- ═══════════════════════════════════════
        TAB-LEVEL CONTROLS (per-page)
        ═══════════════════════════════════════ -->
 
+  <Group id="tab" label="Per-tab content operations"
+         note="All content commands target PAGE:&lt;id&gt;. Universal primitives + CDP_ protocol commands."/>
+
   <Control id="_tab_" type="BrowserTab" scope="tab-level" target="PAGE:{{tabId}}">
     <label lang="en">A single Chrome tab.  Target: PAGE:&lt;tabId&gt;.</label>
     <label lang="ai">
-      All content operations target a specific tab via PAGE:&lt;id&gt;.
-      Use NAVIGATE to load a URL.
-      Use QUERYTREE for DOM snapshot (returns accessibility tree — limited depth).
-      Use READ for visible text.  Use EXECUTE for arbitrary JS.
+      Universal commands (READ, SENDKEYS, CLICKID) work the same as on UIA targets.
+      CDP_ commands are direct DevTools Protocol calls — fast but BrowserWin-only.
+      CDP_NAVIGATE is preferred over the keyboard scenario ({CTRL+L}+url+{ENTER}) for
+        speed and reliable load-complete signalling.
+      CDP_PAGESOURCE returns the accessibility tree (not raw HTML — use CDP_EXECUTE
+        document.documentElement.outerHTML for raw HTML).
     </label>
-    <action command="NAVIGATE"   parameter="{{url}}"         note="navigate to a URL"/>
-    <action command="READ"       parameter=""                note="read body.innerText"/>
-    <action command="READ"       parameter="css:{{sel}}"     note="read element text/value"/>
-    <action command="SENDKEYS"   parameter="{{text}}"        note="type text (no focus change)"/>
-    <action command="SENDKEYS"   parameter="css:{{sel}}|{{text}}" note="focus element, then type"/>
-    <action command="CLICKID"    parameter="css:{{sel}}"     note="click element by CSS selector"/>
-    <action command="CLICKID"    parameter="role:{{role}}"   note="click by ARIA role"/>
-    <action command="EXECUTE"    parameter="{{jsCode}}"      note="run JS; returns result"/>
-    <action command="QUERYTREE"  parameter=""                note="DOM/accessibility snapshot"/>
-    <action command="SCREENSHOT" parameter=""                note="full-page PNG (base64)"/>
-    <action command="CLOSEPAGE"  parameter=""                note="close this tab"/>
+    <!-- Universal UI primitives -->
+    <action command="READ"           parameter=""                note="read body.innerText"/>
+    <action command="READ"           parameter="css:{{sel}}"     note="read element text/value"/>
+    <action command="SENDKEYS"       parameter="{{text}}"        note="type text at current focus"/>
+    <action command="SENDKEYS"       parameter="css:{{sel}}|{{text}}" note="focus element, then type"/>
+    <action command="CLICKID"        parameter="css:{{sel}}"     note="click element by CSS selector"/>
+    <action command="CLICKID"        parameter="role:{{role}}"   note="click by ARIA role"/>
+    <!-- CDP-protocol commands (BrowserWin.exe only) -->
+    <action command="CDP_NAVIGATE"   parameter="{{url}}"         note="navigate tab; waits for load  (keyboard alt: {CTRL+L}+url+{ENTER})"/>
+    <action command="CDP_EXECUTE"    parameter="{{jsCode}}"      note="Runtime.evaluate; returns JSON-serialized result"/>
+    <action command="CDP_PAGESOURCE" parameter=""                note="accessibility tree snapshot (Page.getAccessibilityTree)"/>
+    <action command="CDP_SCREENSHOT" parameter=""                note="full-tab PNG, base64-encoded"/>
+    <action command="CDP_CLOSEPAGE"  parameter=""                note="close this tab via CDP  (keyboard alt: SENDKEYS {CTRL+W})"/>
   </Control>
 
-  <!-- ═══════════════════════════════════════
-       COMMON PAGE ELEMENTS (semantic IDs)
-       These are semantic role/marker names, not real AutomationIds.
-       Use as CSS selector targets.
-       ═══════════════════════════════════════ -->
+  <Group id="page-semantics" label="Semantic page-element patterns"
+         note="Not real AutomationIds — reusable CSS selector patterns for common page structures."/>
 
   <Control id="addressBar" type="Input" scope="browser-chrome"
            selector="omnibox"
            note="Chrome address / omnibox bar — not in DOM; use SENDKEYS {CTRL+L}">
     <label lang="en">Chrome address bar (omnibar).</label>
     <label lang="ai">
-      Not a DOM element.  Focus with {CTRL+L} via SENDKEYS on the tab.
-      Then type URL and press {ENTER} to navigate.
-      Alternatively use NAVIGATE command directly (preferred).
+      Not a DOM element.  Focus with {CTRL+L} via SENDKEYS on the tab,
+      then type URL and press {ENTER} to navigate.
+      Prefer CDP_NAVIGATE on the tab target for reliable load-complete signalling.
     </label>
-    <action command="SENDKEYS" parameter="{CTRL+L}"   note="focus address bar"/>
-    <action command="SENDKEYS" parameter="{{url}}{ENTER}" note="then type URL and navigate"/>
+    <action command="SENDKEYS" parameter="{CTRL+L}"        note="focus address bar"/>
+    <action command="SENDKEYS" parameter="{{url}}{ENTER}" note="type URL and navigate (keyboard scenario)"/>
   </Control>
 
   <Control id="formInput"  type="Input"  scope="page-content" selector="css:input[type=text],input:not([type])">
@@ -146,10 +172,10 @@
       Use CLICKID first if the field needs a click to activate (e.g. custom dropdowns).
       Check with EXECUTE: document.querySelector('#id').value to verify.
     </label>
-    <action command="SENDKEYS" parameter="css:{{sel}}|{{value}}" note="focus and type into input"/>
-    <action command="CLICKID"  parameter="css:{{sel}}"           note="click to focus/activate"/>
-    <action command="EXECUTE"  parameter="document.querySelector('{{sel}}').value = '{{value}}'" note="set value via JS (no events)"/>
-    <action command="EXECUTE"  parameter="document.querySelector('{{sel}}').value"               note="read current field value"/>
+    <action command="SENDKEYS"     parameter="css:{{sel}}|{{value}}"  note="focus and type into input"/>
+    <action command="CLICKID"      parameter="css:{{sel}}"             note="click to focus/activate"/>
+    <action command="CDP_EXECUTE"  parameter="document.querySelector('{{sel}}').value = '{{value}}'" note="set value via JS (no events fired)"/>
+    <action command="CDP_EXECUTE"  parameter="document.querySelector('{{sel}}').value"               note="read current field value"/>
   </Control>
 
   <Control id="submitButton" type="Button" scope="page-content" selector="css:button[type=submit],input[type=submit]">
@@ -170,10 +196,10 @@
       For structured data use EXECUTE: JSON.stringify(…) to return arrays/objects.
       innerText includes only visible text; use innerHTML or textContent via EXECUTE for more.
     </label>
-    <action command="READ"    parameter=""          note="returns body.innerText"/>
-    <action command="EXECUTE" parameter="document.title"            note="get page title"/>
-    <action command="EXECUTE" parameter="window.location.href"      note="get current URL"/>
-    <action command="EXECUTE" parameter="document.body.innerText.substring(0,500)" note="first 500 chars"/>
+    <action command="READ"         parameter=""                                                note="returns body.innerText"/>
+    <action command="CDP_EXECUTE"  parameter="document.title"                                  note="get page title"/>
+    <action command="CDP_EXECUTE"  parameter="window.location.href"                            note="get current URL"/>
+    <action command="CDP_EXECUTE"  parameter="document.body.innerText.substring(0,500)"        note="first 500 chars of text"/>
   </Control>
 
 </AppTree>

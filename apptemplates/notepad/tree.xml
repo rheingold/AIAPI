@@ -3,16 +3,18 @@
   apptemplates/notepad/tree.xml
   Annotated UIA tree for Windows 11 Notepad (UWP, tabbed).
   Helper: KeyWin.exe  Target: notepad.exe or HANDLE:<hwnd>
-  Window mode: multi_document (each tab is a document; use NEWDOC for a new tab)
+  Window mode: multi_document (each open document is a separate tab in one process)
 
   NOTE: Windows 11 Notepad (com.microsoft.windowsnotepad) is a UWP / WinUI 3 app.
   It does NOT expose named AutomationIds for the main text edit area via UIA.
-  The primary interaction model is:
-    - READ the window  → returns the full document text
-    - SENDKEYS         → types text or sends keyboard shortcuts
-    - NEWDOC           → opens a new tab (Ctrl+N), returns the new window HANDLE:
-    - QUERYTREE        → returns limited structure (TitleBar, Pane children); no text-edit Id
-  There is no stable AutomationId for the text editor itself — target is the window handle.
+
+  Command taxonomy (applies to all tree files):
+    <action> elements are ONLY UI-technology primitives:
+      SENDKEYS  — emit keystrokes via OS input stack
+      READ      — read text content / Name property of a control or window
+      CLICKID   — click a UIA control by AutomationId
+    Application-level operations ("open new tab", "save as", "undo all") → scenarios.xml.
+    "Open new tab" = SENDKEYS {CTRL+N} — listed in scenarios.xml as scenario id="new-document".
 -->
 <AppTree app="notepad" version="11.2309" os="win11" helper="KeyWin.exe"
          window_mode="multi_document" process="notepad.exe">
@@ -20,28 +22,26 @@
   <meta>
     <description lang="en">
       Windows 11 Notepad (Tabbed UWP). Multi-document app — multiple tabs per window.
-      Use NEWDOC to open a new tab instead of launching a second process.
-      Use SENDKEYS for typing, clipboard operations (Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+Z).
-      Use READ to read the full document text.
-      Use QUERYTREE to inspect top-level structure (limited AutomationId exposure).
+      Use SENDKEYS {CTRL+N} (scenario: new-document) to open a new tab instead of launching
+      a second process. All text operations use SENDKEYS or READ on the window handle.
     </description>
     <description lang="ai">
       Multi-document tabbed Notepad (Windows 11 UWP).  One process, many tabs.
-      Main interaction:
-        READ        → entire document text as a string
-        SENDKEYS    → type characters or keyboard shortcuts
-        NEWDOC      → new tab (returns HANDLE: of new or existing window)
-        QUERYTREE   → structural info only (TitleBar, Pane children); no text-edit AutomationId
+      Main UIA primitives available:
+        READ      → entire document text as a string
+        SENDKEYS  → type characters or keyboard shortcuts
       Key SENDKEYS shortcuts:
-        {CTRL+A}  select all    {CTRL+C}  copy    {CTRL+V}  paste
-        {CTRL+Z}  undo          {CTRL+S}  save    {CTRL+W}  close tab
-        {CTRL+N}  new tab (same as NEWDOC)         {CTRL+P}  print
-        {ENTER}   newline       {BACK}    backspace {DELETE}  delete
-      Targeting: use HANDLE:&lt;hwnd&gt; for precise tab targeting after NEWDOC.
-      Window title pattern: "&lt;filename&gt; – Poznámkový blok" (Czech) or
-        "&lt;filename&gt; – Notepad" (English); "Bez názvu" / "Untitled" = unsaved.
-      To read clipboard: SENDKEYS {CTRL+A}{CTRL+C} then READ is unreliable for
-        large text; prefer READ directly on the window for full content.
+        {CTRL+A}       select all       {CTRL+C}  copy       {CTRL+V}  paste
+        {CTRL+Z}       undo             {CTRL+S}  save       {CTRL+W}  close tab
+        {CTRL+N}       new tab          {CTRL+P}  print
+        {ENTER}        newline          {BACK}    backspace  {DELETE}  delete
+      Application-level operations are expressed as scenarios:
+        new-document   → SENDKEYS {CTRL+N}  (see scenarios.xml)
+        save-as        → SENDKEYS {CTRL+SHIFT+S} + type path + {ENTER}
+        close-tab      → SENDKEYS {CTRL+W}
+      Targeting: use HANDLE:&lt;hwnd&gt; for precise tab targeting.
+      Window title pattern: "&lt;filename&gt; – Poznámkový blok" (CZ) or
+        "&lt;filename&gt; – Notepad" (EN); "Bez názvu" / "Untitled" = unsaved.
     </description>
     <binaries>
       <binary path="C:\Program Files\WindowsApps\Microsoft.WindowsNotepad_*\Notepad\Notepad.exe"
@@ -59,6 +59,9 @@
     The controls below are the structural elements that DO have IDs.
   -->
 
+  <Group id="window-chrome" label="Window chrome"
+         note="Structural/chrome controls — TitleBar and the synthetic window target. Read-only or keyboard-only."/>
+
   <Control id="TitleBar" type="TitleBar">
     <label lang="en">Title bar — shows current document name and unsaved-changes indicator (*)</label>
     <label lang="ai">
@@ -68,7 +71,10 @@
     </label>
   </Control>
 
-  <!-- Synthetic "window" control — the target for READ and SENDKEYS -->
+  <Group id="document-area" label="Document area (window-level, no AutomationId)"
+         note="All text I/O uses the window handle directly — no AutomationId for the edit area in Win11 UWP Notepad."/>
+
+  <!-- Synthetic control — represents the window target for READ / SENDKEYS -->
   <Control id="_window_" type="Window" note="synthetic — target is the hwnd, not an AutomationId">
     <label lang="en">The Notepad window / document area.  READ returns full text content.</label>
     <label lang="ai">
@@ -79,14 +85,14 @@
       To select all:    SENDKEYS {CTRL+A}.
       To replace all:   SENDKEYS {CTRL+A} then type new text (replaces selection).
     </label>
-    <action command="READ"     parameter=""       note="reads full document text"/>
-    <action command="SENDKEYS" parameter="{text}" note="types at current cursor position"/>
+    <action command="READ"     parameter=""         note="reads full document text"/>
+    <action command="SENDKEYS" parameter="{text}"   note="types at current cursor position"/>
     <action command="SENDKEYS" parameter="{CTRL+A}" note="select all"/>
     <action command="SENDKEYS" parameter="{CTRL+C}" note="copy selection to clipboard"/>
     <action command="SENDKEYS" parameter="{CTRL+V}" note="paste from clipboard"/>
     <action command="SENDKEYS" parameter="{CTRL+Z}" note="undo"/>
     <action command="SENDKEYS" parameter="{CTRL+S}" note="save (Ctrl+S)"/>
-    <action command="NEWDOC"   parameter=""       note="open new tab; returns HANDLE:"/>
+    <!-- New tab / new document: use scenarios.xml scenario id=&quot;new-document&quot; (SENDKEYS {CTRL+N}) -->
   </Control>
 
 </AppTree>

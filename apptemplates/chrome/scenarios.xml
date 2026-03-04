@@ -4,7 +4,7 @@
   Reusable scenario fragments for Google Chrome (BrowserWin.exe / CDP).
 
   Placeholders:
-    {{tabId}}    — tab id (from NEWPAGE or LISTBROWSERS), used as PAGE:{{tabId}} target
+    {{tabId}}    — tab id (from CDP_NEWPAGE or LISTWINDOWS), used as PAGE:{{tabId}} target
     {{url}}      — full URL to navigate to  (e.g. "https://example.com/search")
     {{sel}}      — CSS selector             (e.g. "input#query", "[name=q]")
     {{xpath}}    — XPath expression
@@ -23,15 +23,15 @@
       Sets {{tabId}} for subsequent steps.
     </description>
     <description lang="ai">
-      1. LISTBROWSERS → look for Chrome in the list.
-      2. If a Chrome instance is found: note the first available tab id as {{tabId}}.
+      1. LISTWINDOWS target="SYSTEM" → look for Chrome entries in the list.
+      2. If a Chrome instance is found: note the first tab id as {{tabId}}.
       3. If Chrome is NOT found: LAUNCH target="chrome" → Chrome opens with a blank tab.
-         Capture the PAGE:id from the NEWPAGE response or LISTBROWSERS after launch.
-      After intro, {{tabId}} is a valid tab that can receive NAVIGATE/READ/etc.
+         Capture the PAGE:id from the CDP_NEWPAGE response or LISTWINDOWS after launch.
+      After intro, {{tabId}} is a valid tab that can receive CDP_NAVIGATE/READ/etc.
     </description>
     <steps>
-      <step action="LISTBROWSERS" target="SYSTEM" parameter=""
-            note="list running browser instances → select Chrome tab → assign {{tabId}}"/>
+      <step action="LISTWINDOWS" target="SYSTEM" parameter=""
+            note="list all sessions → filter for Chrome entries → assign {{tabId}}"/>
     </steps>
   </Scenario>
 
@@ -43,7 +43,7 @@
     <description lang="ai">
       Use when Chrome is definitively not running.
       LAUNCH opens Chrome with the default new-tab page.
-      Follow with NEWPAGE or NAVIGATE on the returned tab id.
+      Follow with CDP_NEWPAGE or CDP_NAVIGATE on the returned tab id.
     </description>
     <steps>
       <step action="LAUNCH" target="chrome" parameter=""
@@ -58,13 +58,13 @@
     <ScenarioRef ref="intro"/>
     <description lang="en">Open a new blank tab.  Returns PAGE:id as {{tabId}}.</description>
     <description lang="ai">
-      NEWPAGE opens a blank tab (about:newtab).
+      CDP_NEWPAGE opens a blank tab (about:newtab) via CDP Target.createTarget.
+      Preferred over SENDKEYS {CTRL+T} for reliable PAGE:id return.
       Reassign {{tabId}} from the response before continuing.
-      Preferred over Ctrl+T keyboard shortcut for reliable tab id tracking.
     </description>
     <steps>
-      <step action="NEWPAGE" target="chrome" parameter=""
-            note="opens blank tab; capture returned PAGE:id as {{tabId}}"/>
+      <step action="CDP_NEWPAGE" target="chrome" parameter=""
+            note="opens blank tab via CDP; capture returned PAGE:id as {{tabId}}"/>
     </steps>
   </Scenario>
 
@@ -75,13 +75,14 @@
     <ScenarioRef ref="intro"/>
     <description lang="en">Navigate tab {{tabId}} to {{url}}.</description>
     <description lang="ai">
-      Uses NAVIGATE command — cleaner and more reliable than Ctrl+L + type + Enter.
-      After NAVIGATE, the tab loads the page; allow a brief wait before READ/QUERYTREE.
+      Uses CDP_NAVIGATE — direct CDP Page.navigate call, cleaner and more reliable
+      than the keyboard scenario ({CTRL+L}+url+{ENTER}).
+      After CDP_NAVIGATE, the tab loads the page; allow a brief wait before READ/CDP_PAGESOURCE.
       The response includes the final URL (after redirects) and page title.
     </description>
     <steps>
-      <step action="NAVIGATE" target="PAGE:{{tabId}}" parameter="{{url}}"
-            note="navigate to URL; waits for page load event"/>
+      <step action="CDP_NAVIGATE" target="PAGE:{{tabId}}" parameter="{{url}}"
+            note="navigate to URL via CDP; waits for load event"/>
     </steps>
   </Scenario>
 
@@ -94,7 +95,7 @@
       READ with no parameter returns body.innerText — all visible text content.
       Useful for: verifying navigation succeeded, extracting plain-text data,
         checking for error messages, reading search results.
-      For structured data prefer EXECUTE to return JSON.
+      For structured data prefer CDP_EXECUTE to return JSON.
       Does NOT return HTML markup.
     </description>
     <steps>
@@ -122,7 +123,7 @@
     <description lang="ai">
       Uses SENDKEYS with "css:{{sel}}|{{text}}" — this focuses the element then types.
       Use for: search boxes, login fields, form inputs.
-      To clear first: EXECUTE "document.querySelector('{{sel}}').value=''" then fill.
+      To clear first: CDP_EXECUTE "document.querySelector('{{sel}}').value=''" then fill.
       To submit after typing: append {ENTER} to {{text}} or use scenario "submit-form".
     </description>
     <steps>
@@ -162,18 +163,17 @@
        execute-js  — run JavaScript in the page context
        ═══════════════════════════════════════════════════════════════════ -->
   <Scenario id="execute-js" effect="arbitrary">
-    <description lang="en">Execute JavaScript {{jsCode}} in the page and return the result.</description>
+    <description lang="en">Run JavaScript {{jsCode}} in the page via CDP_EXECUTE and return the result.</description>
     <description lang="ai">
-      EXECUTE runs synchronous JS; returns JSON-serialized result.
-      For async operations: wrap in an IIFE with setTimeout or use await in a
-        (async () => { ... })() pattern if Chrome supports top-level await.
+      CDP_EXECUTE runs Runtime.evaluate(code); returns JSON-serialized result.
+      For async operations: wrap in an IIFE: (async () => { return await ...; })()
       Useful for: extracting structured data, checking element states, scrolling,
         triggering events, reading cookies/storage, injecting UI interactions.
       Example: "JSON.stringify(Array.from(document.querySelectorAll('a')).map(a=>a.href))"
     </description>
     <steps>
-      <step action="EXECUTE" target="PAGE:{{tabId}}" parameter="{{jsCode}}"
-            note="run JS in page context; returns serialized result"/>
+      <step action="CDP_EXECUTE" target="PAGE:{{tabId}}" parameter="{{jsCode}}"
+            note="Runtime.evaluate in page context; returns JSON-serialized result"/>
     </steps>
   </Scenario>
 
@@ -183,31 +183,32 @@
   <Scenario id="screenshot" effect="read-only">
     <description lang="en">Capture a full-page screenshot of tab {{tabId}}.</description>
     <description lang="ai">
-      SCREENSHOT returns a base64-encoded PNG.
+      CDP_SCREENSHOT returns a base64-encoded PNG via CDP Page.captureScreenshot.
       Use for: visual verification, debugging, capturing form states.
-      The result can be decoded and saved to disk via EXECUTE or external processing.
+      The result can be decoded and saved to disk via CDP_EXECUTE or external processing.
     </description>
     <steps>
-      <step action="SCREENSHOT" target="PAGE:{{tabId}}" parameter=""
-            note="returns base64 PNG of current tab viewport"/>
+      <step action="CDP_SCREENSHOT" target="PAGE:{{tabId}}" parameter=""
+            note="CDP Page.captureScreenshot; returns base64 PNG"/>
     </steps>
   </Scenario>
 
   <!-- ═══════════════════════════════════════════════════════════════════
-       get-dom-tree  — get accessibility / DOM snapshot tree
+       get-page-source  — get accessibility / DOM snapshot tree via CDP
        ═══════════════════════════════════════════════════════════════════ -->
-  <Scenario id="get-dom-tree" effect="read-only">
-    <description lang="en">Get the DOM accessibility tree of the current page.</description>
+  <Scenario id="get-page-source" effect="read-only">
+    <description lang="en">Get the DOM accessibility snapshot of the current page (CDP_PAGESOURCE).</description>
     <description lang="ai">
-      QUERYTREE via CDP returns an accessibility snapshot of the page.
+      CDP_PAGESOURCE returns the CDP accessibility / snapshot tree (Page.getAccessibilityTree).
       Useful for: discovering element roles and names, finding selectors,
         mapping out interactive elements.
       Result is a JSON/XML tree; interpret roles and names to identify elements.
-      Depth may be limited — use EXECUTE for deep inspection of specific subtrees.
+      For raw HTML source: use CDP_EXECUTE with document.documentElement.outerHTML.
+      Depth may be limited — use CDP_EXECUTE for deep inspection of specific subtrees.
     </description>
     <steps>
-      <step action="QUERYTREE" target="PAGE:{{tabId}}" parameter=""
-            note="returns CDP accessibility tree snapshot"/>
+      <step action="CDP_PAGESOURCE" target="PAGE:{{tabId}}" parameter=""
+            note="returns CDP accessibility tree snapshot (Page.getAccessibilityTree)"/>
     </steps>
   </Scenario>
 
@@ -217,7 +218,7 @@
   <Scenario id="scroll-to-bottom" effect="changes-scroll-position">
     <description lang="en">Scroll to the bottom of the page (to load lazy content).</description>
     <steps>
-      <step action="EXECUTE" target="PAGE:{{tabId}}"
+      <step action="CDP_EXECUTE" target="PAGE:{{tabId}}"
             parameter="window.scrollTo(0, document.body.scrollHeight)"
             note="scroll to bottom"/>
     </steps>
@@ -238,8 +239,8 @@
   <Scenario id="teardown-close-tab" effect="closes-tab">
     <description lang="en">Close the tab that was used for automation.</description>
     <steps>
-      <step action="CLOSEPAGE" target="PAGE:{{tabId}}" parameter=""
-            note="close the automation tab"/>
+      <step action="CDP_CLOSEPAGE" target="PAGE:{{tabId}}" parameter=""
+            note="CDP Target.closeTarget; close the automation tab"/>
     </steps>
   </Scenario>
 
@@ -249,8 +250,8 @@
   <Scenario id="teardown-navigate-blank" effect="changes-page">
     <description lang="en">Navigate to about:blank (clear page state without closing tab).</description>
     <steps>
-      <step action="NAVIGATE" target="PAGE:{{tabId}}" parameter="about:blank"
-            note="navigates to blank page; tab remains open"/>
+      <step action="CDP_NAVIGATE" target="PAGE:{{tabId}}" parameter="about:blank"
+            note="navigates to blank page via CDP; tab remains open"/>
     </steps>
   </Scenario>
 

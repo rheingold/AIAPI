@@ -46,7 +46,27 @@
     </embeddings>
   </meta>
 
-  <!-- ── Display ───────────────────────────────────────────────────────────── -->
+  <!--
+    ════════════════════════════════════════════════════════════
+    A NOTE ON COMMAND TAXONOMY
+    ════════════════════════════════════════════════════════════
+    <action> elements listed here are ONLY UI-technology primitives:
+      SENDKEYS  — emit keystrokes via the OS input stack
+      CLICKID   — click a UIA control by AutomationId
+      READ      — read text content / Name property of a control or window
+    Application-level compound operations (e.g. "open new document",
+    "compute expression", "reset state") belong in scenarios.xml ONLY.
+    ════════════════════════════════════════════════════════════
+  -->
+
+  <!--
+    Group elements are non-wrapping preceding-sibling annotations.
+    A control may logically belong to multiple groups; placing markers here
+    instead of wrapping avoids a forced 1:N tree hierarchy.
+  -->
+
+  <Group id="display" label="Display"
+         note="Read-only controls that show calculator state. Use READ or inspect Name attribute."/>
 
   <Control id="CalculatorResults" type="Text">
     <label lang="en">Result / answer display. Shows the current expression result.</label>
@@ -77,7 +97,8 @@
     <action command="CLICKID" parameter="CalculatorExpression"/>
   </Control>
 
-  <!-- ── Clear / Backspace ─────────────────────────────────────────────────── -->
+  <Group id="clear-correction" label="Clear / Correction"
+         note="Three levels of erasure: AC (all), CE (entry only), Backspace (one digit). All CLICKID."/>
 
   <Control id="clearButton" type="Button">
     <label lang="en">Clear / AC — clears both current entry and the expression.</label>
@@ -105,7 +126,8 @@
     <action command="CLICKID" parameter="backSpaceButton"/>
   </Control>
 
-  <!-- ── Digit Buttons (0–9) ───────────────────────────────────────────────── -->
+  <Group id="digits" label="Digit buttons (0–9, decimal, negate)"
+         note="AutomationId pattern: numXButton. Also decimalSeparatorButton, negateButton (±)."/>
 
   <Control id="num0Button" type="Button">
     <label lang="en">Digit 0</label>
@@ -170,7 +192,8 @@
     <action command="CLICKID" parameter="negateButton"/>
   </Control>
 
-  <!-- ── Operator Buttons ─────────────────────────────────────────────────── -->
+  <Group id="basic-operators" label="Basic operators (+, −, ×, ÷, =)"
+         note="Binary operators expect a first operand, an operator click, a second operand, then equalButton."/>
 
   <Control id="plusButton" type="Button">
     <label lang="en">Addition (+)</label>
@@ -204,7 +227,8 @@
     <action command="SENDKEYS" parameter="{ENTER}" note="keyboard equivalent"/>
   </Control>
 
-  <!-- ── Unary / Standard Functions ─────────────────────────────────────────── -->
+  <Group id="unary-functions" label="Unary / standard functions (%, 1/x, x², √x)"
+         note="Operate on the current entry immediately — no second operand needed."/>
 
   <Control id="percentButton" type="Button">
     <label lang="en">Percent (%)</label>
@@ -227,7 +251,8 @@
     <action command="CLICKID" parameter="squareRootButton"/>
   </Control>
 
-  <!-- ── Memory ────────────────────────────────────────────────────────────── -->
+  <Group id="memory" label="Memory (MS / MR / M+ / M− / MC)"
+         note="Single memory slot. Store (MS), Recall (MR), Add (M+), Subtract (M−), Clear (MC)."/>
 
   <Control id="memButton" type="Button">
     <label lang="en">Memory Store (MS) — save current value into memory.</label>
@@ -255,7 +280,8 @@
     <action command="CLICKID" parameter="ClearMemoryButton"/>
   </Control>
 
-  <!-- ── Navigation / Mode ─────────────────────────────────────────────────── -->
+  <Group id="navigation" label="Navigation / mode switch"
+         note="TogglePaneButton switches between Standard, Scientific, Programmer modes. Avoid during arithmetic."/>
 
   <Control id="TogglePaneButton" type="Button">
     <label lang="en">Open navigation pane (hamburger menu).</label>

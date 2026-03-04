@@ -1,166 +1,181 @@
 import { IAutomationProvider, UIObject, ActionResult, QueryOptions } from '../types';
+import { spawnSync } from 'child_process';
+import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
 
 /**
- * Web UI automation provider using Playwright
+ * Web UI automation provider backed by BrowserWin.exe (CDP + UIA).
+ * Supports Chrome, Edge, Brave, and Firefox via Chrome DevTools Protocol.
+ * Requires the browser to be started with --remote-debugging-port=<port>.
+ * Call LAUNCH via helper_BrowserWin first if the browser is not running in debug mode.
  */
 export class WebUIProvider implements IAutomationProvider {
-  private playwright: any;
-  private browser: any;
-  private page: any;
+  private browserWinPath: string | null = null;
+
+  /** e.g. 'brave', 'chrome', 'msedge', 'firefox' */
+  private browser: string;
+
+  /** CDP debug port, e.g. 9222 */
+  private port: number;
+
+  constructor(browser = 'brave', port = 9222) {
+    this.browser = browser;
+    this.port    = port;
+
+    // Resolve BrowserWin.exe — check canonical dist/helpers location first
+    const candidates = [
+      path.join(__dirname, '..', 'helpers', 'BrowserWin.exe'),
+      path.join(process.cwd(), 'dist', 'helpers', 'BrowserWin.exe'),
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        this.browserWinPath = p;
+        break;
+      }
+    }
+  }
 
   getName(): string {
-    return 'Web UI Provider (Playwright)';
+    return `Web UI Provider (BrowserWin / ${this.browser}:${this.port})`;
   }
 
   async isAvailable(): Promise<boolean> {
-    try {
-      // @ts-ignore - optional dependency
-      this.playwright = await import('playwright').catch(() => null);
-      return this.playwright !== null;
-    } catch {
-      return false;
-    }
+    return process.platform === 'win32' && this.browserWinPath !== null;
   }
 
-  async initializeBrowser(url?: string): Promise<void> {
-    if (!this.playwright) {
-      throw new Error('Playwright is not available');
-    }
+  // ---------------------------------------------------------------------------
+  // IAutomationProvider implementation
+  // ---------------------------------------------------------------------------
 
-    if (!this.browser) {
-      this.browser = await this.playwright.chromium.launch();
-      this.page = await this.browser.newPage();
-
-      if (url) {
-        await this.page.goto(url);
-      }
-    }
+  /**
+   * Query the DOM tree to the requested depth.
+   * `target` may be a browser:port string like 'brave:9222'; if omitted the
+   * constructor values are used.
+   */
+  async getWindowTree(target: string, options?: QueryOptions): Promise<UIObject> {
+    const depth  = options?.depth ?? 3;
+    const result = this.runCommand(target, `{QUERYTREE:${depth}}`);
+    if (result && result.tree) return result.tree as UIObject;
+    // Return a minimal shell on failure so callers get a typed object
+    return { id: target, type: 'browser', name: this.browser, properties: result ?? {} };
   }
 
-  async closeBrowser(): Promise<void> {
-    if (this.browser) {
-      await this.browser.close();
-      this.browser = null;
-      this.page = null;
-    }
-  }
-
-  async getWindowTree(selector: string, options?: QueryOptions): Promise<UIObject> {
-    if (!this.page) {
-      throw new Error('Browser not initialized. Call initializeBrowser first.');
-    }
-
-    const depth = options?.depth ?? 2;
-    const domTree = await this.page.evaluate((sel: string, maxDepth: number) => {
-      const element = document.querySelector(sel) || document.body;
-      
-      const buildTree = (el: Element, currentDepth: number): any => {
-        if (currentDepth <= 0) return null;
-
-        const rect = el.getBoundingClientRect();
-        const node: any = {
-          id: el.id || `elem_${Math.random().toString(36).substr(2, 9)}`,
-          type: el.tagName.toLowerCase(),
-          name: el.className || el.id,
-          properties: {
-            tagName: el.tagName,
-            className: el.className,
-            innerHTML: el.innerHTML.substring(0, 100),
-            textContent: el.textContent?.substring(0, 100),
-          },
-          position: {
-            x: Math.round(rect.x),
-            y: Math.round(rect.y),
-            width: Math.round(rect.width),
-            height: Math.round(rect.height),
-          },
-          actions: ['click', 'inspect'],
-        };
-
-        // Include interactive element actions
-        if (el instanceof HTMLInputElement) {
-          node.actions.push('setValue', 'readValue', 'focus');
-        } else if (el instanceof HTMLButtonElement) {
-          node.actions.push('click');
-        } else if (el instanceof HTMLSelectElement) {
-          node.actions.push('setValue', 'readValue');
-        }
-
-        if (el.children.length > 0 && currentDepth > 1) {
-          node.children = Array.from(el.children)
-            .map(child => buildTree(child, currentDepth - 1))
-            .filter((child: any) => child !== null);
-        }
-
-        return node;
-      };
-
-      return buildTree(element, maxDepth);
-    }, selector, depth);
-
-    return domTree as UIObject;
-  }
-
+  /** Click a DOM element by CSS selector (CLICKID) or visible text (CLICKNAME). */
   async clickElement(elementId: string): Promise<ActionResult> {
-    if (!this.page) {
-      throw new Error('Browser not initialized');
-    }
-
-    try {
-      const selector = `#${elementId}`;
-      await this.page.click(selector);
-      return {
-        success: true,
-        message: `Clicked element ${elementId}`,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: `Failed to click element: ${error}`,
-      };
-    }
+    // elementId starting with '#' or '.' → treat as CSS selector; otherwise text-match
+    const isSelector = /^[#.\[]/.test(elementId);
+    const action     = isSelector ? `{CLICKID:${elementId}}` : `{CLICKNAME:${elementId}}`;
+    const result     = this.runRawCommand(this.defaultTarget(), action);
+    return result?.success
+      ? { success: true,  message: `Clicked '${elementId}'` }
+      : { success: false, error: result?.error ?? 'click_failed' };
   }
 
+  /**
+   * Set a property on a DOM element.
+   * - property === 'value'  → FILL (#selector:newValue)
+   * - property === 'checked' → CHECK / UNCHECK  (#selector)
+   * - anything else → EXEC (JS assignment)
+   */
   async setProperty(elementId: string, property: string, value: any): Promise<ActionResult> {
-    if (!this.page) {
-      throw new Error('Browser not initialized');
+    let action: string;
+    if (property === 'value') {
+      action = `{FILL:${elementId}:${value}}`;
+    } else if (property === 'checked') {
+      action = value ? `{CHECK:${elementId}}` : `{UNCHECK:${elementId}}`;
+    } else {
+      // Generic JS execution
+      const expr = `document.querySelector('${elementId.replace(/'/g, "\\'")}').${property}=${JSON.stringify(value)}`;
+      action = `{EXEC:${expr}}`;
     }
-
-    try {
-      const selector = `#${elementId}`;
-      
-      if (property === 'value') {
-        await this.page.fill(selector, value);
-      } else if (property === 'textContent') {
-        await this.page.evaluate((sel: string, val: any) => {
-          document.querySelector(sel)!.textContent = val;
-        }, selector, value);
-      } else {
-        await this.page.evaluate((sel: string, prop: string, val: any) => {
-          (document.querySelector(sel) as any)[prop] = val;
-        }, selector, property, value);
-      }
-
-      return {
-        success: true,
-        message: `Set ${property} on element ${elementId}`,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: `Failed to set property: ${error}`,
-      };
-    }
+    const result = this.runRawCommand(this.defaultTarget(), action);
+    return result?.success
+      ? { success: true,  message: `Set ${property} on '${elementId}'` }
+      : { success: false, error: result?.error ?? 'set_failed' };
   }
 
+  /**
+   * Read a property from a DOM element.
+   * - property === 'value' | 'textContent' | 'innerText'  → READELEM
+   * - anything else → EXEC (JS expression)
+   */
   async readProperty(elementId: string, property: string): Promise<any> {
-    if (!this.page) {
-      throw new Error('Browser not initialized');
+    let action: string;
+    if (['value', 'textContent', 'innerText'].includes(property)) {
+      action = `{READELEM:${elementId}}`;
+    } else {
+      const expr = `document.querySelector('${elementId.replace(/'/g, "\\'")}')?.${property}`;
+      action = `{EXEC:${expr}}`;
     }
+    const result = this.runRawCommand(this.defaultTarget(), action);
+    return result?.value ?? result?.result ?? null;
+  }
 
-    const selector = `#${elementId}`;
-    return await this.page.evaluate((sel: string, prop: string) => {
-      return (document.querySelector(sel) as any)?.[prop];
-    }, selector, property);
+  // ---------------------------------------------------------------------------
+  // Convenience helpers (beyond IAutomationProvider)
+  // ---------------------------------------------------------------------------
+
+  navigate(url: string): any {
+    return this.runRawCommand(this.defaultTarget(), `{NAVIGATE:${url}}`);
+  }
+
+  exec(js: string): any {
+    return this.runRawCommand(this.defaultTarget(), `{EXEC:${js}}`);
+  }
+
+  screenshot(filePath?: string): any {
+    const action = filePath ? `{SCREENSHOT:${filePath}}` : `{SCREENSHOT}`;
+    return this.runRawCommand(this.defaultTarget(), action);
+  }
+
+  listBrowsers(): any {
+    return this.runRawCommand('SYSTEM', `{LISTBROWSERS}`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private helpers
+  // ---------------------------------------------------------------------------
+
+  /** Build a "browser:port" target string from the constructor defaults. */
+  private defaultTarget(): string {
+    return `${this.browser}:${this.port}`;
+  }
+
+  /**
+   * Run a command against an explicit target (may include browser:port).
+   * Parses the raw target string first.
+   */
+  private runCommand(rawTarget: string, action: string): any {
+    // If caller passes a full target like 'brave:9222' use it directly;
+    // otherwise fall back to constructor defaults.
+    const target = rawTarget && rawTarget !== 'unknown' ? rawTarget : this.defaultTarget();
+    return this.runRawCommand(target, action);
+  }
+
+  /**
+   * Spawn BrowserWin.exe via the inject-mode=direct temp-file protocol,
+   * same as WindowsFormsProvider does for KeyWin.exe.
+   */
+  private runRawCommand(target: string, action: string): any {
+    if (!this.browserWinPath) return { success: false, error: 'BrowserWin.exe not found' };
+
+    const tmpFile = path.join(os.tmpdir(), `browserwin-${Date.now()}.txt`);
+    try {
+      fs.writeFileSync(tmpFile, `${target}\n${action}`, { encoding: 'utf8' });
+      const res = spawnSync(this.browserWinPath, ['--inject-mode=direct', tmpFile], {
+        timeout: 15000,
+        encoding: 'utf8',
+      });
+      const stdout = res.stdout?.trim() ?? '';
+      if (stdout && stdout.startsWith('{')) {
+        try { return JSON.parse(stdout); } catch { /* fall through */ }
+      }
+      return { success: false, error: res.stderr?.trim() || 'no_output', rawStdout: stdout };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    } finally {
+      try { fs.unlinkSync(tmpFile); } catch { /* best-effort */ }
+    }
   }
 }

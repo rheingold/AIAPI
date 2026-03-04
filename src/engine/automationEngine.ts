@@ -1,6 +1,7 @@
 import { IAutomationProvider, UIObject, ActionResult, QueryOptions, LogEntry } from '../types';
 import { WindowsFormsProvider } from '../providers/windowsFormsProvider';
 import { OfficeProvider } from '../providers/officeProvider';
+import { WebUIProvider } from '../providers/webUIProvider';
 
 /**
  * Security filter validation function type
@@ -121,6 +122,7 @@ export class AutomationEngine {
     this.providers.set('office-excel', new OfficeProvider('Excel'));
     this.providers.set('office-word', new OfficeProvider('Word'));
     this.providers.set('office-powerpoint', new OfficeProvider('PowerPoint'));
+    this.providers.set('web-ui', new WebUIProvider());
   }
 
   /**

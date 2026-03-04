@@ -851,6 +851,65 @@ function stopServer() {
   });
 }
 
+// ── PRIORITY 1.5: fetch_webpage ──────────────────────────────────────────────
+async function testFetchWebpage() {
+  console.log('\n── fetch_webpage (Web Scraping) ──');
+
+  // 1. Basic HTTPS text extraction (example.com is stable &amp; lightweight)
+  const r1 = await mcpCall('fetch_webpage', {
+    url: 'https://example.com',
+    options: { extractText: true, timeout: 10000 }
+  });
+  const pass1 = ok('fetch https://example.com', r1);
+  if (pass1) {
+    const hasTitle = (r1.text || r1.body || '').toLowerCase().includes('example');
+    if (hasTitle) { console.log(`     text contains "example" ✓`); passed++; }
+    else          { console.log(`     text missing "example" ✗ — ${String(r1.text||r1.body||'').slice(0,80)}`); failed++; }
+  }
+
+  // 2. HTTP redirect following (http → https)
+  const r2 = await mcpCall('fetch_webpage', {
+    url: 'http://example.com',
+    options: { allowRedirects: true, extractText: false, timeout: 10000 }
+  });
+  ok('follow HTTP→HTTPS redirect', r2);
+  if (r2?.redirectChain?.length > 0) console.log(`     redirect chain: ${r2.redirectChain.join(' → ')}`);
+
+  // 3. SSL cert info present
+  const r3 = await mcpCall('fetch_webpage', {
+    url: 'https://example.com',
+    options: { extractText: false, timeout: 10000 }
+  });
+  const hasCert = r3 && (r3.sslCert || r3.ssl || r3.cert);
+  if (hasCert) { console.log(`     SSL cert captured ✓`); passed++; }
+  else         { console.log(`     SSL cert not returned (may be opt-in) ⊘`); }
+
+  // 4. CSS selector extraction
+  const r4 = await mcpCall('fetch_webpage', {
+    url: 'https://example.com',
+    options: { extractElements: ['h1', 'p'], timeout: 10000 }
+  });
+  const hasElements = r4 && (r4.elements || r4.extracted);
+  if (ok('element extraction', r4)) {
+    if (hasElements) console.log(`     elements extracted ✓`);
+  }
+
+  // 5. Error case: blocked protocol
+  let r5;
+  try {
+    r5 = await mcpCall('fetch_webpage', {
+      url: 'ftp://example.com',
+      options: { timeout: 5000 }
+    });
+    const isError = r5 && (r5.error || r5.success === false);
+    if (isError) { console.log(`  ✓  ftp:// correctly blocked`); passed++; }
+    else         { console.log(`  ✗  ftp:// should have been blocked`); failed++; }
+  } catch (e) {
+    // RPC error thrown = server rejected it properly
+    console.log(`  ✓  ftp:// rejected by server (${e.message.slice(0,60)})`); passed++;
+  }
+}
+
 async function main() {
   // ── 0. Optional: rebuild binaries before running ──────────────────────────
   if (REBUILD_FIRST) {
@@ -936,6 +995,7 @@ async function main() {
     await testListWindows();
     await testListBrowsers();
     await testSchemaValidation();
+    await testFetchWebpage();
     await testCalculator();
     await testNotepad();
     await testBrowsers();

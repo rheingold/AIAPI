@@ -374,12 +374,12 @@ Continue in same priority after this section:
   - [ ] Session token authentication (SKIP_SESSION_AUTH currently in env)
 
 ### WebUIProvider Enhancement
-- [ ] Update `src/providers/webUIProvider.ts` to use BrowserWin.exe
-- [ ] Add browser selection (edge, chrome, brave, firefox)
-- [ ] DOM tree querying with depth control
-- [ ] Element interaction via selectors
-- [ ] JavaScript execution capability
-- [ ] Screenshot capture
+- [x] Update `src/providers/webUIProvider.ts` to use BrowserWin.exe
+- [x] Add browser selection (edge, chrome, brave, firefox)
+- [x] DOM tree querying with depth control
+- [x] Element interaction via selectors
+- [x] JavaScript execution capability
+- [x] Screenshot capture
 
 ### Test Scenarios
 - [ ] `scenarios/browser-google-search.json`
@@ -1649,7 +1649,7 @@ AX API — MUST produce this shape. Fields may be null but must always be presen
 - [x] **`{RIGHTCLICK:x,y}`** / **`{RIGHTCLICK:elementPath}`**
 - [x] **`{DBLCLICK:x,y}`** / **`{DBLCLICK:elementPath}`**
 - [x] **`{HOVER:x,y}`** / **`{HOVER:elementPath}`** — mouse move, no click
-- [ ] **`{MOUSEDOWN:x,y}`** / **`{MOUSEUP:x,y}`** — split press/release for drag
+- [x] **`{MOUSEDOWN:x,y}`** / **`{MOUSEUP:x,y}`** — split press/release for drag
 - [ ] **Two delivery modes**:
   - `sendinput` — `SendInput(INPUT_MOUSE)` via global input queue (realistic)
   - `message` — `PostMessage(WM_LBUTTONDOWN/WM_LBUTTONUP)` direct to HWND
@@ -1658,24 +1658,25 @@ AX API — MUST produce this shape. Fields may be null but must always be presen
     JS event handlers without actual OS mouse movement
 
 #### Value / State
-- [ ] **`{FILL:selector:value}`** — set input value directly (no keyboard simulation)
+- [x] **`{FILL:selector:value}`** — set input value directly (no keyboard simulation)
       → Win32: `ValuePattern.SetValue` | JS: `el.value='x'` + input/change events
       → AT-SPI2: `atspi_editable_text_set_text_contents`
       → AX API: `AXUIElementSetAttributeValue(kAXValueAttribute)`
 - [ ] **`{SET:selector:value}`** — alias for FILL (already in KeyWin)
-- [ ] **`{CHECK:selector}`** / **`{UNCHECK:selector}`** — checkbox toggle
+- [x] **`{CHECK:selector}`** / **`{UNCHECK:selector}`** — checkbox toggle
       → Win32: `TogglePattern` | JS: `el.checked=true` + change event
 
 #### Reading
 - [ ] **`{READ}`** — read primary display text (title/value of main control)
-- [ ] **`{READELEM:selector}`** — read value of specific element
+- [x] **`{READELEM:selector}`** — read value of specific element
 - [ ] **`{QUERYTREE}`** / **`{QUERYTREE:depth}`** — full tree at depth
 - [ ] All produce the unified node schema above
 
 ### NOTE: same logic applies to KeyWin.exe
 KeyWin currently has `SENDKEYS`, `CLICKID`, `CLICKNAME`, `CLICK`, `READ`, `SET`, `QUERYTREE`.
-It is missing: `KEYDOWN`, `KEYUP`, `KEYPRESS`, `RIGHTCLICK`, `DBLCLICK`, `HOVER`,
-`MOUSEDOWN`, `MOUSEUP`, `FILL`, `READELEM`, `CHECK`, `UNCHECK`.
+~~It is missing: `KEYDOWN`, `KEYUP`, `KEYPRESS`, `RIGHTCLICK`, `DBLCLICK`, `HOVER`,
+`MOUSEDOWN`, `MOUSEUP`, `FILL`, `READELEM`, `CHECK`, `UNCHECK`.~~
+**All 12 listed commands have now been implemented in KeyWin.exe and BrowserWin.exe.**
 
 ---
 

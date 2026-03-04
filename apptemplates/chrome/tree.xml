@@ -100,6 +100,7 @@
        ═══════════════════════════════════════ -->
 
   <Group id="browser-process" label="Browser process"
+         members="_browser_"
          note="Process-level operations — session discovery, launch, CDP port management."/>
 
   <Control id="_browser_" type="BrowserInstance" scope="browser-level">
@@ -121,6 +122,7 @@
        ═══════════════════════════════════════ -->
 
   <Group id="tab" label="Per-tab content operations"
+         members="_tab_"
          note="All content commands target PAGE:&lt;id&gt;. Universal primitives + CDP_ protocol commands."/>
 
   <Control id="_tab_" type="BrowserTab" scope="tab-level" target="PAGE:{{tabId}}">
@@ -149,6 +151,7 @@
   </Control>
 
   <Group id="page-semantics" label="Semantic page-element patterns"
+         members="addressBar formInput submitButton pageBody"
          note="Not real AutomationIds — reusable CSS selector patterns for common page structures."/>
 
   <Control id="addressBar" type="Input" scope="browser-chrome"

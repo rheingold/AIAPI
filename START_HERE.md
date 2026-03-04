@@ -1,5 +1,9 @@
 # Getting Started
 
+> **For agents/assistants**: Read [CONVENTIONS.md](CONVENTIONS.md) FIRST.  
+> It lists all existing commands, target schemes, file locations, settings keys, and REST endpoints.  
+> Extend existing vocabulary — do NOT invent parallel equivalents.
+
 ## Installation
 
 1. **Install Dependencies**

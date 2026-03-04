@@ -66,6 +66,7 @@
   -->
 
   <Group id="display" label="Display"
+         members="CalculatorResults TextContainer CalculatorExpression"
          note="Read-only controls that show calculator state. Use READ or inspect Name attribute."/>
 
   <Control id="CalculatorResults" type="Text">
@@ -98,6 +99,7 @@
   </Control>
 
   <Group id="clear-correction" label="Clear / Correction"
+         members="clearButton clearEntryButton backSpaceButton"
          note="Three levels of erasure: AC (all), CE (entry only), Backspace (one digit). All CLICKID."/>
 
   <Control id="clearButton" type="Button">
@@ -127,6 +129,7 @@
   </Control>
 
   <Group id="digits" label="Digit buttons (0–9, decimal, negate)"
+         members="num0Button num1Button num2Button num3Button num4Button num5Button num6Button num7Button num8Button num9Button decimalSeparatorButton negateButton"
          note="AutomationId pattern: numXButton. Also decimalSeparatorButton, negateButton (±)."/>
 
   <Control id="num0Button" type="Button">
@@ -193,6 +196,7 @@
   </Control>
 
   <Group id="basic-operators" label="Basic operators (+, −, ×, ÷, =)"
+         members="plusButton minusButton multiplyButton divideButton equalButton"
          note="Binary operators expect a first operand, an operator click, a second operand, then equalButton."/>
 
   <Control id="plusButton" type="Button">
@@ -228,6 +232,7 @@
   </Control>
 
   <Group id="unary-functions" label="Unary / standard functions (%, 1/x, x², √x)"
+         members="percentButton invertButton xpower2Button squareRootButton"
          note="Operate on the current entry immediately — no second operand needed."/>
 
   <Control id="percentButton" type="Button">
@@ -252,6 +257,7 @@
   </Control>
 
   <Group id="memory" label="Memory (MS / MR / M+ / M− / MC)"
+         members="memButton MemRecall MemPlus MemMinus ClearMemoryButton"
          note="Single memory slot. Store (MS), Recall (MR), Add (M+), Subtract (M−), Clear (MC)."/>
 
   <Control id="memButton" type="Button">
@@ -281,6 +287,7 @@
   </Control>
 
   <Group id="navigation" label="Navigation / mode switch"
+         members="TogglePaneButton"
          note="TogglePaneButton switches between Standard, Scientific, Programmer modes. Avoid during arithmetic."/>
 
   <Control id="TogglePaneButton" type="Button">

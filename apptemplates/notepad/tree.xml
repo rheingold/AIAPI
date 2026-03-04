@@ -60,6 +60,7 @@
   -->
 
   <Group id="window-chrome" label="Window chrome"
+         members="TitleBar"
          note="Structural/chrome controls — TitleBar and the synthetic window target. Read-only or keyboard-only."/>
 
   <Control id="TitleBar" type="TitleBar">
@@ -72,6 +73,7 @@
   </Control>
 
   <Group id="document-area" label="Document area (window-level, no AutomationId)"
+         members="_window_"
          note="All text I/O uses the window handle directly — no AutomationId for the edit area in Win11 UWP Notepad."/>
 
   <!-- Synthetic control — represents the window target for READ / SENDKEYS -->

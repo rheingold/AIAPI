@@ -228,21 +228,19 @@ async function testSchemaValidation() {
       console.log(`  ✗  ${helperName}: schema has 0 commands`); failed++;
       continue;
     }
-    let allHaveParams = true;
-    const missing = [];
-    for (const cmd of cmds) {
-      if (!Array.isArray(cmd.parameters) || cmd.parameters.length === 0) {
-        allHaveParams = false;
-        missing.push(cmd.name);
-      }
-    }
-    if (allHaveParams) {
-      console.log(`  ✓  ${helperName}: ${cmds.length} commands — all have ≥1 parameters entry`);
+    // Every command must carry a `parameters` array (may be empty for zero-arity commands
+    // like READ, KILL, RESET — the array just needs to exist and be well-formed).
+    const missingParamsField = cmds.filter(cmd => !Array.isArray(cmd.parameters)).map(c => c.name);
+    if (missingParamsField.length === 0) {
+      console.log(`  ✓  ${helperName}: ${cmds.length} commands — all have parameters[] field`);
       passed++;
     } else {
-      console.log(`  ✗  ${helperName}: commands missing parameters[]: ${missing.join(', ')}`);
+      console.log(`  ✗  ${helperName}: commands missing parameters[] field: ${missingParamsField.join(', ')}`);
       failed++;
     }
+    // Spot-check: commands expected to carry ≥1 parameter entry
+    const paramCmds = cmds.filter(cmd => Array.isArray(cmd.parameters) && cmd.parameters.length > 0);
+    console.log(`     ${paramCmds.length}/${cmds.length} commands carry ≥1 parameter descriptor`);
 
     // Verify schema-level required fields
     const hasVersion = typeof schema.version === 'string' && schema.version.length > 0;
@@ -910,6 +908,58 @@ async function testFetchWebpage() {
   }
 }
 
+async function testKeyWinNewCommands() {
+  console.log('\n── KeyWin: FILL / READELEM (new commands smoke test) ──');
+
+  // Find a suitable target window (Calculator preferred, Notepad fallback)
+  const lw = await mcpCall('helper_KeyWin', { target: 'SYSTEM', command: 'LISTWINDOWS', parameter: '' });
+  let target = null;
+  for (const w of (lw?.windows ?? [])) {
+    const t = String(w.title || '').toLowerCase();
+    if (t.includes('calc') || t.includes('kalkul')) { target = { type: 'calc', title: w.title }; break; }
+    if (!target && (t.includes('notepad') || t.includes('pozn'))) target = { type: 'notepad', title: w.title };
+  }
+  if (!target) {
+    // Launch Calculator as a minimal target
+    await mcpCall('launchProcess', { executable: 'calc.exe' });
+    await sleep(2500);
+    const lw2 = await mcpCall('helper_KeyWin', { target: 'SYSTEM', command: 'LISTWINDOWS', parameter: '' });
+    for (const w of (lw2?.windows ?? [])) {
+      const t = String(w.title || '').toLowerCase();
+      if (t.includes('calc') || t.includes('kalkul')) { target = { type: 'calc', title: w.title }; break; }
+    }
+  }
+  if (!target) { skip('FILL/READELEM smoke test', 'no suitable window found'); return; }
+  console.log(`   target: "${target.title}" (${target.type})`);
+
+  // ── a. READELEM: dispatch + value retrieval ──────────────────────────────
+  // For Calculator, CalculatorResults has AutomationId="CalculatorResults".
+  // WinUtils.ReadElementValue returns Name (e.g. "Display is 0") if no ValuePattern.
+  const reSelector = target.type === 'calc' ? 'CalculatorResults' : 'Text Editor';
+  const rRE = await mcpCall('helper_KeyWin', { target: target.title, command: 'READELEM', parameter: reSelector });
+  const reDispatched = rRE && typeof rRE === 'object' &&
+    (rRE.success === true || rRE.error === 'readelem_failed');
+  if (reDispatched) {
+    const display = rRE.value != null ? `value="${String(rRE.value).slice(0, 40)}"` : `error=${rRE.error}`;
+    console.log(`  ✓  READELEM dispatched — ${display}`); passed++;
+  } else {
+    console.log(`  ✗  READELEM — unexpected response: ${JSON.stringify(rRE).slice(0, 120)}`); failed++;
+  }
+
+  // ── b. FILL: graceful fail with nonexistent selector ────────────────────
+  // Verifies FILL is dispatched and returns structured JSON (not a crash).
+  const rFill = await mcpCall('helper_KeyWin', {
+    target: target.title, command: 'FILL', parameter: '__noSuchElem__:testValue'
+  });
+  const fillDispatched = rFill && typeof rFill === 'object' &&
+    (rFill.success === true || rFill.error === 'fill_failed');
+  if (fillDispatched) {
+    console.log(`  ✓  FILL dispatched gracefully (${rFill.success ? 'success' : rFill.error})`); passed++;
+  } else {
+    console.log(`  ✗  FILL — unexpected response: ${JSON.stringify(rFill).slice(0, 120)}`); failed++;
+  }
+}
+
 async function main() {
   // ── 0. Optional: rebuild binaries before running ──────────────────────────
   if (REBUILD_FIRST) {
@@ -992,12 +1042,21 @@ async function main() {
   }
 
   try {
+    // Reload helpers to pick up freshly built binaries (ensures FILL/READELEM in schema).
+    try {
+      console.log('\n── Reloading helpers (fresh binaries) ──');
+      const helperNames = await reloadHelpers(2, 25000);
+      console.log(`   Helpers ready: ${helperNames.join(', ')}`);
+    } catch (e) {
+      console.log(`  ⚠  reloadHelpers: ${e.message} — continuing with current daemons`);
+    }
     await testListWindows();
     await testListBrowsers();
     await testSchemaValidation();
     await testFetchWebpage();
     await testCalculator();
     await testNotepad();
+    await testKeyWinNewCommands();
     await testBrowsers();
   } catch (e) {
     console.error('\nFatal error:', e.stack || e.message);

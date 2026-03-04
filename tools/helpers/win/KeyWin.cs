@@ -151,6 +151,10 @@ namespace KeyWin
                 return "READ";
             if (keys.StartsWith("{SET:", StringComparison.OrdinalIgnoreCase))
                 return "SET";
+            if (keys.StartsWith("{FILL:", StringComparison.OrdinalIgnoreCase))
+                return "FILL";
+            if (keys.StartsWith("{READELEM:", StringComparison.OrdinalIgnoreCase))
+                return "READELEM";
             if (keys.Equals("{LISTWINDOWS}", StringComparison.OrdinalIgnoreCase))
                 return "LISTWINDOWS";
             if (keys.Equals("{KILL}", StringComparison.OrdinalIgnoreCase))
@@ -238,6 +242,20 @@ namespace KeyWin
                 case "HOVER":
                 {
                     var m = Regex.Match(keys, @"\{HOVER:(.+?)\}", RegexOptions.IgnoreCase);
+                    return m.Success ? m.Groups[1].Value : "";
+                }
+
+                case "FILL":
+                {
+                    // Extract "selector:value" from "{FILL:selector:value}"
+                    var m = Regex.Match(keys, @"\{FILL:(.+?)\}", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                    return m.Success ? m.Groups[1].Value : "";
+                }
+
+                case "READELEM":
+                {
+                    // Extract selector from "{READELEM:selector}"
+                    var m = Regex.Match(keys, @"\{READELEM:([^}]+)\}", RegexOptions.IgnoreCase);
                     return m.Success ? m.Groups[1].Value : "";
                 }
                 
@@ -2033,6 +2051,38 @@ namespace KeyWin
                     return 0;
                 }
 
+                // ── FILL ──────────────────────────────────────────────────────────────
+                // Format: {FILL:selector:value}  selector = AutomationId or Name
+                var fillMatch = Regex.Match(keys, @"\{FILL:([^:}]+):(.+?)\}", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                if (fillMatch.Success)
+                {
+                    string fillSel = fillMatch.Groups[1].Value;
+                    string fillVal = fillMatch.Groups[2].Value;
+                    var fillRoot = AutomationElement.FromHandle(hwnd);
+                    bool fillOk = WinUtils.FillElement(fillRoot, fillSel, fillVal);
+                    Console.WriteLine(fillOk
+                        ? "{\"success\":true,\"action\":\"fill\",\"selector\":\"" + EscapeJson(fillSel) + "\"}"
+                        : "{\"success\":false,\"error\":\"fill_failed\",\"selector\":\"" + EscapeJson(fillSel) + "\"}");
+                    return fillOk ? 0 : 5;
+                }
+
+                // ── READELEM ──────────────────────────────────────────────────────────
+                // Format: {READELEM:selector}  selector = AutomationId or Name
+                var reMatch = Regex.Match(keys, @"\{READELEM:([^}]+)\}", RegexOptions.IgnoreCase);
+                if (reMatch.Success)
+                {
+                    string reSel = reMatch.Groups[1].Value;
+                    var reRoot = AutomationElement.FromHandle(hwnd);
+                    string reVal = WinUtils.ReadElementValue(reRoot, reSel);
+                    if (reVal != null)
+                    {
+                        Console.WriteLine("{\"success\":true,\"action\":\"readelem\",\"selector\":\"" + EscapeJson(reSel) + "\",\"value\":\"" + EscapeJson(reVal) + "\"}");
+                        return 0;
+                    }
+                    Console.WriteLine("{\"success\":false,\"error\":\"readelem_failed\",\"selector\":\"" + EscapeJson(reSel) + "\"}");
+                    return 5;
+                }
+
                 int? cx, cy;
                 if (TryParseClick(keys, out cx, out cy))
                 {
@@ -2162,7 +2212,9 @@ namespace KeyWin
             sb.AppendLine("    { \"name\": \"KEYPRESS\", \"description\": \"Atomic keydown+keyup for function/navigation keys (F1-F12, HOME, END, PAGEUP, PAGEDOWN, INSERT, DELETE, ENTER, TAB, ESC, APPS, arrow keys). Not for typing printable text — use SENDKEYS for that.\", \"parameters\": [ { \"name\": \"key\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{KEYPRESS:F5}\", \"{KEYPRESS:HOME}\", \"{KEYPRESS:F11}\"] },");
             sb.AppendLine("    { \"name\": \"RIGHTCLICK\", \"description\": \"Right-click at absolute screen coordinates (x,y). Opens context menus.\", \"parameters\": [ { \"name\": \"coordinates\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{RIGHTCLICK:100,200}\"] },");
             sb.AppendLine("    { \"name\": \"DBLCLICK\", \"description\": \"Double left-click at absolute screen coordinates (x,y). Opens items and triggers default actions.\", \"parameters\": [ { \"name\": \"coordinates\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{DBLCLICK:100,200}\"] },");
-            sb.AppendLine("    { \"name\": \"HOVER\", \"description\": \"Move mouse cursor to screen coordinates (x,y) without clicking. Triggers hover effects and tooltips.\", \"parameters\": [ { \"name\": \"coordinates\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{HOVER:100,200}\"] }");
+            sb.AppendLine("    { \"name\": \"HOVER\", \"description\": \"Move mouse cursor to screen coordinates (x,y) without clicking. Triggers hover effects and tooltips.\", \"parameters\": [ { \"name\": \"coordinates\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{HOVER:100,200}\"] },");
+            sb.AppendLine("    { \"name\": \"FILL\", \"description\": \"Set value of a UI element by AutomationId or Name (ValuePattern). Fires UIA value-change so JS frameworks see the change. Format: {FILL:selector:value}\", \"parameters\": [ { \"name\": \"selector\", \"type\": \"string\", \"required\": true, \"description\": \"AutomationId or Name of the target element\" }, { \"name\": \"value\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{FILL:searchBox:hello world}\", \"{FILL:Username:admin}\"] },");
+            sb.AppendLine("    { \"name\": \"READELEM\", \"description\": \"Read the current value of a UI element by AutomationId or Name (ValuePattern or Name fallback). Format: {READELEM:selector}\", \"parameters\": [ { \"name\": \"selector\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{READELEM:searchBox}\", \"{READELEM:Username}\"] }");
             sb.AppendLine("  ]");
             sb.AppendLine("}");
             

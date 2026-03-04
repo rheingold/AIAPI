@@ -32,9 +32,9 @@ Write-Host "uiat:   $uiat"
 Write-Host "wbase:  $wbase"
 Write-Host "wforms: $wforms"
 
-# Build KeyWin.exe  (WinCommon.cs not yet merged in — KeyWin still carries its own copy)
+# Build KeyWin.exe  (WinCommon.cs merged in — shared UIA helpers, FILL/READELEM support)
 Write-Host "=== Building KeyWin.exe ==="
-& $csc /nologo /target:winexe "/out:$helpersDestDir\KeyWin.exe" "/r:$uiac" "/r:$uiat" "/r:$wbase" $helperCommonSrc $keySrc
+& $csc /nologo /target:winexe "/out:$helpersDestDir\KeyWin.exe" "/r:$uiac" "/r:$uiat" "/r:$wbase" "/r:$wforms" $helperCommonSrc $winCommonSrc $keySrc
 Write-Host "KeyWin exit: $LASTEXITCODE"
 
 # Build BrowserWin.exe  (WinCommon.cs adds UIA fallback; needs same DLL set as KeyWin)

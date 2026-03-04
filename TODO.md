@@ -825,7 +825,7 @@ ALLOW //Browser*.exe//[ProcName:brave.exe]//[tab=0]//document//**//action:read
   `{CMD:param}` tokens) — `{CMD:param}` shorthands kept as aliases
 - [ ] Update `BrowserWin.cs` similarly — map tree path segments to CSS selector / CDP node ID
 - [ ] `BrowserWin.cs`: handle `(xpath:...)` predicates via CDP `DOM.performSearch` + XPath
-- [ ] `KeyWin.cs`: handle `action:keydown` / `action:keyup` for stateful modifier key input
+- [x] `KeyWin.cs`: handle `action:keydown` / `action:keyup` for stateful modifier key input
 
 **Security filter engine:**
 - [ ] Update filter rule storage format to the new address syntax (migrate existing rules)
@@ -1630,13 +1630,13 @@ AX API — MUST produce this shape. Fields may be null but must always be presen
 #### Keyboard
 - [ ] **`{SENDKEYS:text}`** — type text with embedded special keys (`{ENTER}`, `{TAB}`, etc.)
       Already in KeyWin + BrowserWin. Ensure consistent across all helpers.
-- [ ] **`{KEYDOWN:key}`** — hold a key (modifier: Ctrl, Alt, Shift, Win)
+- [x] **`{KEYDOWN:key}`** — hold a key (modifier: Ctrl, Alt, Shift, Win)
       → Win32: `SendInput(KEYEVENTF_KEYDOWN)` | JS: `dispatchEvent(new KeyboardEvent('keydown'))`
-- [ ] **`{KEYUP:key}`** — release a held key
+- [x] **`{KEYUP:key}`** — release a held key
       → Win32: `SendInput(KEYEVENTF_KEYUP)` | JS: `dispatchEvent(new KeyboardEvent('keyup'))`  
-- [ ] **`{KEYPRESS:key}`** — atomic keydown+keyup (for non-modifier keys)
+- [x] **`{KEYPRESS:key}`** — atomic keydown+keyup (for non-modifier keys)
       → Win32: `SendInput` pair | JS: `KeyboardEvent('keydown')` + `KeyboardEvent('keyup')`
-- [ ] **`{KEYPRESS:Ctrl+S}`** — chord: hold modifiers, press key, release all
+- [x] **`{KEYPRESS:Ctrl+S}`** — chord: hold modifiers, press key, release all
 - [ ] **Two delivery modes** for all key events:
   - `global` — `SendInput` to global queue (goes to focused window)
   - `direct` — `PostMessage(WM_KEYDOWN/WM_CHAR)` to specific HWND or JS `dispatchEvent`
@@ -1646,9 +1646,9 @@ AX API — MUST produce this shape. Fields may be null but must always be presen
 - [ ] **`{CLICK:x,y}`** — left click at screen coordinates
       Already in KeyWin as `{CLICK}`. Standardize format.
 - [ ] **`{CLICK:elementPath}`** — left click at element centre (find element first)
-- [ ] **`{RIGHTCLICK:x,y}`** / **`{RIGHTCLICK:elementPath}`**
-- [ ] **`{DBLCLICK:x,y}`** / **`{DBLCLICK:elementPath}`**
-- [ ] **`{HOVER:x,y}`** / **`{HOVER:elementPath}`** — mouse move, no click
+- [x] **`{RIGHTCLICK:x,y}`** / **`{RIGHTCLICK:elementPath}`**
+- [x] **`{DBLCLICK:x,y}`** / **`{DBLCLICK:elementPath}`**
+- [x] **`{HOVER:x,y}`** / **`{HOVER:elementPath}`** — mouse move, no click
 - [ ] **`{MOUSEDOWN:x,y}`** / **`{MOUSEUP:x,y}`** — split press/release for drag
 - [ ] **Two delivery modes**:
   - `sendinput` — `SendInput(INPUT_MOUSE)` via global input queue (realistic)

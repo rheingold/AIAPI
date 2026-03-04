@@ -71,11 +71,22 @@ namespace KeyWin
             public int Y;
         }
 
-        [StructLayout(LayoutKind.Sequential)]
+        [StructLayout(LayoutKind.Explicit)]
         struct INPUT
         {
-            public uint type;
-            public MOUSEINPUT mi;
+            [FieldOffset(0)] public uint type;
+            [FieldOffset(4)] public MOUSEINPUT mi;
+            [FieldOffset(4)] public KEYBDINPUT ki;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct KEYBDINPUT
+        {
+            public ushort wVk;
+            public ushort wScan;
+            public uint dwFlags;
+            public uint time;
+            public IntPtr dwExtraInfo;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -90,8 +101,14 @@ namespace KeyWin
         }
 
         const uint INPUT_MOUSE = 0;
+        const uint INPUT_KEYBOARD = 1;
         const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
         const uint MOUSEEVENTF_LEFTUP = 0x0004;
+        const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
+        const uint MOUSEEVENTF_RIGHTUP = 0x0010;
+        const uint MOUSEEVENTF_MOVE = 0x0001;
+        const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
+        const uint KEYEVENTF_KEYUP = 0x0002;
 
         // Windows Messages for direct injection
         const uint WM_KEYDOWN = 0x0100;
@@ -108,6 +125,14 @@ namespace KeyWin
         const byte VK_CONTROL = 0x11;
         const byte VK_MENU = 0x12;  // Alt key
         const byte VK_RETURN = 0x0D;
+        const ushort VK_LWIN = 0x5B;
+        const ushort VK_F1 = 0x70;  // F1-F12 = 0x70-0x7B
+        const ushort VK_HOME = 0x24;
+        const ushort VK_END = 0x23;
+        const ushort VK_PRIOR = 0x21;  // Page Up
+        const ushort VK_NEXT = 0x22;   // Page Down
+        const ushort VK_INSERT = 0x2D;
+        const ushort VK_APPS = 0x5D;   // Context menu key
 
         // Command detection for security filtering
         static string DetermineCommandType(string keys)
@@ -134,6 +159,18 @@ namespace KeyWin
                 return "RESET";
             if (keys.Equals("{NEWDOC}", StringComparison.OrdinalIgnoreCase))
                 return "NEWDOC";
+            if (keys.StartsWith("{KEYDOWN:", StringComparison.OrdinalIgnoreCase))
+                return "KEYDOWN";
+            if (keys.StartsWith("{KEYUP:", StringComparison.OrdinalIgnoreCase))
+                return "KEYUP";
+            if (keys.StartsWith("{KEYPRESS:", StringComparison.OrdinalIgnoreCase))
+                return "KEYPRESS";
+            if (keys.StartsWith("{RIGHTCLICK:", StringComparison.OrdinalIgnoreCase))
+                return "RIGHTCLICK";
+            if (keys.StartsWith("{DBLCLICK:", StringComparison.OrdinalIgnoreCase))
+                return "DBLCLICK";
+            if (keys.StartsWith("{HOVER:", StringComparison.OrdinalIgnoreCase))
+                return "HOVER";
             
             // Default: treat as keystroke input
             return "SENDKEYS";
@@ -174,6 +211,35 @@ namespace KeyWin
                     // Strip {SENDKEYS:text} wrapper if present (MCP protocol wraps every action)
                     var matchSK = Regex.Match(keys, @"^\{SENDKEYS:(.+)\}$", RegexOptions.IgnoreCase | RegexOptions.Singleline);
                     return matchSK.Success ? matchSK.Groups[1].Value : keys;
+
+                case "KEYDOWN":
+                case "KEYUP":
+                case "KEYPRESS":
+                {
+                    // Extract key name from {KEYDOWN:Ctrl}, {KEYUP:Shift}, {KEYPRESS:F5}
+                    string prefix = "{" + commandType + ":";
+                    if (keys.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && keys.EndsWith("}"))
+                        return keys.Substring(prefix.Length, keys.Length - prefix.Length - 1);
+                    return "";
+                }
+
+                case "RIGHTCLICK":
+                {
+                    var m = Regex.Match(keys, @"\{RIGHTCLICK:(.+?)\}", RegexOptions.IgnoreCase);
+                    return m.Success ? m.Groups[1].Value : "";
+                }
+
+                case "DBLCLICK":
+                {
+                    var m = Regex.Match(keys, @"\{DBLCLICK:(.+?)\}", RegexOptions.IgnoreCase);
+                    return m.Success ? m.Groups[1].Value : "";
+                }
+
+                case "HOVER":
+                {
+                    var m = Regex.Match(keys, @"\{HOVER:(.+?)\}", RegexOptions.IgnoreCase);
+                    return m.Success ? m.Groups[1].Value : "";
+                }
                 
                 default:
                     return "*";
@@ -996,6 +1062,137 @@ namespace KeyWin
             Console.Error.WriteLine("DEBUG: Mouse click sent inputs=" + sent);
         }
 
+        static void SendMouseRightClick(int? x, int? y)
+        {
+            if (x.HasValue && y.HasValue)
+            {
+                SetCursorPos(x.Value, y.Value);
+                System.Threading.Thread.Sleep(30);
+            }
+
+            INPUT[] inputs = new INPUT[2];
+            inputs[0].type = INPUT_MOUSE;
+            inputs[0].mi.dwFlags = MOUSEEVENTF_RIGHTDOWN;
+            inputs[1].type = INPUT_MOUSE;
+            inputs[1].mi.dwFlags = MOUSEEVENTF_RIGHTUP;
+
+            uint sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+            Console.Error.WriteLine("DEBUG: Right-click sent inputs=" + sent);
+        }
+
+        static void SendMouseDblClick(int? x, int? y)
+        {
+            if (x.HasValue && y.HasValue)
+            {
+                SetCursorPos(x.Value, y.Value);
+                System.Threading.Thread.Sleep(30);
+            }
+
+            INPUT[] inputs = new INPUT[4];
+            for (int i = 0; i < 4; i++) inputs[i].type = INPUT_MOUSE;
+            inputs[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+            inputs[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+            inputs[2].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+            inputs[3].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+
+            // Send first click
+            SendInput(2, new INPUT[] { inputs[0], inputs[1] }, Marshal.SizeOf(typeof(INPUT)));
+            System.Threading.Thread.Sleep(50);
+            // Send second click (within double-click interval)
+            uint sent = SendInput(2, new INPUT[] { inputs[2], inputs[3] }, Marshal.SizeOf(typeof(INPUT)));
+            Console.Error.WriteLine("DEBUG: Double-click sent inputs=" + sent);
+        }
+
+        static void SendMouseHover(int x, int y)
+        {
+            SetCursorPos(x, y);
+            // Brief pause so hover effects (tooltips) can trigger
+            System.Threading.Thread.Sleep(50);
+            Console.Error.WriteLine("DEBUG: Hover moved cursor to (" + x + "," + y + ")");
+        }
+
+        /// <summary>
+        /// Send a raw key event via SendInput.
+        /// keyName: "Ctrl", "Alt", "Shift", "Win", "F1"-"F12", "HOME", "END", "PAGEUP", "PAGEDOWN",
+        ///          "INSERT", "DELETE", "ESC", "TAB", "RETURN", "ENTER", "APPS", or a single char.
+        /// keyUp: true = KEYEVENTF_KEYUP, false = KEYEVENTF_KEYDOWN
+        /// </summary>
+        static bool SendRawKey(string keyName, bool keyUp)
+        {
+            ushort vk = ResolveVirtualKey(keyName);
+            if (vk == 0)
+            {
+                Console.Error.WriteLine("DEBUG: SendRawKey unknown key: " + keyName);
+                return false;
+            }
+
+            // Extended keys (arrows, F keys, Home/End, etc.) need KEYEVENTF_EXTENDEDKEY
+            bool isExtended = (vk >= 0x21 && vk <= 0x28) || (vk >= 0x70 && vk <= 0x7B) ||
+                              vk == 0x2D || vk == 0x2E || vk == 0x5B || vk == 0x5C || vk == 0x5D;
+
+            uint flags = keyUp ? KEYEVENTF_KEYUP : 0u;
+            if (isExtended) flags |= KEYEVENTF_EXTENDEDKEY;
+
+            INPUT[] inp = new INPUT[1];
+            inp[0].type = INPUT_KEYBOARD;
+            inp[0].ki.wVk = vk;
+            inp[0].ki.wScan = 0;
+            inp[0].ki.dwFlags = flags;
+            inp[0].ki.time = 0;
+            inp[0].ki.dwExtraInfo = IntPtr.Zero;
+
+            uint sent = SendInput(1, inp, Marshal.SizeOf(typeof(INPUT)));
+            Console.Error.WriteLine("DEBUG: SendRawKey vk=0x" + vk.ToString("X2") + " up=" + keyUp + " flags=0x" + flags.ToString("X") + " sent=" + sent);
+            return sent == 1;
+        }
+
+        static ushort ResolveVirtualKey(string keyName)
+        {
+            if (string.IsNullOrEmpty(keyName)) return 0;
+            switch (keyName.Trim().ToUpperInvariant())
+            {
+                case "CTRL": case "CONTROL":    return (ushort)VK_CONTROL;
+                case "ALT":                     return (ushort)VK_MENU;
+                case "SHIFT":                   return (ushort)VK_SHIFT;
+                case "WIN": case "WINDOWS":     return VK_LWIN;
+                case "ENTER": case "RETURN":    return (ushort)VK_RETURN;
+                case "TAB":                     return (ushort)VK_TAB;
+                case "ESC": case "ESCAPE":      return (ushort)VK_ESCAPE;
+                case "BACK": case "BACKSPACE":  return (ushort)VK_BACK;
+                case "DEL": case "DELETE":      return (ushort)VK_DELETE;
+                case "HOME":                    return VK_HOME;
+                case "END":                     return VK_END;
+                case "PAGEUP": case "PGUP": case "PRIOR": return VK_PRIOR;
+                case "PAGEDOWN": case "PGDN": case "NEXT": return VK_NEXT;
+                case "INSERT": case "INS":      return VK_INSERT;
+                case "LEFT":                    return (ushort)VK_LEFT;
+                case "RIGHT":                   return (ushort)VK_RIGHT;
+                case "UP":                      return (ushort)VK_UP;
+                case "DOWN":                    return (ushort)VK_DOWN;
+                case "APPS": case "MENU":       return VK_APPS;
+                case "F1":  return VK_F1;
+                case "F2":  return (ushort)(VK_F1 + 1);
+                case "F3":  return (ushort)(VK_F1 + 2);
+                case "F4":  return (ushort)(VK_F1 + 3);
+                case "F5":  return (ushort)(VK_F1 + 4);
+                case "F6":  return (ushort)(VK_F1 + 5);
+                case "F7":  return (ushort)(VK_F1 + 6);
+                case "F8":  return (ushort)(VK_F1 + 7);
+                case "F9":  return (ushort)(VK_F1 + 8);
+                case "F10": return (ushort)(VK_F1 + 9);
+                case "F11": return (ushort)(VK_F1 + 10);
+                case "F12": return (ushort)(VK_F1 + 11);
+                default:
+                    // Single character — use VkKeyScan
+                    if (keyName.Length == 1)
+                    {
+                        short result = VkKeyScan(keyName[0]);
+                        if (result != -1) return (ushort)(result & 0xFF);
+                    }
+                    return 0;
+            }
+        }
+
         static string ReadDisplayText(IntPtr hwnd)
         {
             try
@@ -1768,6 +1965,74 @@ namespace KeyWin
                     return 5;
                 }
 
+                // ── KEYDOWN / KEYUP / KEYPRESS ────────────────────────────────────────
+                var keyDownMatch = Regex.Match(keys, @"\{KEYDOWN:([^}]+)\}", RegexOptions.IgnoreCase);
+                if (keyDownMatch.Success)
+                {
+                    bool ok2 = SendRawKey(keyDownMatch.Groups[1].Value, false);
+                    Console.WriteLine(ok2
+                        ? "{\"success\":true,\"action\":\"keydown\",\"key\":\"" + EscapeJson(keyDownMatch.Groups[1].Value) + "\"}"
+                        : "{\"success\":false,\"error\":\"unknown_key\",\"key\":\"" + EscapeJson(keyDownMatch.Groups[1].Value) + "\"}");
+                    return ok2 ? 0 : 6;
+                }
+
+                var keyUpMatch = Regex.Match(keys, @"\{KEYUP:([^}]+)\}", RegexOptions.IgnoreCase);
+                if (keyUpMatch.Success)
+                {
+                    bool ok2 = SendRawKey(keyUpMatch.Groups[1].Value, true);
+                    Console.WriteLine(ok2
+                        ? "{\"success\":true,\"action\":\"keyup\",\"key\":\"" + EscapeJson(keyUpMatch.Groups[1].Value) + "\"}"
+                        : "{\"success\":false,\"error\":\"unknown_key\",\"key\":\"" + EscapeJson(keyUpMatch.Groups[1].Value) + "\"}");
+                    return ok2 ? 0 : 6;
+                }
+
+                var keyPressMatch = Regex.Match(keys, @"\{KEYPRESS:([^}]+)\}", RegexOptions.IgnoreCase);
+                if (keyPressMatch.Success)
+                {
+                    string kpKey = keyPressMatch.Groups[1].Value;
+                    bool ok2 = SendRawKey(kpKey, false);
+                    System.Threading.Thread.Sleep(20);
+                    bool ok3 = SendRawKey(kpKey, true);
+                    bool allOk = ok2 && ok3;
+                    Console.WriteLine(allOk
+                        ? "{\"success\":true,\"action\":\"keypress\",\"key\":\"" + EscapeJson(kpKey) + "\"}"
+                        : "{\"success\":false,\"error\":\"unknown_key\",\"key\":\"" + EscapeJson(kpKey) + "\"}");
+                    return allOk ? 0 : 6;
+                }
+
+                // ── RIGHTCLICK ────────────────────────────────────────────────────────
+                var rcMatch = Regex.Match(keys, @"\{RIGHTCLICK:(\d+),(\d+)\}", RegexOptions.IgnoreCase);
+                if (rcMatch.Success)
+                {
+                    int rcx = int.Parse(rcMatch.Groups[1].Value);
+                    int rcy = int.Parse(rcMatch.Groups[2].Value);
+                    SendMouseRightClick(rcx, rcy);
+                    Console.WriteLine("{\"success\":true,\"action\":\"rightclick\",\"x\":" + rcx + ",\"y\":" + rcy + "}");
+                    return 0;
+                }
+
+                // ── DBLCLICK ──────────────────────────────────────────────────────────
+                var dcMatch = Regex.Match(keys, @"\{DBLCLICK:(\d+),(\d+)\}", RegexOptions.IgnoreCase);
+                if (dcMatch.Success)
+                {
+                    int dcx = int.Parse(dcMatch.Groups[1].Value);
+                    int dcy = int.Parse(dcMatch.Groups[2].Value);
+                    SendMouseDblClick(dcx, dcy);
+                    Console.WriteLine("{\"success\":true,\"action\":\"dblclick\",\"x\":" + dcx + ",\"y\":" + dcy + "}");
+                    return 0;
+                }
+
+                // ── HOVER ─────────────────────────────────────────────────────────────
+                var hoverMatch = Regex.Match(keys, @"\{HOVER:(\d+),(\d+)\}", RegexOptions.IgnoreCase);
+                if (hoverMatch.Success)
+                {
+                    int hx = int.Parse(hoverMatch.Groups[1].Value);
+                    int hy = int.Parse(hoverMatch.Groups[2].Value);
+                    SendMouseHover(hx, hy);
+                    Console.WriteLine("{\"success\":true,\"action\":\"hover\",\"x\":" + hx + ",\"y\":" + hy + "}");
+                    return 0;
+                }
+
                 int? cx, cy;
                 if (TryParseClick(keys, out cx, out cy))
                 {
@@ -1891,7 +2156,13 @@ namespace KeyWin
             sb.AppendLine("    { \"name\": \"SET\", \"description\": \"Set a property on a UI element via ValuePattern (direct value injection, bypasses keyboard).\", \"parameters\": [ { \"name\": \"property\", \"type\": \"string\", \"required\": true }, { \"name\": \"value\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{SET:Value:Hello World}\"] },");
             sb.AppendLine("    { \"name\": \"RESET\", \"description\": \"Reset a SINGLE-SESSION app to a clean state without closing it. For Calculator: clicks the AC/Clear button. For other apps: application-specific reset. Prefer over close+relaunch to minimise side effects.\", \"parameters\": [], \"examples\": [\"{RESET}\"] },");
             sb.AppendLine("    { \"name\": \"NEWDOC\", \"description\": \"Open a new document in the target MULTI-DOCUMENT app (Ctrl+N). Use instead of launching a second process when the application already exists.\", \"parameters\": [], \"examples\": [\"{NEWDOC}\"] },");
-            sb.AppendLine("    { \"name\": \"KILL\", \"description\": \"Terminate the target process. Use only when teardown_policy=close_app and explicitly confirmed.\", \"parameters\": [], \"examples\": [\"{KILL}\"] }");
+            sb.AppendLine("    { \"name\": \"KILL\", \"description\": \"Terminate the target process. Use only when teardown_policy=close_app and explicitly confirmed.\", \"parameters\": [], \"examples\": [\"{KILL}\"] },");
+            sb.AppendLine("    { \"name\": \"KEYDOWN\", \"description\": \"Hold a modifier key (SendInput KEYEVENTF_KEYDOWN). Use before other keys for chords that SENDKEYS cannot express. Always pair with KEYUP.\", \"parameters\": [ { \"name\": \"key\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{KEYDOWN:Ctrl}\", \"{KEYDOWN:Alt}\", \"{KEYDOWN:Shift}\", \"{KEYDOWN:Win}\"] },");
+            sb.AppendLine("    { \"name\": \"KEYUP\", \"description\": \"Release a held modifier key (SendInput KEYEVENTF_KEYUP). Always use after a matching KEYDOWN.\", \"parameters\": [ { \"name\": \"key\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{KEYUP:Ctrl}\", \"{KEYUP:Alt}\"] },");
+            sb.AppendLine("    { \"name\": \"KEYPRESS\", \"description\": \"Atomic keydown+keyup for function/navigation keys (F1-F12, HOME, END, PAGEUP, PAGEDOWN, INSERT, DELETE, ENTER, TAB, ESC, APPS, arrow keys). Not for typing printable text — use SENDKEYS for that.\", \"parameters\": [ { \"name\": \"key\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{KEYPRESS:F5}\", \"{KEYPRESS:HOME}\", \"{KEYPRESS:F11}\"] },");
+            sb.AppendLine("    { \"name\": \"RIGHTCLICK\", \"description\": \"Right-click at absolute screen coordinates (x,y). Opens context menus.\", \"parameters\": [ { \"name\": \"coordinates\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{RIGHTCLICK:100,200}\"] },");
+            sb.AppendLine("    { \"name\": \"DBLCLICK\", \"description\": \"Double left-click at absolute screen coordinates (x,y). Opens items and triggers default actions.\", \"parameters\": [ { \"name\": \"coordinates\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{DBLCLICK:100,200}\"] },");
+            sb.AppendLine("    { \"name\": \"HOVER\", \"description\": \"Move mouse cursor to screen coordinates (x,y) without clicking. Triggers hover effects and tooltips.\", \"parameters\": [ { \"name\": \"coordinates\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{HOVER:100,200}\"] }");
             sb.AppendLine("  ]");
             sb.AppendLine("}");
             

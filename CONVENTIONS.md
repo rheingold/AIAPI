@@ -19,6 +19,12 @@ They are technology-level primitives, not application scenarios.
 | `LISTWINDOWS`| KeyWin, BrowserWin | **Unified session enumeration.** KeyWin → OS HWND list. BrowserWin → CDP tab list. Target `SYSTEM` for all; filter by helper or target prefix. Response `type` field distinguishes entries. Do NOT add LISTBROWSERS, LISTTABS, etc. |
 | `LAUNCH`     | KeyWin, BrowserWin | Start a process or attach to existing instance |
 | `KILL`       | KeyWin, BrowserWin | Terminate. Routing by target prefix: `HANDLE:` → KeyWin; `PAGE:` / `chrome:` → BrowserWin |
+| `KEYDOWN`    | KeyWin, BrowserWin | Hold a modifier key: `{KEYDOWN:Ctrl}` / `{KEYDOWN:Alt}` / `{KEYDOWN:Shift}` / `{KEYDOWN:Win}`. Use with `KEYUP` to bracket other keys for chords that SENDKEYS cannot express. |
+| `KEYUP`      | KeyWin, BrowserWin | Release a held modifier key: `{KEYUP:Ctrl}`. Always pair with a prior `KEYDOWN`. |
+| `KEYPRESS`   | KeyWin, BrowserWin | Atomic keydown+keyup for function / navigation keys. `{KEYPRESS:F5}`, `{KEYPRESS:HOME}`. For plain text use `SENDKEYS`. |
+| `RIGHTCLICK` | KeyWin, BrowserWin | Right-click at screen coordinates `{RIGHTCLICK:x,y}` or on element by AutomationId. |
+| `DBLCLICK`   | KeyWin, BrowserWin | Double left-click at screen coordinates `{DBLCLICK:x,y}` or on element by AutomationId. |
+| `HOVER`      | KeyWin, BrowserWin | Move mouse cursor without clicking. `{HOVER:x,y}`. Triggers hover/tooltip effects. |
 
 **CDP-protocol commands** (BrowserWin.exe only, prefix `CDP_`):
 

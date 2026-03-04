@@ -296,6 +296,88 @@ Terminates the target process. Use only when `teardown_policy=close_app` and the
 
 ---
 
+### 12. Hold Key - `{KEYDOWN:key}`
+**Syntax**: `{KEYDOWN:key}`
+
+Holds a key down via `SendInput(KEYEVENTF_KEYDOWN)`. Designed for modifier keys.
+Always pair with a subsequent `{KEYUP:key}`.
+
+Supported keys: `Ctrl`, `Alt`, `Shift`, `Win`.
+
+**Output**:
+```json
+{"success": true, "action": "keydown", "key": "Ctrl"}
+```
+
+---
+
+### 13. Release Key - `{KEYUP:key}`
+**Syntax**: `{KEYUP:key}`
+
+Releases a held key via `SendInput(KEYEVENTF_KEYUP)`.
+
+**Output**:
+```json
+{"success": true, "action": "keyup", "key": "Ctrl"}
+```
+
+---
+
+### 14. Press Key - `{KEYPRESS:key}`
+**Syntax**: `{KEYPRESS:key}`
+
+Atomic keydown+keyup for function / navigation keys.
+**Not** for typing printable text — use `SENDKEYS` for that.
+
+Supported keys (case-insensitive): `F1`–`F12`, `HOME`, `END`, `PAGEUP` / `PGUP`,
+`PAGEDOWN` / `PGDN`, `INSERT` / `INS`, `DELETE` / `DEL`, `ENTER`, `TAB`, `ESC`,
+`BACK`, `LEFT`, `RIGHT`, `UP`, `DOWN`, `APPS` (context menu key).
+
+**Output**:
+```json
+{"success": true, "action": "keypress", "key": "F5"}
+```
+
+---
+
+### 15. Right-Click - `{RIGHTCLICK:x,y}`
+**Syntax**: `{RIGHTCLICK:x,y}`
+
+Right-clicks at absolute screen coordinates using `SendInput(MOUSEEVENTF_RIGHTDOWN/UP)`.
+Moves the cursor to the specified position before clicking, which triggers context menus.
+
+**Output**:
+```json
+{"success": true, "action": "rightclick", "x": 640, "y": 400}
+```
+
+---
+
+### 16. Double-Click - `{DBLCLICK:x,y}`
+**Syntax**: `{DBLCLICK:x,y}`
+
+Double-clicks (two rapid left-click pairs) at absolute screen coordinates.
+
+**Output**:
+```json
+{"success": true, "action": "dblclick", "x": 640, "y": 400}
+```
+
+---
+
+### 17. Move Cursor (Hover) - `{HOVER:x,y}`
+**Syntax**: `{HOVER:x,y}`
+
+Moves the mouse cursor to absolute screen coordinates without clicking.
+Useful for triggering hover/tooltip effects.
+
+**Output**:
+```json
+{"success": true, "action": "hover", "x": 640, "y": 400}
+```
+
+---
+
 ## Invocation Model
 
 KeyWin.exe is invoked by the MCP server via `--listen-stdin` (persistent daemon mode). You

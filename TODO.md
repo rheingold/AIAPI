@@ -981,7 +981,7 @@ must learn per-app vocabulary instead of a universal one.
   - [x] `executeScenario` MCP tool description updated; XML template mode added (app, scenarioId, params)
 - [x] Update all scenario JSON files in `config/scenarios/` to use new vocab
   - [x] **Audit result:** JSON files use ScenarioReplayer high-level action names (queryTree, clickElement, etc.) — these are not wire protocol names; no rename needed. Wire protocol names only appear in description strings.
-- [ ] Update `docs/api/KEYWIN_API.md` and `docs/api/API.md`
+- [x] Update `docs/api/KEYWIN_API.md` and `docs/api/API.md`
 
 ### Problem: Non-Uniform JSON Action Shape
 Goal: 95% of calls look identical:

@@ -216,6 +216,107 @@ WinKeys.exe "HANDLE:5247274" "{CLICKNAME:Eight}"
 
 **Note**: Button names are locale-dependent. Use `{QUERYTREE}` to discover exact names, or use `{CLICK:x,y}` for language independence.
 
+### 7. Click Element by AutomationId - `{CLICKID:id}`
+**Syntax**: `{CLICKID:elementId}`
+
+**Output**:
+```json
+{"success": true, "action": "clickid", "elementId": "num2Button"}
+```
+
+Preferred over `{CLICKNAME}` when AutomationIds are stable across languages and OS versions.
+Discover IDs via `{QUERYTREE}`.
+
+**Example**:
+```powershell
+KeyWin.exe "HANDLE:5247274" "{CLICKID:num7Button}"
+KeyWin.exe "HANDLE:5247274" "{CLICKID:plusButton}"
+KeyWin.exe "HANDLE:5247274" "{CLICKID:equalButton}"
+```
+
+---
+
+### 8. Set Property via ValuePattern - `{SET:property:value}`
+**Syntax**: `{SET:property:value}`
+
+**Output**:
+```json
+{"success": true, "action": "set"}
+```
+
+Injects a value directly via UIA `ValuePattern` — bypasses keyboard simulation.
+Use for text fields where `SENDKEYS` would be slow or unreliable.
+
+**Example**:
+```powershell
+KeyWin.exe "HANDLE:notepad" "{SET:Value:Hello World}"
+```
+
+---
+
+### 9. Reset App State - `{RESET}`
+**Syntax**: `{RESET}`
+
+**Output**:
+```json
+{"success": true, "action": "reset"}
+```
+
+Resets a **single-session** app to a clean state without closing the window:
+- **Calculator**: clicks the AC/Clear button (searches for `clearEntryButton` / `clearButton`; falls back to Ctrl+Z×20)
+- **Other apps**: application-specific reset logic
+
+Prefer `{RESET}` over close+relaunch to minimise side effects and session overhead.
+
+---
+
+### 10. New Document - `{NEWDOC}`
+**Syntax**: `{NEWDOC}`
+
+**Output**:
+```json
+{"success": true, "action": "newdoc", "handle": "HANDLE:12345678"}
+```
+
+Opens a new document in the target **multi-document** app (sends Ctrl+N then detects the new window handle). Use instead of launching a second process when the application already exists.
+
+Applicable to Notepad, Word, Excel, and most other MDI apps.
+
+---
+
+### 11. Kill Process - `{KILL}`
+**Syntax**: `{KILL}`
+
+**Output**:
+```json
+{"success": true, "action": "kill"}
+```
+
+Terminates the target process. Use only when `teardown_policy=close_app` and the shutdown is explicitly intended.
+
+---
+
+## Invocation Model
+
+KeyWin.exe is invoked by the MCP server via `--listen-stdin` (persistent daemon mode). You
+do not normally need to call it directly. For scripting/testing you can still use the
+one-shot CLI form:
+
+```powershell
+KeyWin.exe "HANDLE:5247274" "{QUERYTREE:2}"
+```
+
+Or via stdin pipe (matches MCP wire format):
+
+```powershell
+'{"id":"1","target":"HANDLE:5247274","action":"{QUERYTREE:2}"}' |
+  KeyWin.exe --listen-stdin
+```
+
+For the full wire protocol see `docs/architecture/ARCHITECTURE.md`.
+
+---
+
 ## Output Format
 
 **All commands output JSON to stdout**. Debug messages go to stderr.

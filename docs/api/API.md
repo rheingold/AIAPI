@@ -653,3 +653,119 @@ Notes:
 - Office providers (mock)
 - Core API with caching and logging
 
+---
+
+## Dashboard REST API
+
+The dashboard server runs on `http://127.0.0.1:3458` by default. All write endpoints require session authentication (cookie `session` set by `POST /api/login`).
+
+### Endpoint Summary
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/status` | no | Server status, helper count |
+| GET | `/api/listHelpers` | no | Discovered helper executables |
+| GET | `/api/getHelperSchema?helperName=X` | no | Full API schema for a helper |
+| GET | `/api/scenarios` | no | List JSON scenario files |
+| POST | `/api/scenarios/run` | yes | Execute a JSON scenario |
+| GET | `/api/appTemplates` | no | List app template folders |
+| GET | `/api/appTemplates/{app}/tree` | no | Return `tree.xml` for an app |
+| GET | `/api/appTemplates/{app}/scenarios` | no | Return `scenarios.xml` for an app |
+| POST | `/api/appTemplates/{app}/scenarios/{id}/run` | yes | Execute a named XML scenario template |
+| GET | `/api/filters` | no | Current security filter rules |
+| POST | `/api/filters` | yes | Save security filter rules |
+| GET/POST | `/api/settings` | no/yes | Read / save dashboard settings |
+| POST | `/api/session/start` | yes | Start a test session |
+| POST | `/api/session/finish` | yes | Finish a test session |
+| GET | `/api/session/status` | no | Active session info |
+
+---
+
+### `POST /api/appTemplates/{app}/scenarios/{id}/run`
+
+Executes a named scenario from `apptemplates/{app}/scenarios.xml`.
+
+**Path parameters:**
+- `app` — app folder name (e.g. `calculator`, `notepad`, `chrome`)
+- `id` — scenario `id` attribute in `scenarios.xml`
+
+**Request body (JSON):**
+```json
+{
+  "params": { "expression": "7 * 6" },
+  "verbose": false
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "app": "calculator",
+  "scenarioId": "compute",
+  "label": "Compute Expression",
+  "totalSteps": 4,
+  "skippedSteps": 0,
+  "failedSteps": 0,
+  "vars": { "hwnd": "HANDLE:66716" },
+  "steps": [
+    { "step": 1, "command": "LISTWINDOWS", "success": true, "durationMs": 12 },
+    { "step": 2, "command": "LAUNCH", "skipped": true },
+    { "step": 3, "command": "RESET", "success": true, "durationMs": 145 },
+    { "step": 4, "command": "READ", "success": true, "result": "42", "durationMs": 18 }
+  ]
+}
+```
+
+**`ScenarioRef` composition:** Steps defined as `<ScenarioRef ref="intro"/>` are inlined
+recursively at load time. The loader resolves all references before execution.
+
+---
+
+### `GET /api/appTemplates`
+
+Returns metadata for all app folders under `appTemplatesDir`.
+
+```json
+[
+  {
+    "name": "calculator",
+    "hasTree": true,
+    "hasScenarios": true,
+    "scenarioCount": 3
+  },
+  {
+    "name": "notepad",
+    "hasTree": true,
+    "hasScenarios": true,
+    "scenarioCount": 5
+  }
+]
+```
+
+---
+
+### MCP Tool: `executeScenario` — XML Template Mode
+
+The MCP tool `executeScenario` also supports running app template scenarios:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "executeScenario",
+    "arguments": {
+      "app": "calculator",
+      "scenarioId": "compute",
+      "params": { "expression": "7 * 6" },
+      "verbose": false
+    }
+  }
+}
+```
+
+This is equivalent to calling `POST /api/appTemplates/calculator/scenarios/compute/run`.
+
+
+

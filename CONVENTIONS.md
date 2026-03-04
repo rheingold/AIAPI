@@ -122,6 +122,7 @@ Existing endpoints — extend these, do not add parallel ones:
 | GET | `/api/appTemplates` | `handleListAppTemplates` |
 | GET | `/api/appTemplates/{app}/tree` | `handleGetAppTemplate` |
 | GET | `/api/appTemplates/{app}/scenarios` | `handleGetAppTemplate` |
+| POST | `/api/appTemplates/{app}/scenarios/{id}/run` | `handleRunAppTemplateScenario` |
 | GET | `/api/listHelpers` | `handleListHelpers` |
 | GET | `/api/getHelperSchema` | `handleGetHelperSchema` |
 | GET | `/api/scenarios` | `handleGetScenarios` |

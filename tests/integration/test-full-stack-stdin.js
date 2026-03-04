@@ -205,6 +205,57 @@ async function testListBrowsers() {
   }
 }
 
+// ── PRIORITY 2.7: Schema validation ─────────────────────────────────────────
+// Asserts that every command exposed by each helper has at least one `parameters`
+// entry — i.e. the schema is not accidentally truncated or undocumented.
+async function testSchemaValidation() {
+  console.log('\n── Schema validation (PRIORITY 2.7) ──');
+  for (const helperName of ['KeyWin.exe', 'BrowserWin.exe']) {
+    let r;
+    try {
+      r = await mcpCall('getHelperSchema', { helperName });
+    } catch (e) {
+      console.log(`  ✗  getHelperSchema(${helperName}) — ${e.message}`); failed++;
+      continue;
+    }
+    if (!r || !r.success || !r.schema) {
+      console.log(`  ✗  ${helperName}: no schema returned — ${JSON.stringify(r).slice(0,120)}`); failed++;
+      continue;
+    }
+    const { schema } = r;
+    const cmds = schema.commands ?? [];
+    if (cmds.length === 0) {
+      console.log(`  ✗  ${helperName}: schema has 0 commands`); failed++;
+      continue;
+    }
+    let allHaveParams = true;
+    const missing = [];
+    for (const cmd of cmds) {
+      if (!Array.isArray(cmd.parameters) || cmd.parameters.length === 0) {
+        allHaveParams = false;
+        missing.push(cmd.name);
+      }
+    }
+    if (allHaveParams) {
+      console.log(`  ✓  ${helperName}: ${cmds.length} commands — all have ≥1 parameters entry`);
+      passed++;
+    } else {
+      console.log(`  ✗  ${helperName}: commands missing parameters[]: ${missing.join(', ')}`);
+      failed++;
+    }
+
+    // Verify schema-level required fields
+    const hasVersion = typeof schema.version === 'string' && schema.version.length > 0;
+    const hasDesc    = typeof schema.description === 'string' && schema.description.length > 0;
+    if (hasVersion && hasDesc) {
+      console.log(`  ✓  ${helperName}: schema has version="${schema.version}" and description`);
+      passed++;
+    } else {
+      console.log(`  ✗  ${helperName}: schema missing version or description`); failed++;
+    }
+  }
+}
+
 async function testCalculator() {
   console.log('\n── Calculator (KeyWin)  [SINGLE-SESSION] ──');
   console.log(`   window_mode: single_session  |  teardown: ${TEARDOWN_POLICY}`);
@@ -884,6 +935,7 @@ async function main() {
   try {
     await testListWindows();
     await testListBrowsers();
+    await testSchemaValidation();
     await testCalculator();
     await testNotepad();
     await testBrowsers();

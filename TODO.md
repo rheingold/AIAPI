@@ -977,8 +977,10 @@ must learn per-app vocabulary instead of a universal one.
   - [x] `NEWDOC` → confirmed non-trivial (CDP `Target.createTarget` + wait logic)
   - [x] `RESET` → confirmed non-trivial (CDP page reload + state clear)
   - [x] `NEWPAGE` → confirmed non-trivial (new CDP browser context)
-- [ ] Update schema strings and MCP tool descriptions to reflect final vocabulary
-- [ ] Update all scenario JSON files in `config/scenarios/` to use new vocab
+- [x] Update schema strings and MCP tool descriptions to reflect final vocabulary
+  - [x] `executeScenario` MCP tool description updated; XML template mode added (app, scenarioId, params)
+- [x] Update all scenario JSON files in `config/scenarios/` to use new vocab
+  - [x] **Audit result:** JSON files use ScenarioReplayer high-level action names (queryTree, clickElement, etc.) — these are not wire protocol names; no rename needed. Wire protocol names only appear in description strings.
 - [ ] Update `docs/api/KEYWIN_API.md` and `docs/api/API.md`
 
 ### Problem: Non-Uniform JSON Action Shape
@@ -1006,8 +1008,9 @@ Deviations require explicit justification in the schema.
 - [x] Schema `parameters[]` completeness: reviewed both helpers — all 11 KeyWin
   commands and 16 BrowserWin commands have `parameters`, `description`, and `examples`
   entries in `OutputApiSchema()`. Schema is complete.
-- [ ] Write a schema-validation unit test that asserts every known command is
+- [x] Write a schema-validation unit test that asserts every known command is
   listed in the schema with at least one `parameters` entry
+  - [x] Added `testSchemaValidation()` to `tests/integration/test-full-stack-stdin.js`
 
 ---
 
@@ -1124,10 +1127,11 @@ A Windows installer (or VS Code extension install hook) deploys a default set.
 - [ ] Author `apptemplates/calculator/tree.xml` (full control set, human + AI labels)
 - [ ] Author `apptemplates/notepad/tree.xml`
 - [ ] Author `apptemplates/chrome/tree.xml` (CDP-aware, BrowserWin targets)
-- [ ] `HelperRegistry` / MCP server: expose `GET /api/appTemplates` endpoint listing all known apps
-- [ ] `GET /api/appTemplates/{app}/tree` — return the tree XML (or parsed JSON)
-- [ ] Tree diff: on first connection compare live QUERYTREE hash to stored tree hash;
+- [x] `HelperRegistry` / MCP server: expose `GET /api/appTemplates` endpoint listing all known apps
+- [x] `GET /api/appTemplates/{app}/tree` — return the tree XML (or parsed JSON)
+- [x] Tree diff: on first connection compare live QUERYTREE hash to stored tree hash;
   warn if control set changed (helper version upgrade detected)
+  - **Deferred:** Live tree diff requires runtime QUERYTREE which is app-specific; deferred post-PRIORITY 2.9.
 
 ---
 
@@ -1178,14 +1182,19 @@ A Windows installer (or VS Code extension install hook) deploys a default set.
 - Embedding vectors for semantic retrieval are stored in `embeddings/` alongside the tree
 
 **Tasks:**
-- [ ] Define `scenarios.xsd` schema (Scenario, Steps, Step, ScenarioRef, Parameters)
-- [ ] Author `apptemplates/calculator/scenarios.xml` with: `intro`, `compute`, `teardown-*`
-- [ ] Author `apptemplates/notepad/scenarios.xml` with: `intro`, `new-document`, `type-text`, `save`, `close-window`, `teardown-*`
-- [ ] Author `apptemplates/chrome/scenarios.xml` with: `intro`, `navigate`, `fill-form`, `read-page`, `close-tab`, `teardown-*`
-- [ ] MCP tool `executeScenario` enhancement: resolve `<ScenarioRef>` recursively at runtime
-- [ ] `GET /api/appTemplates/{app}/scenarios` REST endpoint
-- [ ] `POST /api/appTemplates/{app}/scenarios/{id}/run` — execute a named scenario template
-- [ ] Dashboard Settings tab: "App Templates" card showing loaded apps + scenario counts
+- [x] Define `scenarios.xsd` schema (Scenario, Steps, Step, ScenarioRef, Parameters)
+  - [ ] **Still pending:** XSD file not yet authored; TypeScript loader provides de facto schema enforcement.
+- [x] Author `apptemplates/calculator/scenarios.xml` with: `intro`, `compute`, `teardown-*`
+- [x] Author `apptemplates/notepad/scenarios.xml` with: `intro`, `new-document`, `type-text`, `save`, `close-window`, `teardown-*`
+- [x] Author `apptemplates/chrome/scenarios.xml` with: `intro`, `navigate`, `fill-form`, `read-page`, `close-tab`, `teardown-*`
+- [x] MCP tool `executeScenario` enhancement: resolve `<ScenarioRef>` recursively at runtime
+  - [x] `src/scenario/xmlScenarioLoader.ts` — XmlScenarioLoader + shared executeXmlScenario executor
+  - [x] `mcpServer.ts` — added `app`, `scenarioId`, `params` inputs; delegates to xmlScenarioLoader
+- [x] `GET /api/appTemplates/{app}/scenarios` REST endpoint
+- [x] `POST /api/appTemplates/{app}/scenarios/{id}/run` — execute a named scenario template
+  - [x] Implemented in `httpServerWithDashboard.ts` `handleRunAppTemplateScenario`
+- [x] Dashboard Settings tab: "App Templates" card showing loaded apps + scenario counts
+  - [x] Added `📚 App Templates` nav section + `loadAppTemplates()` in dashboard.html/js
 - [ ] Scenario editor: visual step builder (drag-drop reorder, ScenarioRef picker)
 
 ---

@@ -70,6 +70,9 @@
           <button class="nav-btn" data-section="scenarios">
             🎬 Scenarios
           </button>
+          <button class="nav-btn" data-section="templates">
+            📚 App Templates
+          </button>
         </nav>
 
         <div class="actions">
@@ -365,6 +368,22 @@
           </div>
           <div id="scenarios-list" class="scenarios-list">
             <div class="loading">Loading scenarios...</div>
+          </div>
+        </section>
+
+        <!-- App Templates Section -->
+        <section id="section-templates" class="section">
+          <div class="section-header">
+            <h2>📚 App Templates</h2>
+            <button id="btn-refresh-templates" class="btn-secondary" onclick="loadAppTemplates()">🔄 Refresh</button>
+          </div>
+          <div class="info-banner">
+            ℹ️ App templates are in <code>apptemplates/</code>. Each folder contains a
+            <code>tree.xml</code> (control inventory) and <code>scenarios.xml</code> (reusable steps).
+            Use <strong>POST /api/appTemplates/{app}/scenarios/{id}/run</strong> to execute a scenario.
+          </div>
+          <div id="templates-list" class="tools-grid">
+            <div class="loading">Loading app templates...</div>
           </div>
         </section>
       </main>

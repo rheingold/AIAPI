@@ -12,6 +12,7 @@ import { SessionTokenManager } from '../security/SessionTokenManager';
 import { SecurityPolicy } from '../security/types';
 import { globalLogger } from '../utils/Logger';
 import { HelperRegistry } from '../helpers/HelperRegistry';
+import { XmlScenarioLoader, executeXmlScenario as runXmlScenario } from '../scenario/xmlScenarioLoader';
 
 const execFileAsync = promisify(execFile);
 
@@ -335,8 +336,9 @@ export class HttpServerWithDashboard {
       '/api/appTemplates',
     ];
 
-    // Also allow /api/appTemplates/* prefix without auth
-    if (pathname.startsWith('/api/appTemplates/')) {
+    // Also allow /api/appTemplates/* GET prefix without auth;
+    // POST run endpoints (/api/appTemplates/{app}/scenarios/{id}/run) require auth.
+    if (pathname.startsWith('/api/appTemplates/') && !pathname.endsWith('/run')) {
       return false;
     }
 
@@ -515,6 +517,9 @@ export class HttpServerWithDashboard {
       }
       if (pathname.startsWith('/api/appTemplates/') && req.method === 'GET') {
         return this.handleGetAppTemplate(req, res, pathname);
+      }
+      if (pathname.startsWith('/api/appTemplates/') && pathname.endsWith('/run') && req.method === 'POST') {
+        return this.handleRunAppTemplateScenario(req, res, pathname);
       }
       if (pathname === '/api/scenarios/run' && req.method === 'POST') {
         return this.handleRunScenario(req, res);
@@ -981,11 +986,18 @@ export class HttpServerWithDashboard {
       const entries = fs.readdirSync(templatesDir, { withFileTypes: true });
       const apps = entries
         .filter(e => e.isDirectory())
-        .map(e => ({
-          name: e.name,
-          hasTree: fs.existsSync(path.join(templatesDir, e.name, 'tree.xml')),
-          hasScenarios: fs.existsSync(path.join(templatesDir, e.name, 'scenarios.xml')),
-        }));
+        .map(e => {
+          const hasTree      = fs.existsSync(path.join(templatesDir, e.name, 'tree.xml'));
+          const hasScenarios = fs.existsSync(path.join(templatesDir, e.name, 'scenarios.xml'));
+          let scenarioCount: number | null = null;
+          if (hasScenarios) {
+            try {
+              const xml = fs.readFileSync(path.join(templatesDir, e.name, 'scenarios.xml'), 'utf8');
+              scenarioCount = (xml.match(/<Scenario\s/g) ?? []).length;
+            } catch { /* ignore */ }
+          }
+          return { name: e.name, hasTree, hasScenarios, scenarioCount };
+        });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true, apps }));
     } catch (error) {
@@ -1042,6 +1054,78 @@ export class HttpServerWithDashboard {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: false, error: String(error) }));
     }
+  }
+
+  /**
+   * POST /api/appTemplates/{app}/scenarios/{scenarioId}/run
+   *
+   * Body (JSON):
+   *   { params?: Record<string,string>, verbose?: boolean }
+   *
+   * Loads the named scenario from apptemplates/{app}/scenarios.xml,
+   * resolves all <ScenarioRef> elements recursively, then executes the
+   * step sequence via HelperRegistry.
+   */
+  private handleRunAppTemplateScenario(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    pathname: string,
+  ): void {
+    // pathname = /api/appTemplates/<app>/scenarios/<id>/run
+    const parts = pathname.replace('/api/appTemplates/', '').split('/');
+    // parts = [app, 'scenarios', id, 'run']
+    if (parts.length !== 4 || parts[1] !== 'scenarios' || parts[3] !== 'run') {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Expected /api/appTemplates/{app}/scenarios/{id}/run' }));
+      return;
+    }
+    const [appName, , scenarioId] = parts;
+
+    if (!appName || appName.includes('..') || appName.includes('/') || appName.includes('\\')) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Invalid app name' }));
+      return;
+    }
+
+    if (!this.helperRegistry) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'HelperRegistry not available' }));
+      return;
+    }
+
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', async () => {
+      let parsed: { params?: Record<string, string>; verbose?: boolean } = {};
+      try { if (body) parsed = JSON.parse(body); } catch { /* use defaults */ }
+
+      try {
+        const templatesDir = path.resolve(
+          process.cwd(),
+          this.config.appTemplatesDir || './apptemplates',
+        );
+        const loader   = new XmlScenarioLoader(templatesDir);
+        const scenario = loader.load(appName, scenarioId);
+        const registry = this.helperRegistry!;
+        const result   = await runXmlScenario({
+          scenario,
+          params:  parsed.params  ?? {},
+          verbose: parsed.verbose ?? false,
+          callFn:  (helper, target, command, parameter) =>
+                     registry.callCommand(helper, target, command, parameter),
+        });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (error) {
+        this.log('error', 'appTemplates', `Scenario run failed — ${appName}/${scenarioId}: ${error}`);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: String(error) }));
+      }
+    });
+    req.on('error', (e) => {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: String(e) }));
+    });
   }
 
   private handleGetScenarios(req: http.IncomingMessage, res: http.ServerResponse): void {

@@ -4,6 +4,7 @@ import * as path from 'path';
 import { AutomationEngine } from '../engine/automationEngine';
 import { QueryOptions } from '../types';
 import { ScenarioReplayer } from '../scenario/replayer';
+import { XmlScenarioLoader, executeXmlScenario as runXmlScenario } from '../scenario/xmlScenarioLoader';
 import { SessionTokenManager } from '../security/SessionTokenManager';
 import { globalLogger } from '../utils/Logger';
 import { HelperRegistry } from '../helpers/HelperRegistry';
@@ -33,6 +34,7 @@ export class MCPServer {
     description?: string;
   }> = [];
   private disabledHelpers: string[] = [];
+  private appTemplatesDir: string;
   private readonly settingsPath = path.resolve(process.cwd(), 'config', 'dashboard-settings.json');
 
   constructor(automationEngine?: AutomationEngine, port: number = 3457) {
@@ -54,6 +56,7 @@ export class MCPServer {
       this.sessionTokenManager
     );
     this.docsPath = path.join(__dirname, '..', '..');
+    this.appTemplatesDir = path.join(this.docsPath, 'apptemplates');
 
     // Setup security filter validator if config exists
     this.setupSecurityFilter();
@@ -86,6 +89,12 @@ export class MCPServer {
         this.disabledHelpers = Array.isArray(saved.disabledHelpers) ? saved.disabledHelpers : [];
         if (saved.testSessionDir && typeof saved.testSessionDir === 'string') {
           this.helperRegistry.setSessionBaseDir(saved.testSessionDir);
+        }
+        if (typeof saved.appTemplatesDir === 'string' && saved.appTemplatesDir) {
+          const resolved = path.isAbsolute(saved.appTemplatesDir)
+            ? saved.appTemplatesDir
+            : path.resolve(process.cwd(), saved.appTemplatesDir);
+          this.appTemplatesDir = resolved;
         }
         globalLogger.info('Security', `Loaded ${this.advancedFilters.length} advanced filter rule(s) from dashboard-settings.json`);
         if (this.disabledHelpers.length > 0) {
@@ -618,10 +627,24 @@ export class MCPServer {
           },
           {
             name: 'executeScenario',
-            description: 'Execute a JSON automation scenario with steps, variables, and assertions',
+            description: 'Execute a scenario from the app template library (XML) or a legacy JSON scenario file.',
             inputSchema: {
               type: 'object',
               properties: {
+                // ── XML template mode (preferred) ──────────────────────────
+                app: {
+                  type: 'string',
+                  description: 'App name as it appears in apptemplates/ (e.g., "calculator", "notepad", "chrome"). Use with scenarioId.',
+                },
+                scenarioId: {
+                  type: 'string',
+                  description: 'Scenario id within apptemplates/{app}/scenarios.xml (e.g., "compute", "intro").',
+                },
+                params: {
+                  type: 'object',
+                  description: 'Runtime parameter substitutions for {{placeholder}} variables in the scenario, e.g. { "expression": "7 * 6" }.',
+                },
+                // ── Legacy JSON mode ────────────────────────────────────────
                 scenarioPath: {
                   type: 'string',
                   description: 'Path to JSON scenario file (e.g., "config/scenarios/calculator-basic.json")',
@@ -909,6 +932,17 @@ export class MCPServer {
    */
   private async executeScenario(args: any): Promise<any> {
     try {
+      // ── XML template mode (preferred) ──────────────────────────────────────
+      if (args.app && args.scenarioId) {
+        return await this.executeXmlScenario(
+          String(args.app),
+          String(args.scenarioId),
+          args.params ?? {},
+          !!args.verbose,
+        );
+      }
+
+      // ── Legacy JSON mode ────────────────────────────────────────────────────
       // Update context verbose if specified
       if (args.verbose !== undefined) {
         this.scenarioReplayer['context'].verbose = args.verbose;
@@ -926,7 +960,7 @@ export class MCPServer {
       } else if (args.scenarioJson) {
         scenarioResult = await this.scenarioReplayer.executeScenario(args.scenarioJson);
       } else {
-        throw new Error('Either scenarioPath or scenarioJson must be provided');
+        throw new Error('Provide either { app, scenarioId } for XML template mode, or scenarioPath / scenarioJson for legacy JSON mode.');
       }
 
       return scenarioResult;
@@ -937,6 +971,28 @@ export class MCPServer {
         stack: error.stack
       };
     }
+  }
+
+  /**
+   * Execute a named scenario from the XML app template library.
+   * Delegates to the shared executor in xmlScenarioLoader.ts.
+   */
+  private async executeXmlScenario(
+    app: string,
+    scenarioId: string,
+    userParams: Record<string, string>,
+    verbose: boolean,
+  ): Promise<any> {
+    const loader   = new XmlScenarioLoader(this.appTemplatesDir);
+    const scenario = loader.load(app, scenarioId);
+    return runXmlScenario({
+      scenario,
+      params:  userParams,
+      callFn:  (helper, target, command, parameter) =>
+                 this.helperRegistry.callCommand(helper, target, command, parameter),
+      verbose,
+      log: (msg) => globalLogger.info('XmlScenario', msg),
+    });
   }
 
   /**

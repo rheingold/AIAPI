@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeHelpers();
   loadTools();
   loadScenarios();
+  loadAppTemplates();
   loadSettings();
   startUptimeCounter();
   startStatusPoller();
@@ -51,6 +52,10 @@ function initializeNavigation() {
       // Auto-validate config whenever Settings section is opened
       if (section === 'settings') {
         validateConfiguration();
+      }
+      // Refresh app templates list when that section is opened
+      if (section === 'templates') {
+        loadAppTemplates();
       }
     });
   });
@@ -368,6 +373,43 @@ async function loadTools() {
 }
 
 // Scenarios
+// App Templates
+async function loadAppTemplates() {
+  const container = document.getElementById('templates-list');
+  if (!container) return;
+  container.innerHTML = '<div class="loading">Loading app templates...</div>';
+  try {
+    const response = await fetch('/api/appTemplates');
+    const data = await response.json();
+    container.innerHTML = '';
+    if (!data.apps || data.apps.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-secondary)">No app templates found in apptemplates/ directory.</p>';
+      return;
+    }
+    data.apps.forEach(app => {
+      const card = document.createElement('div');
+      card.className = 'tool-card';
+      card.innerHTML = `
+        <div class="tool-name">${app.name}</div>
+        <div class="tool-description">
+          ${app.hasTree ? '✅ tree.xml' : '❌ tree.xml'}
+          &nbsp;&nbsp;
+          ${app.hasScenarios ? '✅ scenarios.xml' : '❌ scenarios.xml'}
+          ${app.scenarioCount != null ? ` (${app.scenarioCount} scenarios)` : ''}
+        </div>
+        <div style="margin-top:0.5rem;">
+          <a href="/api/appTemplates/${app.name}/tree" target="_blank" class="btn-secondary" style="font-size:0.75rem;padding:0.2rem 0.5rem;">View tree.xml</a>
+          <a href="/api/appTemplates/${app.name}/scenarios" target="_blank" class="btn-secondary" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-left:0.4rem;">View scenarios.xml</a>
+        </div>`;
+      container.appendChild(card);
+    });
+    addLog('debug', 'templates', `Loaded ${data.apps.length} app template(s)`);
+  } catch (error) {
+    container.innerHTML = `<p style="color:var(--error)">Failed to load app templates: ${error.message}</p>`;
+    addLog('error', 'templates', `Failed to load app templates: ${error.message}`);
+  }
+}
+
 async function loadScenarios() {
   try {
     const response = await fetch('/api/scenarios');

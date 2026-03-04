@@ -1923,6 +1923,28 @@ namespace KeyWin
                     return 2;
                 }
 
+                // ── MOUSEDOWN / MOUSEUP — global (no hwnd needed, pure SendInput) ──────────────
+                {
+                    var mdmatch = Regex.Match(keys ?? "", @"^\{MOUSEDOWN:(\d+),(\d+)\}$", RegexOptions.IgnoreCase);
+                    if (mdmatch.Success)
+                    {
+                        int gx = int.Parse(mdmatch.Groups[1].Value);
+                        int gy = int.Parse(mdmatch.Groups[2].Value);
+                        WinUtils.SendMouseDown(gx, gy);
+                        Console.WriteLine("{\"success\":true,\"action\":\"mousedown\",\"x\":" + gx + ",\"y\":" + gy + "}");
+                        return 0;
+                    }
+                    var mumatch = Regex.Match(keys ?? "", @"^\{MOUSEUP:(\d+),(\d+)\}$", RegexOptions.IgnoreCase);
+                    if (mumatch.Success)
+                    {
+                        int gx = int.Parse(mumatch.Groups[1].Value);
+                        int gy = int.Parse(mumatch.Groups[2].Value);
+                        WinUtils.SendMouseUp(gx, gy);
+                        Console.WriteLine("{\"success\":true,\"action\":\"mouseup\",\"x\":" + gx + ",\"y\":" + gy + "}");
+                        return 0;
+                    }
+                }
+
                 Console.Error.WriteLine("DEBUG: Looking for process: " + processName);
                 IntPtr hwnd = FindWindowByProcessName(processName);
                 

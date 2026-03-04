@@ -960,6 +960,74 @@ async function testKeyWinNewCommands() {
   }
 }
 
+async function testKeyWinInputControls() {
+  console.log('\n── KeyWin: CHECK / UNCHECK / MOUSEDOWN / MOUSEUP (smoke test) ──');
+
+  // Reuse an existing window for CHECK/UNCHECK target
+  const lw = await mcpCall('helper_KeyWin', { target: 'SYSTEM', command: 'LISTWINDOWS', parameter: '' });
+  let target = null;
+  for (const w of (lw?.windows ?? [])) {
+    const t = String(w.title || '').toLowerCase();
+    if (t.includes('calc') || t.includes('kalkul') || t.includes('notepad') || t.includes('pozn')) {
+      target = w.title; break;
+    }
+  }
+  if (!target && (lw?.windows ?? []).length > 0) target = lw.windows[0].title;
+
+  // ── a. CHECK: nonexistent selector → expect JSON with toggle_failed ──────
+  if (target) {
+    const rCheck = await mcpCall('helper_KeyWin', {
+      target, command: 'CHECK', parameter: '__noSuchCheckbox__'
+    });
+    const checkDispatched = rCheck && typeof rCheck === 'object' &&
+      (rCheck.success === true || rCheck.error === 'toggle_failed');
+    if (checkDispatched) {
+      console.log(`  ✓  CHECK dispatched (${rCheck.success ? 'success' : rCheck.error})`); passed++;
+    } else {
+      console.log(`  ✗  CHECK — unexpected: ${JSON.stringify(rCheck).slice(0, 120)}`); failed++;
+    }
+
+    // ── b. UNCHECK: nonexistent selector → same pattern ────────────────────
+    const rUncheck = await mcpCall('helper_KeyWin', {
+      target, command: 'UNCHECK', parameter: '__noSuchCheckbox__'
+    });
+    const uncheckDispatched = rUncheck && typeof rUncheck === 'object' &&
+      (rUncheck.success === true || rUncheck.error === 'toggle_failed');
+    if (uncheckDispatched) {
+      console.log(`  ✓  UNCHECK dispatched (${rUncheck.success ? 'success' : rUncheck.error})`); passed++;
+    } else {
+      console.log(`  ✗  UNCHECK — unexpected: ${JSON.stringify(rUncheck).slice(0, 120)}`); failed++;
+    }
+  } else {
+    skip('CHECK/UNCHECK smoke test', 'no window found');
+  }
+
+  // ── c. MOUSEDOWN at off-screen coordinates → should always succeed ───────
+  // Use 1,1 (top-left corner, typically desktop) — safe, no real UI interaction.
+  const rMD = await mcpCall('helper_KeyWin', {
+    target: 'SYSTEM', command: 'MOUSEDOWN', parameter: '1,1'
+  });
+  const mdOk = rMD && typeof rMD === 'object' && rMD.success === true &&
+    rMD.action === 'mousedown' && rMD.x === 1 && rMD.y === 1;
+  if (mdOk) {
+    console.log(`  ✓  MOUSEDOWN at (1,1) success`); passed++;
+  } else {
+    console.log(`  ✗  MOUSEDOWN — unexpected: ${JSON.stringify(rMD).slice(0, 120)}`); failed++;
+  }
+
+  // ── d. MOUSEUP at same coordinates ────────────────────────────────────────
+  const rMU = await mcpCall('helper_KeyWin', {
+    target: 'SYSTEM', command: 'MOUSEUP', parameter: '1,1'
+  });
+  const muOk = rMU && typeof rMU === 'object' && rMU.success === true &&
+    rMU.action === 'mouseup' && rMU.x === 1 && rMU.y === 1;
+  if (muOk) {
+    console.log(`  ✓  MOUSEUP at (1,1) success`); passed++;
+  } else {
+    console.log(`  ✗  MOUSEUP — unexpected: ${JSON.stringify(rMU).slice(0, 120)}`); failed++;
+  }
+}
+
 async function main() {
   // ── 0. Optional: rebuild binaries before running ──────────────────────────
   if (REBUILD_FIRST) {
@@ -1057,6 +1125,7 @@ async function main() {
     await testCalculator();
     await testNotepad();
     await testKeyWinNewCommands();
+    await testKeyWinInputControls();
     await testBrowsers();
   } catch (e) {
     console.error('\nFatal error:', e.stack || e.message);

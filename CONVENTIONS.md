@@ -59,6 +59,11 @@ They are technology-level primitives, not application scenarios.
 | `scenarios.xml`  | Reusable compound operation fragments. References `ScenarioRef` for composition. |
 | `embeddings/`    | Optional: pre-computed vector embeddings for semantic control search. |
 
+> **Planned (deferred — see TODO.md "App Template Namespacing"):** `<app>` will become a
+> slash-separated reverse-domain path, e.g. `com.microsoft/windows.v11/calculator`.
+> Current layout (`apptemplates/calculator/`) is the flat interim form.
+> Do NOT create new parallel app folder conventions — wait for the namespace migration.
+
 ### `<Group>` element rules
 - Non-wrapping preceding-sibling annotation.
 - **MUST** have a `members` attribute: space-separated list of Control `id` values.

@@ -1197,6 +1197,53 @@ A Windows installer (or VS Code extension install hook) deploys a default set.
   - [x] Added `📚 App Templates` nav section + `loadAppTemplates()` in dashboard.html/js
 - [ ] Scenario editor: visual step builder (drag-drop reorder, ScenarioRef picker)
 
+### App Template Namespacing / Package Layout (LOW PRIORITY)
+**Goal:** Organise `apptemplates/` into a reverse-domain namespace hierarchy, similar to
+Java/Maven package coordinates, so that vendor-shipped templates, OS-specific variants,
+and user-local packs don't collide.
+
+**Proposed layout:**
+```
+apptemplates/
+  com.microsoft/
+    windows.v11/
+      calculator/
+        tree.xml  scenarios.xml
+      notepad/
+        tree.xml  scenarios.xml
+    windows.v10/
+      notepad/          ← older HWND layout differs
+  eu.plachy.aiapi/
+    default/
+      notepad/          ← user-supplied overrides / additional scenarios
+```
+
+**Addressing format** (used in REST paths and MCP tool args):
+```
+app  =  "com.microsoft/windows.v11/calculator"
+POST /api/appTemplates/com.microsoft%2Fwindows.v11%2Fcalculator/scenarios/compute/run
+```
+
+**Migration tasks (when this becomes a priority):**
+- [ ] Decide separator: `/` subdirectories (cleaner) vs `.` flat folder names (simpler glob)
+  — recommendation: subdirectory hierarchy (`com.microsoft/windows.v11/notepad`)
+- [ ] Move existing `apptemplates/calculator/`, `notepad/`, `chrome/` under
+  `apptemplates/com.microsoft/windows.v11/` (calculator, notepad) and
+  `apptemplates/com.google/chrome/` / `apptemplates/com.brave/browser/`
+- [ ] Update `XmlScenarioLoader.load(app, scenarioId)`: `app` becomes a slash-path;
+  `appTemplatesDir + '/' + app` resolves correctly without code changes (just path.join)
+- [ ] Update REST routing in `httpServerWithDashboard.ts`: replace split-on-`/` with a
+  greedy prefix match up to `/scenarios/` or `/tree`
+- [ ] Update `GET /api/appTemplates` to return nested structure or flat list with
+  full namespaced ids
+- [ ] Update Dashboard "App Templates" card to render namespace hierarchy as a tree
+- [ ] Update `tree.xsd` `app` attribute: allow slash-separated namespace paths
+- [ ] Update `scenarios.xsd` same
+- [ ] Add `namespace` + `registry` attributes to `<AppTree>` and `<ScenarioLibrary>` roots
+- [ ] Document resolution order (user namespace beats vendor; OS-specific beats generic):
+  `eu.plachy.aiapi/default/notepad` → `com.microsoft/windows.v11/notepad` → `com.microsoft/windows.v10/notepad`
+- [ ] CLI: `npm run embed-tree -- --app com.microsoft/windows.v11/calculator ...`
+
 ---
 
 ### Embedding Vectors (Optional, Per-Engine)

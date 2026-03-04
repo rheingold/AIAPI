@@ -243,6 +243,24 @@ namespace BrowserWin
                 case "COOKIES":
                     return CmdCookies(ExtractParam(command, "COOKIES"), port);
 
+                case "KEYDOWN":
+                    return CmdKeyDown(ExtractParam(command, "KEYDOWN"), port);
+
+                case "KEYUP":
+                    return CmdKeyUp(ExtractParam(command, "KEYUP"), port);
+
+                case "KEYPRESS":
+                    return CmdKeyPress(ExtractParam(command, "KEYPRESS"), port);
+
+                case "RIGHTCLICK":
+                    return CmdRightClick(ExtractParam(command, "RIGHTCLICK"), port);
+
+                case "DBLCLICK":
+                    return CmdDblClick(ExtractParam(command, "DBLCLICK"), port);
+
+                case "HOVER":
+                    return CmdHover(ExtractParam(command, "HOVER"), port);
+
                 default:
                     OutputError("Unknown command: " + command);
                     return 1;
@@ -437,6 +455,98 @@ namespace BrowserWin
                     return OutputError("uia_element_not_found: " + fillSel
                         + " — browser may not expose this element via UIA."
                         + " Try --force-renderer-accessibility (Chromium) or --remote-debugging-port for CDP.");
+                }
+
+                case "KEYDOWN":
+                {
+                    string kdKey = ExtractParam(command, "KEYDOWN");
+                    WinUtils.SetForegroundWindow(hwnd);
+                    Thread.Sleep(80);
+                    bool kdOk = WinUtils.SendRawKey(kdKey ?? "", false);
+                    Console.WriteLine("{\"success\":" + (kdOk ? "true" : "false")
+                        + ",\"command\":\"KEYDOWN\",\"key\":\""
+                        + WinUtils.EscapeJson(kdKey ?? "") + "\",\"mode\":\"uia\"}");
+                    return kdOk ? 0 : 1;
+                }
+
+                case "KEYUP":
+                {
+                    string kuKey = ExtractParam(command, "KEYUP");
+                    WinUtils.SetForegroundWindow(hwnd);
+                    Thread.Sleep(80);
+                    bool kuOk = WinUtils.SendRawKey(kuKey ?? "", true);
+                    Console.WriteLine("{\"success\":" + (kuOk ? "true" : "false")
+                        + ",\"command\":\"KEYUP\",\"key\":\""
+                        + WinUtils.EscapeJson(kuKey ?? "") + "\",\"mode\":\"uia\"}");
+                    return kuOk ? 0 : 1;
+                }
+
+                case "KEYPRESS":
+                {
+                    string kpKey = ExtractParam(command, "KEYPRESS");
+                    WinUtils.SetForegroundWindow(hwnd);
+                    Thread.Sleep(80);
+                    WinUtils.SendRawKey(kpKey ?? "", false);
+                    Thread.Sleep(30);
+                    WinUtils.SendRawKey(kpKey ?? "", true);
+                    Console.WriteLine("{\"success\":true,\"command\":\"KEYPRESS\",\"key\":\""
+                        + WinUtils.EscapeJson(kpKey ?? "") + "\",\"mode\":\"uia\"}");
+                    return 0;
+                }
+
+                case "RIGHTCLICK":
+                {
+                    string rcCoords = ExtractParam(command, "RIGHTCLICK");
+                    int? rcX = null; int? rcY = null;
+                    if (!string.IsNullOrEmpty(rcCoords))
+                    {
+                        var rcp = rcCoords.Split(',');
+                        int rx, ry;
+                        if (rcp.Length == 2
+                            && int.TryParse(rcp[0].Trim(), out rx)
+                            && int.TryParse(rcp[1].Trim(), out ry))
+                        { rcX = rx; rcY = ry; }
+                    }
+                    WinUtils.SendMouseRightClick(rcX, rcY);
+                    Console.WriteLine("{\"success\":true,\"command\":\"RIGHTCLICK\",\"mode\":\"uia\"}");
+                    return 0;
+                }
+
+                case "DBLCLICK":
+                {
+                    string dcCoords = ExtractParam(command, "DBLCLICK");
+                    int? dcX = null; int? dcY = null;
+                    if (!string.IsNullOrEmpty(dcCoords))
+                    {
+                        var dcp = dcCoords.Split(',');
+                        int dx2, dy2;
+                        if (dcp.Length == 2
+                            && int.TryParse(dcp[0].Trim(), out dx2)
+                            && int.TryParse(dcp[1].Trim(), out dy2))
+                        { dcX = dx2; dcY = dy2; }
+                    }
+                    WinUtils.SendMouseDblClick(dcX, dcY);
+                    Console.WriteLine("{\"success\":true,\"command\":\"DBLCLICK\",\"mode\":\"uia\"}");
+                    return 0;
+                }
+
+                case "HOVER":
+                {
+                    string hvCoords = ExtractParam(command, "HOVER");
+                    int hvX = 0; int hvY = 0;
+                    if (!string.IsNullOrEmpty(hvCoords))
+                    {
+                        var hvp = hvCoords.Split(',');
+                        int hx, hy;
+                        if (hvp.Length == 2
+                            && int.TryParse(hvp[0].Trim(), out hx)
+                            && int.TryParse(hvp[1].Trim(), out hy))
+                        { hvX = hx; hvY = hy; }
+                    }
+                    WinUtils.SendMouseHover(hvX, hvY);
+                    Console.WriteLine("{\"success\":true,\"command\":\"HOVER\",\"mode\":\"uia\""
+                        + ",\"x\":" + hvX + ",\"y\":" + hvY + "}");
+                    return 0;
                 }
 
                 case "PAGESOURCE":
@@ -1468,6 +1578,348 @@ namespace BrowserWin
         }
 
         // ──────────────────────────────────────────────────────────────────────
+        //  Key + mouse input commands (CDP + UIA)
+        // ──────────────────────────────────────────────────────────────────────
+
+        // ── Generic CDP WebSocket command sender ───────────────────────────────
+
+        /// <summary>
+        /// Send any CDP command (e.g. Input.dispatchKeyEvent) using the same
+        /// WebSocket transport as CdpRuntimeEvaluate.
+        /// </summary>
+        static string CdpSendCommand(int port, string targetId, string method, string paramsJson)
+        {
+            try
+            {
+                string wsPath = "/devtools/page/" + targetId;
+                string host   = "127.0.0.1:" + port;
+                using (var tcp = new TcpClient("127.0.0.1", port))
+                using (var stream = tcp.GetStream())
+                using (var writer = new StreamWriter(stream, new UTF8Encoding(false)) { AutoFlush = true })
+                {
+                    tcp.ReceiveTimeout = 5000;
+                    tcp.SendTimeout    = 5000;
+                    string key = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
+                    writer.Write("GET " + wsPath + " HTTP/1.1\r\n");
+                    writer.Write("Host: " + host + "\r\n");
+                    writer.Write("Upgrade: websocket\r\n");
+                    writer.Write("Connection: Upgrade\r\n");
+                    writer.Write("Sec-WebSocket-Key: " + key + "\r\n");
+                    writer.Write("Sec-WebSocket-Version: 13\r\n");
+                    writer.Write("\r\n");
+                    byte[] hdr = new byte[4096];
+                    int hRead  = 0;
+                    try
+                    {
+                        while (hRead < hdr.Length)
+                        {
+                            int n = stream.Read(hdr, hRead, hdr.Length - hRead);
+                            if (n == 0) break;
+                            hRead += n;
+                            if (Encoding.ASCII.GetString(hdr, 0, hRead).Contains("\r\n\r\n")) break;
+                        }
+                    }
+                    catch (System.IO.IOException) { return "timeout"; }
+
+                    string cdpMsg  = "{\"id\":1,\"method\":\"" + method + "\",\"params\":{" + paramsJson + "}}";
+                    byte[] pl      = Encoding.UTF8.GetBytes(cdpMsg);
+                    byte[] framed  = BuildWsFrame(pl);
+                    stream.Write(framed, 0, framed.Length);
+
+                    tcp.ReceiveTimeout = 3000;
+                    byte[] buf = new byte[16384];
+                    int bRead  = 0;
+                    try
+                    {
+                        while (bRead < buf.Length)
+                        {
+                            int n = stream.Read(buf, bRead, buf.Length - bRead);
+                            if (n == 0) break;
+                            bRead += n;
+                            if (bRead >= 2)
+                            {
+                                int payLen2 = buf[1] & 0x7F;
+                                if (payLen2 < 126 && bRead >= 2 + payLen2) break;
+                                if (payLen2 == 126 && bRead >= 4)
+                                { int l16 = (buf[2] << 8) | buf[3]; if (bRead >= 4 + l16) break; }
+                            }
+                        }
+                    }
+                    catch (System.IO.IOException) { /* timeout ok — short ack */ }
+
+                    return DecodeWsFrame(buf, bRead) ?? "ok";
+                }
+            }
+            catch (Exception ex) { return "error: " + JsonEscape(ex.Message); }
+        }
+
+        // ── Key resolution for CDP Input.dispatchKeyEvent ─────────────────────
+
+        static void ResolveKeyForCdp(string keyName,
+            out int vkCode, out string keyStr, out string codeStr, out int modBit)
+        {
+            modBit = 0;
+            keyName = (keyName ?? "").ToUpper().Trim();
+            switch (keyName)
+            {
+                case "CTRL": case "CONTROL":
+                    vkCode = 17; keyStr = "Control"; codeStr = "ControlLeft"; modBit = 2; break;
+                case "ALT": case "MENU":
+                    vkCode = 18; keyStr = "Alt";     codeStr = "AltLeft";     modBit = 1; break;
+                case "SHIFT":
+                    vkCode = 16; keyStr = "Shift";   codeStr = "ShiftLeft";   modBit = 8; break;
+                case "WIN": case "LWIN":
+                    vkCode = 91; keyStr = "Meta";    codeStr = "MetaLeft";    modBit = 4; break;
+                case "ENTER": case "RETURN":
+                    vkCode = 13; keyStr = "Enter";     codeStr = "Enter";     break;
+                case "TAB":
+                    vkCode = 9;  keyStr = "Tab";       codeStr = "Tab";       break;
+                case "ESC": case "ESCAPE":
+                    vkCode = 27; keyStr = "Escape";    codeStr = "Escape";    break;
+                case "BACK": case "BACKSPACE":
+                    vkCode = 8;  keyStr = "Backspace"; codeStr = "Backspace"; break;
+                case "DELETE": case "DEL":
+                    vkCode = 46; keyStr = "Delete";    codeStr = "Delete";    break;
+                case "HOME":
+                    vkCode = 36; keyStr = "Home";      codeStr = "Home";      break;
+                case "END":
+                    vkCode = 35; keyStr = "End";       codeStr = "End";       break;
+                case "PAGEUP": case "PGUP":
+                    vkCode = 33; keyStr = "PageUp";    codeStr = "PageUp";    break;
+                case "PAGEDOWN": case "PGDN":
+                    vkCode = 34; keyStr = "PageDown";  codeStr = "PageDown";  break;
+                case "INSERT": case "INS":
+                    vkCode = 45; keyStr = "Insert";    codeStr = "Insert";    break;
+                case "LEFT":
+                    vkCode = 37; keyStr = "ArrowLeft";  codeStr = "ArrowLeft";  break;
+                case "UP":
+                    vkCode = 38; keyStr = "ArrowUp";    codeStr = "ArrowUp";    break;
+                case "RIGHT":
+                    vkCode = 39; keyStr = "ArrowRight"; codeStr = "ArrowRight"; break;
+                case "DOWN":
+                    vkCode = 40; keyStr = "ArrowDown";  codeStr = "ArrowDown";  break;
+                case "APPS": case "CONTEXT":
+                    vkCode = 93; keyStr = "ContextMenu"; codeStr = "ContextMenu"; break;
+                case "F1":  vkCode = 112; keyStr = "F1";  codeStr = "F1";  break;
+                case "F2":  vkCode = 113; keyStr = "F2";  codeStr = "F2";  break;
+                case "F3":  vkCode = 114; keyStr = "F3";  codeStr = "F3";  break;
+                case "F4":  vkCode = 115; keyStr = "F4";  codeStr = "F4";  break;
+                case "F5":  vkCode = 116; keyStr = "F5";  codeStr = "F5";  break;
+                case "F6":  vkCode = 117; keyStr = "F6";  codeStr = "F6";  break;
+                case "F7":  vkCode = 118; keyStr = "F7";  codeStr = "F7";  break;
+                case "F8":  vkCode = 119; keyStr = "F8";  codeStr = "F8";  break;
+                case "F9":  vkCode = 120; keyStr = "F9";  codeStr = "F9";  break;
+                case "F10": vkCode = 121; keyStr = "F10"; codeStr = "F10"; break;
+                case "F11": vkCode = 122; keyStr = "F11"; codeStr = "F11"; break;
+                case "F12": vkCode = 123; keyStr = "F12"; codeStr = "F12"; break;
+                default:
+                    if (keyName.Length == 1)
+                    {
+                        char cc = char.ToUpper(keyName[0]);
+                        vkCode  = (int)cc;
+                        keyStr  = keyName;
+                        codeStr = "Key" + cc;
+                    }
+                    else
+                    {
+                        vkCode  = 0;
+                        keyStr  = keyName;
+                        codeStr = keyName;
+                    }
+                    break;
+            }
+        }
+
+        // ── Key/mouse command implementations ─────────────────────────────────
+
+        static int CmdKeyDown(string key, int port)
+        {
+            if (string.IsNullOrEmpty(key))
+                return OutputError("KEYDOWN requires a key name: {KEYDOWN:Ctrl}");
+            string targetId;
+            bool hasCdp = TryGetActiveTarget(port, out targetId);
+            if (hasCdp)
+            {
+                int vk; string ks; string cs; int mb;
+                ResolveKeyForCdp(key, out vk, out ks, out cs, out mb);
+                string p = "\"type\":\"keyDown\",\"key\":\"" + JsonEscape(ks)
+                    + "\",\"code\":\"" + JsonEscape(cs)
+                    + "\",\"windowsVirtualKeyCode\":" + vk
+                    + ",\"modifiers\":" + mb;
+                CdpSendCommand(port, targetId, "Input.dispatchKeyEvent", p);
+                Console.WriteLine("{\"success\":true,\"command\":\"KEYDOWN\",\"key\":\""
+                    + JsonEscape(key) + "\",\"mode\":\"cdp\"}");
+            }
+            else
+            {
+                bool ok = WinUtils.SendRawKey(key, false);
+                Console.WriteLine("{\"success\":" + (ok ? "true" : "false")
+                    + ",\"command\":\"KEYDOWN\",\"key\":\""
+                    + JsonEscape(key) + "\",\"mode\":\"uia\"}");
+            }
+            return 0;
+        }
+
+        static int CmdKeyUp(string key, int port)
+        {
+            if (string.IsNullOrEmpty(key))
+                return OutputError("KEYUP requires a key name: {KEYUP:Ctrl}");
+            string targetId;
+            bool hasCdp = TryGetActiveTarget(port, out targetId);
+            if (hasCdp)
+            {
+                int vk; string ks; string cs; int mb;
+                ResolveKeyForCdp(key, out vk, out ks, out cs, out mb);
+                string p = "\"type\":\"keyUp\",\"key\":\"" + JsonEscape(ks)
+                    + "\",\"code\":\"" + JsonEscape(cs)
+                    + "\",\"windowsVirtualKeyCode\":" + vk
+                    + ",\"modifiers\":0";
+                CdpSendCommand(port, targetId, "Input.dispatchKeyEvent", p);
+                Console.WriteLine("{\"success\":true,\"command\":\"KEYUP\",\"key\":\""
+                    + JsonEscape(key) + "\",\"mode\":\"cdp\"}");
+            }
+            else
+            {
+                bool ok = WinUtils.SendRawKey(key, true);
+                Console.WriteLine("{\"success\":" + (ok ? "true" : "false")
+                    + ",\"command\":\"KEYUP\",\"key\":\""
+                    + JsonEscape(key) + "\",\"mode\":\"uia\"}");
+            }
+            return 0;
+        }
+
+        static int CmdKeyPress(string key, int port)
+        {
+            if (string.IsNullOrEmpty(key))
+                return OutputError("KEYPRESS requires a key name: {KEYPRESS:F5}");
+            string targetId;
+            bool hasCdp = TryGetActiveTarget(port, out targetId);
+            if (hasCdp)
+            {
+                int vk; string ks; string cs; int mb;
+                ResolveKeyForCdp(key, out vk, out ks, out cs, out mb);
+                string pDown = "\"type\":\"keyDown\",\"key\":\"" + JsonEscape(ks)
+                    + "\",\"code\":\"" + JsonEscape(cs)
+                    + "\",\"windowsVirtualKeyCode\":" + vk
+                    + ",\"modifiers\":" + mb;
+                string pUp   = "\"type\":\"keyUp\",\"key\":\"" + JsonEscape(ks)
+                    + "\",\"code\":\"" + JsonEscape(cs)
+                    + "\",\"windowsVirtualKeyCode\":" + vk
+                    + ",\"modifiers\":0";
+                CdpSendCommand(port, targetId, "Input.dispatchKeyEvent", pDown);
+                Thread.Sleep(30);
+                CdpSendCommand(port, targetId, "Input.dispatchKeyEvent", pUp);
+                Console.WriteLine("{\"success\":true,\"command\":\"KEYPRESS\",\"key\":\""
+                    + JsonEscape(key) + "\",\"mode\":\"cdp\"}");
+            }
+            else
+            {
+                WinUtils.SendRawKey(key, false);
+                Thread.Sleep(30);
+                WinUtils.SendRawKey(key, true);
+                Console.WriteLine("{\"success\":true,\"command\":\"KEYPRESS\",\"key\":\""
+                    + JsonEscape(key) + "\",\"mode\":\"uia\"}");
+            }
+            return 0;
+        }
+
+        static int CmdRightClick(string coords, int port)
+        {
+            int cx = 0; int cy = 0; bool hasCoords = false;
+            if (!string.IsNullOrEmpty(coords))
+            {
+                var cp = coords.Split(',');
+                int px, py;
+                if (cp.Length == 2
+                    && int.TryParse(cp[0].Trim(), out px)
+                    && int.TryParse(cp[1].Trim(), out py))
+                { cx = px; cy = py; hasCoords = true; }
+            }
+            string targetId;
+            bool hasCdp = TryGetActiveTarget(port, out targetId);
+            if (hasCdp)
+            {
+                string pDown = "\"type\":\"mousePressed\",\"button\":\"right\",\"clickCount\":1"
+                    + (hasCoords ? ",\"x\":" + cx + ",\"y\":" + cy : "");
+                string pUp   = "\"type\":\"mouseReleased\",\"button\":\"right\",\"clickCount\":1"
+                    + (hasCoords ? ",\"x\":" + cx + ",\"y\":" + cy : "");
+                CdpSendCommand(port, targetId, "Input.dispatchMouseEvent", pDown);
+                Thread.Sleep(30);
+                CdpSendCommand(port, targetId, "Input.dispatchMouseEvent", pUp);
+                Console.WriteLine("{\"success\":true,\"command\":\"RIGHTCLICK\",\"mode\":\"cdp\"}");
+            }
+            else
+            {
+                WinUtils.SendMouseRightClick(hasCoords ? (int?)cx : null, hasCoords ? (int?)cy : null);
+                Console.WriteLine("{\"success\":true,\"command\":\"RIGHTCLICK\",\"mode\":\"uia\"}");
+            }
+            return 0;
+        }
+
+        static int CmdDblClick(string coords, int port)
+        {
+            int cx = 0; int cy = 0; bool hasCoords = false;
+            if (!string.IsNullOrEmpty(coords))
+            {
+                var cp = coords.Split(',');
+                int px, py;
+                if (cp.Length == 2
+                    && int.TryParse(cp[0].Trim(), out px)
+                    && int.TryParse(cp[1].Trim(), out py))
+                { cx = px; cy = py; hasCoords = true; }
+            }
+            string targetId;
+            bool hasCdp = TryGetActiveTarget(port, out targetId);
+            if (hasCdp)
+            {
+                string pDown = "\"type\":\"mousePressed\",\"button\":\"left\",\"clickCount\":2"
+                    + (hasCoords ? ",\"x\":" + cx + ",\"y\":" + cy : "");
+                string pUp   = "\"type\":\"mouseReleased\",\"button\":\"left\",\"clickCount\":2"
+                    + (hasCoords ? ",\"x\":" + cx + ",\"y\":" + cy : "");
+                CdpSendCommand(port, targetId, "Input.dispatchMouseEvent", pDown);
+                Thread.Sleep(50);
+                CdpSendCommand(port, targetId, "Input.dispatchMouseEvent", pUp);
+                Console.WriteLine("{\"success\":true,\"command\":\"DBLCLICK\",\"mode\":\"cdp\"}");
+            }
+            else
+            {
+                WinUtils.SendMouseDblClick(hasCoords ? (int?)cx : null, hasCoords ? (int?)cy : null);
+                Console.WriteLine("{\"success\":true,\"command\":\"DBLCLICK\",\"mode\":\"uia\"}");
+            }
+            return 0;
+        }
+
+        static int CmdHover(string coords, int port)
+        {
+            int cx = 0; int cy = 0;
+            if (!string.IsNullOrEmpty(coords))
+            {
+                var cp = coords.Split(',');
+                int px, py;
+                if (cp.Length == 2
+                    && int.TryParse(cp[0].Trim(), out px)
+                    && int.TryParse(cp[1].Trim(), out py))
+                { cx = px; cy = py; }
+            }
+            string targetId;
+            bool hasCdp = TryGetActiveTarget(port, out targetId);
+            if (hasCdp)
+            {
+                string p = "\"type\":\"mouseMoved\",\"x\":" + cx + ",\"y\":" + cy;
+                CdpSendCommand(port, targetId, "Input.dispatchMouseEvent", p);
+                Console.WriteLine("{\"success\":true,\"command\":\"HOVER\",\"mode\":\"cdp\""
+                    + ",\"x\":" + cx + ",\"y\":" + cy + "}");
+            }
+            else
+            {
+                WinUtils.SendMouseHover(cx, cy);
+                Console.WriteLine("{\"success\":true,\"command\":\"HOVER\",\"mode\":\"uia\""
+                    + ",\"x\":" + cx + ",\"y\":" + cy + "}");
+            }
+            return 0;
+        }
+
+        // ──────────────────────────────────────────────────────────────────────
         //  CDP helpers  (HTTP-based — no WebSocket dependency for .NET 4.5)
         // ──────────────────────────────────────────────────────────────────────
 
@@ -1766,6 +2218,13 @@ namespace BrowserWin
             if (cmd.Equals("{LAUNCH}",      StringComparison.OrdinalIgnoreCase)) return "LAUNCH";
             if (Regex.IsMatch(cmd, @"^\{LAUNCH:",     RegexOptions.IgnoreCase)) return "LAUNCH";
 
+            if (Regex.IsMatch(cmd, @"^\{KEYDOWN:",    RegexOptions.IgnoreCase)) return "KEYDOWN";
+            if (Regex.IsMatch(cmd, @"^\{KEYUP:",      RegexOptions.IgnoreCase)) return "KEYUP";
+            if (Regex.IsMatch(cmd, @"^\{KEYPRESS:",   RegexOptions.IgnoreCase)) return "KEYPRESS";
+            if (Regex.IsMatch(cmd, @"^\{RIGHTCLICK:", RegexOptions.IgnoreCase)) return "RIGHTCLICK";
+            if (Regex.IsMatch(cmd, @"^\{DBLCLICK:",   RegexOptions.IgnoreCase)) return "DBLCLICK";
+            if (Regex.IsMatch(cmd, @"^\{HOVER:",      RegexOptions.IgnoreCase)) return "HOVER";
+
             return "UNKNOWN";
         }
 
@@ -1837,7 +2296,13 @@ namespace BrowserWin
             sb.AppendLine("    { \"name\": \"SCREENSHOT\", \"description\": \"Capture a PNG screenshot of the current browser page via CDP Page.captureScreenshot. Optional parameter: file path to save (default: %TEMP%\\\\aiapi_screenshot_<timestamp>.png). Returns the saved file path and byte size.\", \"parameters\": [ { \"name\": \"path\", \"type\": \"string\", \"required\": false } ], \"examples\": [\"{SCREENSHOT}\", \"{SCREENSHOT:C:\\\\Users\\\\me\\\\shot.png}\"] },");
             sb.AppendLine("    { \"name\": \"NEWPAGE\", \"description\": \"Open a new browser tab; optionally navigate it to a URL\", \"parameters\": [ { \"name\": \"url\", \"type\": \"string\", \"required\": false } ], \"examples\": [\"{NEWPAGE}\", \"{NEWPAGE:https://example.com}\"] },");
             sb.AppendLine("    { \"name\": \"COOKIES\", \"description\": \"Manage browser cookies. Actions: get | clear | set:<name=value;domain=...>\", \"parameters\": [ { \"name\": \"action\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{COOKIES:get}\", \"{COOKIES:clear}\", \"{COOKIES:set:SOCS=accept}\"] },");
-            sb.AppendLine("    { \"name\": \"KILL\", \"description\": \"Terminate the target browser process\", \"parameters\": [], \"examples\": [\"{KILL}\"] }");
+            sb.AppendLine("    { \"name\": \"KILL\", \"description\": \"Terminate the target browser process\", \"parameters\": [], \"examples\": [\"{KILL}\"]} ,");
+            sb.AppendLine("    { \"name\": \"KEYDOWN\", \"description\": \"Hold a modifier key down via CDP Input.dispatchKeyEvent (or SendInput UIA fallback). Use with KEYUP to build chords. Param: Ctrl | Alt | Shift | Win.\", \"parameters\": [ { \"name\": \"key\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{KEYDOWN:Ctrl}\", \"{KEYDOWN:Alt}\"] },");
+            sb.AppendLine("    { \"name\": \"KEYUP\", \"description\": \"Release a held modifier key. Always pair with a prior KEYDOWN for the same key.\", \"parameters\": [ { \"name\": \"key\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{KEYUP:Ctrl}\", \"{KEYUP:Alt}\"] },");
+            sb.AppendLine("    { \"name\": \"KEYPRESS\", \"description\": \"Atomic keydown+keyup for function or navigation keys. Supported: F1-F12, HOME, END, PAGEUP, PAGEDOWN, INSERT, DELETE, ENTER, TAB, ESC, BACK, LEFT, RIGHT, UP, DOWN, APPS.\", \"parameters\": [ { \"name\": \"key\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{KEYPRESS:F5}\", \"{KEYPRESS:HOME}\"] },");
+            sb.AppendLine("    { \"name\": \"RIGHTCLICK\", \"description\": \"Right-click at screen coordinates via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Param: x,y.\", \"parameters\": [ { \"name\": \"coords\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{RIGHTCLICK:320,240}\"] },");
+            sb.AppendLine("    { \"name\": \"DBLCLICK\", \"description\": \"Double left-click at screen coordinates via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Param: x,y.\", \"parameters\": [ { \"name\": \"coords\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{DBLCLICK:320,240}\"] },");
+            sb.AppendLine("    { \"name\": \"HOVER\", \"description\": \"Move the cursor to screen coordinates without clicking, via CDP Input.dispatchMouseEvent (or SetCursorPos UIA fallback). Param: x,y.\", \"parameters\": [ { \"name\": \"coords\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{HOVER:320,240}\"] }");
             sb.AppendLine("  ]");
             sb.AppendLine("}");
 

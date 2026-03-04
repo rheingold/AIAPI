@@ -90,6 +90,15 @@ public static class WinUtils
     public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName,
         int nMaxCount);
 
+    [DllImport("user32.dll")]
+    public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    public static extern bool BringWindowToTop(IntPtr hWnd);
+
     // ── Structures ────────────────────────────────────────────────────────────
 
     [StructLayout(LayoutKind.Sequential)]
@@ -99,11 +108,12 @@ public static class WinUtils
         public int Y;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Explicit)]
     public struct INPUT
     {
-        public uint type;
-        public MOUSEINPUT mi;
+        [FieldOffset(0)] public uint       type;
+        [FieldOffset(4)] public MOUSEINPUT mi;
+        [FieldOffset(4)] public KEYBDINPUT ki;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -117,11 +127,32 @@ public static class WinUtils
         public IntPtr dwExtraInfo;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KEYBDINPUT
+    {
+        public ushort wVk;
+        public ushort wScan;
+        public uint   dwFlags;
+        public uint   time;
+        public IntPtr dwExtraInfo;
+    }
+
     // ── Constants ─────────────────────────────────────────────────────────────
 
-    public const uint INPUT_MOUSE         = 0;
-    public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
-    public const uint MOUSEEVENTF_LEFTUP   = 0x0004;
+    public const uint INPUT_MOUSE          = 0;
+    public const uint INPUT_KEYBOARD        = 1;
+    public const uint MOUSEEVENTF_LEFTDOWN  = 0x0002;
+    public const uint MOUSEEVENTF_LEFTUP    = 0x0004;
+    public const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
+    public const uint MOUSEEVENTF_RIGHTUP   = 0x0010;
+    public const uint MOUSEEVENTF_MOVE      = 0x0001;
+    public const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
+    public const uint KEYEVENTF_KEYUP       = 0x0002;
+
+    public const byte VK_LWIN   = 0x5B;
+    public const byte VK_APPS   = 0x5D;
+    public const byte VK_INSERT = 0x2D;
+    public const byte VK_F1     = 0x70;   // F2=0x71 … F12=0x7B
 
     public const uint WM_KEYDOWN   = 0x0100;
     public const uint WM_KEYUP     = 0x0101;
@@ -907,6 +938,21 @@ public static class WinUtils
             case "SHIFT":                      return VK_SHIFT;
             case "CONTROL": case "CTRL":       return VK_CONTROL;
             case "ALT":   case "MENU":         return VK_MENU;
+            case "WIN":   case "LWIN":         return VK_LWIN;
+            case "INSERT": case "INS":         return VK_INSERT;
+            case "APPS":                       return VK_APPS;
+            case "F1":                         return VK_F1;
+            case "F2":                         return (uint)(VK_F1 + 1);
+            case "F3":                         return (uint)(VK_F1 + 2);
+            case "F4":                         return (uint)(VK_F1 + 3);
+            case "F5":                         return (uint)(VK_F1 + 4);
+            case "F6":                         return (uint)(VK_F1 + 5);
+            case "F7":                         return (uint)(VK_F1 + 6);
+            case "F8":                         return (uint)(VK_F1 + 7);
+            case "F9":                         return (uint)(VK_F1 + 8);
+            case "F10":                        return (uint)(VK_F1 + 9);
+            case "F11":                        return (uint)(VK_F1 + 10);
+            case "F12":                        return (uint)(VK_F1 + 11);
             default:                           return 0;
         }
     }
@@ -1183,5 +1229,74 @@ public static class WinUtils
             }
         }
         Console.Error.WriteLine("DEBUG[WinUtils]: DirectSendKeys completed");
+    }
+
+    // ── SendRawKey / SendMouseRightClick / SendMouseDblClick / SendMouseHover ─
+
+    /// <summary>
+    /// Send a single raw key event via SendInput (keyboard path).
+    /// keyName - same tokens as GetVirtualKeyCode ("CTRL", "F5", "HOME", "a", …).
+    /// keyUp - false = key-down, true = key-up.
+    /// </summary>
+    public static bool SendRawKey(string keyName, bool keyUp)
+    {
+        uint vk = GetVirtualKeyCode(keyName.ToUpper());
+        if (vk == 0 && keyName.Length == 1)
+            vk = (uint)(VkKeyScan(keyName[0]) & 0xFF);
+        if (vk == 0) return false;
+
+        bool extended = ((vk >= VK_F1 && vk <= (uint)(VK_F1 + 11)) ||
+                         vk == 0x24 || vk == 0x23 || vk == 0x21 || vk == 0x22 ||
+                         vk == VK_INSERT || vk == VK_DELETE ||
+                         vk == VK_LEFT   || vk == VK_UP    ||
+                         vk == VK_RIGHT  || vk == VK_DOWN);
+
+        uint flags = keyUp ? KEYEVENTF_KEYUP : 0;
+        if (extended) flags |= KEYEVENTF_EXTENDEDKEY;
+
+        INPUT[] inp = new INPUT[1];
+        inp[0].type            = INPUT_KEYBOARD;
+        inp[0].ki.wVk          = (ushort)vk;
+        inp[0].ki.wScan        = 0;
+        inp[0].ki.dwFlags      = flags;
+        inp[0].ki.time         = 0;
+        inp[0].ki.dwExtraInfo  = IntPtr.Zero;
+        SendInput(1, inp, Marshal.SizeOf(typeof(INPUT)));
+        return true;
+    }
+
+    /// <summary>Right-click at optional screen coordinate (or current cursor position).</summary>
+    public static void SendMouseRightClick(int? x, int? y)
+    {
+        if (x.HasValue && y.HasValue) SetCursorPos(x.Value, y.Value);
+        INPUT[] inputs = new INPUT[2];
+        inputs[0].type        = INPUT_MOUSE;
+        inputs[0].mi.dwFlags  = MOUSEEVENTF_RIGHTDOWN;
+        inputs[1].type        = INPUT_MOUSE;
+        inputs[1].mi.dwFlags  = MOUSEEVENTF_RIGHTUP;
+        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+    }
+
+    /// <summary>Double-left-click at optional screen coordinate.</summary>
+    public static void SendMouseDblClick(int? x, int? y)
+    {
+        if (x.HasValue && y.HasValue) SetCursorPos(x.Value, y.Value);
+        INPUT[] inputs = new INPUT[4];
+        inputs[0].type        = INPUT_MOUSE;
+        inputs[0].mi.dwFlags  = MOUSEEVENTF_LEFTDOWN;
+        inputs[1].type        = INPUT_MOUSE;
+        inputs[1].mi.dwFlags  = MOUSEEVENTF_LEFTUP;
+        inputs[2].type        = INPUT_MOUSE;
+        inputs[2].mi.dwFlags  = MOUSEEVENTF_LEFTDOWN;
+        inputs[3].type        = INPUT_MOUSE;
+        inputs[3].mi.dwFlags  = MOUSEEVENTF_LEFTUP;
+        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+    }
+
+    /// <summary>Move cursor to screen coordinate without clicking.</summary>
+    public static void SendMouseHover(int x, int y)
+    {
+        SetCursorPos(x, y);
+        Thread.Sleep(50);
     }
 }

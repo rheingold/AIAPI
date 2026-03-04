@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  apptemplates/scenarios.xsd
+  XML Schema for apptemplates/{app}/scenarios.xml files.
+
+  A scenarios.xml file contains reusable scenario templates for one application.
+  Scenarios are executed via:
+    - MCP tool: executeScenario { app, scenarioId, params }
+    - REST:     POST /api/appTemplates/{app}/scenarios/{id}/run
+
+  Key conventions:
+    - {{varName}}          placeholder substituted at runtime from params or var bindings
+    - {{hwnd}}             automatically bound by XmlScenarioLoader from LISTWINDOWS result
+    - <ScenarioRef>        recursively inlines another scenario from the same file
+    - conditional="absent" step is skipped if {{hwnd}} is already bound
+
+  To validate a scenarios.xml file:
+    xmllint --schema scenarios.xsd apptemplates/calculator/scenarios.xml --noout
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           elementFormDefault="qualified">
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       Root element
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <xs:element name="ScenarioLibrary">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Scenario" type="ScenarioType"
+                    minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+
+      <!-- logical app identifier — must match folder name and tree.xml app attribute -->
+      <xs:attribute name="app"     type="xs:string" use="required"/>
+      <!-- library version, e.g. 1.0 -->
+      <xs:attribute name="version" type="xs:string" use="optional"/>
+      <!-- default helper (can be overridden per scenario) -->
+      <xs:attribute name="helper"  type="HelperName" use="optional"/>
+    </xs:complexType>
+
+    <!-- Scenario ids must be unique within the library -->
+    <xs:unique name="uniqueScenarioId">
+      <xs:selector xpath="Scenario"/>
+      <xs:field    xpath="@id"/>
+    </xs:unique>
+  </xs:element>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       Scenario
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <xs:complexType name="ScenarioType">
+    <xs:sequence>
+      <xs:element name="description" type="LocalisedText" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="Parameters"  type="ParametersType" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="Steps"       type="StepsType"      minOccurs="1" maxOccurs="1"/>
+    </xs:sequence>
+
+    <!-- unique id used in ScenarioRef and REST/MCP calls -->
+    <xs:attribute name="id"     type="xs:string" use="required"/>
+    <!-- human-readable name shown in Dashboard -->
+    <xs:attribute name="label"  type="xs:string" use="optional"/>
+    <!-- helper override: use a different helper for this scenario -->
+    <xs:attribute name="helper" type="HelperName" use="optional"/>
+    <!-- app process hint for LISTWINDOWS window binding (overrides library-level) -->
+    <xs:attribute name="process" type="xs:string" use="optional"/>
+    <!-- app title-match hint for LISTWINDOWS window binding -->
+    <xs:attribute name="app"    type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       Parameters — declared inputs for a scenario
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <xs:complexType name="ParametersType">
+    <xs:sequence>
+      <xs:element name="Param" minOccurs="0" maxOccurs="unbounded">
+        <xs:complexType>
+          <!-- parameter name — referenced as {{name}} in steps -->
+          <xs:attribute name="name"     type="xs:string" use="required"/>
+          <!-- string | integer | boolean | enum -->
+          <xs:attribute name="type"     type="ParamType" use="optional"/>
+          <!-- whether omitting the parameter is an error -->
+          <xs:attribute name="required" type="xs:boolean" use="optional"/>
+          <!-- default value used when parameter is absent -->
+          <xs:attribute name="default"  type="xs:string" use="optional"/>
+          <!-- example value shown in documentation -->
+          <xs:attribute name="example"  type="xs:string" use="optional"/>
+          <!-- brief human-readable hint -->
+          <xs:attribute name="note"     type="xs:string" use="optional"/>
+          <!-- enum: space-separated allowed values (when type=enum) -->
+          <xs:attribute name="values"   type="xs:string" use="optional"/>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       Steps — ordered sequence of steps and scenario refs
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <xs:complexType name="StepsType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="Step"        type="StepType"/>
+      <xs:element name="ScenarioRef" type="ScenarioRefType"/>
+    </xs:choice>
+  </xs:complexType>
+
+  <!-- A single automation step -->
+  <xs:complexType name="StepType">
+    <!-- wire protocol command: LISTWINDOWS, CLICKID, READ, SENDKEYS, RESET, WAIT, … -->
+    <xs:attribute name="command"     type="xs:string" use="required"/>
+    <!-- target window/process identifier; {{hwnd}} is substituted at runtime -->
+    <xs:attribute name="target"      type="xs:string" use="optional"/>
+    <!-- command parameter; may contain {{varName}} placeholders -->
+    <xs:attribute name="parameter"   type="xs:string" use="optional"/>
+    <!-- execution condition:
+         absent  → skip this step if {{hwnd}} is already bound
+         present → skip this step if {{hwnd}} is NOT yet bound
+         (default: always execute) -->
+    <xs:attribute name="conditional" type="ConditionalValue" use="optional"/>
+    <!-- human-readable annotation for logs and error messages -->
+    <xs:attribute name="note"        type="xs:string" use="optional"/>
+    <!-- override the default helper for this step only -->
+    <xs:attribute name="helper"      type="HelperName" use="optional"/>
+  </xs:complexType>
+
+  <!-- Insert the steps of another scenario inline -->
+  <xs:complexType name="ScenarioRefType">
+    <!-- id attribute of the referenced Scenario in the same file -->
+    <xs:attribute name="ref"  type="xs:string" use="required"/>
+    <!-- optional param overrides passed to the inlined scenario -->
+    <xs:attribute name="note" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       Shared types
+  ═══════════════════════════════════════════════════════════════════════ -->
+
+  <xs:complexType name="LocalisedText">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="lang" use="required">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:pattern value="[a-z]{2}(-[A-Z]{2})?|ai"/>
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:simpleType name="HelperName">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="KeyWin.exe"/>
+      <xs:enumeration value="BrowserWin.exe"/>
+      <xs:enumeration value="OfficeWin.exe"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ParamType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="string"/>
+      <xs:enumeration value="integer"/>
+      <xs:enumeration value="boolean"/>
+      <xs:enumeration value="enum"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ConditionalValue">
+    <xs:restriction base="xs:string">
+      <!-- skip step if {{hwnd}} is already bound (window already found) -->
+      <xs:enumeration value="absent"/>
+      <!-- skip step if {{hwnd}} is NOT yet bound (window not found) -->
+      <xs:enumeration value="present"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+</xs:schema>

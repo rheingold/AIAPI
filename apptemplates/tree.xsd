@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  apptemplates/tree.xsd
+  XML Schema for apptemplates/{app}/tree.xml files.
+
+  A tree.xml file describes the annotated UIA/DOM control tree for a single application.
+  It is used by:
+    - The Dashboard "App Templates" card (GET /api/appTemplates/{app}/tree)
+    - The MCP server for AI-assisted automation (app-knowledge context)
+    - XmlScenarioLoader for resolving AutomationIds in scenarios.xml steps
+
+  To validate a tree.xml file:
+    xmllint --schema tree.xsd apptemplates/calculator/tree.xml --noout
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           elementFormDefault="qualified">
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       Root element
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <xs:element name="AppTree">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="meta"    type="MetaType"    minOccurs="0" maxOccurs="1"/>
+        <xs:choice  minOccurs="0"  maxOccurs="unbounded">
+          <xs:element name="Group"   type="GroupType"/>
+          <xs:element name="Control" type="ControlType"/>
+        </xs:choice>
+      </xs:sequence>
+
+      <!-- Required: logical app identifier (must match folder name) -->
+      <xs:attribute name="app"          type="xs:string" use="required"/>
+      <!-- Helper exe that drives this app -->
+      <xs:attribute name="helper"       type="HelperName" use="required"/>
+      <!-- App executable name, e.g. calc.exe -->
+      <xs:attribute name="process"      type="xs:string" use="optional"/>
+      <!-- App version this tree was captured from -->
+      <xs:attribute name="version"      type="xs:string" use="optional"/>
+      <!-- OS version, e.g. win11 -->
+      <xs:attribute name="os"           type="xs:string" use="optional"/>
+      <!-- single_session | multi_document -->
+      <xs:attribute name="window_mode"  type="WindowMode" use="optional"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       meta block — human-readable labels plus binary/embedding references
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <xs:complexType name="MetaType">
+    <xs:sequence>
+      <xs:element name="description" type="LocalisedText" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="binaries"    type="BinariesType"  minOccurs="0" maxOccurs="1"/>
+      <xs:element name="embeddings"  type="EmbeddingsType" minOccurs="0" maxOccurs="1"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- list of known binary hashes for version identification -->
+  <xs:complexType name="BinariesType">
+    <xs:sequence>
+      <xs:element name="binary" minOccurs="0" maxOccurs="unbounded">
+        <xs:complexType>
+          <xs:attribute name="path"    type="xs:string" use="required"/>
+          <xs:attribute name="sha256"  type="xs:string" use="optional"/>
+          <xs:attribute name="version" type="xs:string" use="optional"/>
+          <xs:attribute name="note"    type="xs:string" use="optional"/>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- references to per-engine vector embedding files -->
+  <xs:complexType name="EmbeddingsType">
+    <xs:sequence>
+      <xs:element name="engine" minOccurs="0" maxOccurs="unbounded">
+        <xs:complexType>
+          <!-- embedding engine name, e.g. openai-ada-002 -->
+          <xs:attribute name="name"     type="xs:string"  use="required"/>
+          <!-- relative path to embedding file -->
+          <xs:attribute name="file"     type="xs:string"  use="required"/>
+          <!-- vector dimension count -->
+          <xs:attribute name="dims"     type="xs:integer" use="optional"/>
+          <!-- when true, absence of file is non-fatal -->
+          <xs:attribute name="optional" type="xs:boolean" use="optional"/>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       Group — logical grouping annotation (non-wrapping)
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <xs:complexType name="GroupType">
+    <xs:attribute name="id"      type="xs:ID"     use="required"/>
+    <xs:attribute name="label"   type="xs:string" use="required"/>
+    <!-- space-separated list of Control ids belonging to this group -->
+    <xs:attribute name="members" type="xs:string" use="optional"/>
+    <xs:attribute name="note"    type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       Control — a UIA/DOM control with labels and suggested actions
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <xs:complexType name="ControlType">
+    <xs:sequence>
+      <xs:element name="label"  type="LocalisedText" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="action" type="ActionType"    minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+
+    <!-- AutomationId / CSS selector / element id (unique within tree) -->
+    <xs:attribute name="id"   type="xs:ID"     use="required"/>
+    <!-- UIA ControlType or HTML tag, e.g. Button, Text, Pane, input -->
+    <xs:attribute name="type" type="xs:string" use="optional"/>
+    <!-- id of the logical parent control (for flat-list trees) -->
+    <xs:attribute name="parent" type="xs:IDREF" use="optional"/>
+    <!-- UIA AutomationId (if different from id) -->
+    <xs:attribute name="automationId" type="xs:string" use="optional"/>
+    <!-- UIA Name property -->
+    <xs:attribute name="name" type="xs:string" use="optional"/>
+    <!-- UIA role or ARIA role -->
+    <xs:attribute name="role" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- Primitive action that can be performed on a control -->
+  <xs:complexType name="ActionType">
+    <!-- keywin/browser wire command: READ, CLICKID, SENDKEYS, FILL, READELEM, … -->
+    <xs:attribute name="command"   type="xs:string" use="required"/>
+    <!-- value passed as the command parameter -->
+    <xs:attribute name="parameter" type="xs:string" use="optional"/>
+    <!-- optional human/AI note about when to use this action -->
+    <xs:attribute name="note"      type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       Shared types
+  ═══════════════════════════════════════════════════════════════════════ -->
+
+  <!-- Localised plain-text element with mandatory lang attribute -->
+  <xs:complexType name="LocalisedText">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="lang" use="required">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <!-- "en" for humans, "ai" for LLM-optimised description -->
+              <xs:pattern value="[a-z]{2}(-[A-Z]{2})?|ai"/>
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:simpleType name="HelperName">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="KeyWin.exe"/>
+      <xs:enumeration value="BrowserWin.exe"/>
+      <xs:enumeration value="OfficeWin.exe"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="WindowMode">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="single_session"/>
+      <xs:enumeration value="multi_document"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+</xs:schema>

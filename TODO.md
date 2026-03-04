@@ -1123,10 +1123,10 @@ A Windows installer (or VS Code extension install hook) deploys a default set.
 ```
 
 **Tasks:**
-- [ ] Define `tree.xsd` schema (Controls, meta, embeddings, binaries sections)
-- [ ] Author `apptemplates/calculator/tree.xml` (full control set, human + AI labels)
-- [ ] Author `apptemplates/notepad/tree.xml`
-- [ ] Author `apptemplates/chrome/tree.xml` (CDP-aware, BrowserWin targets)
+- [x] Define `tree.xsd` schema (Controls, meta, embeddings, binaries sections)
+- [x] Author `apptemplates/calculator/tree.xml` (full control set, human + AI labels)
+- [x] Author `apptemplates/notepad/tree.xml`
+- [x] Author `apptemplates/chrome/tree.xml` (CDP-aware, BrowserWin targets)
 - [x] `HelperRegistry` / MCP server: expose `GET /api/appTemplates` endpoint listing all known apps
 - [x] `GET /api/appTemplates/{app}/tree` — return the tree XML (or parsed JSON)
 - [x] Tree diff: on first connection compare live QUERYTREE hash to stored tree hash;
@@ -1183,7 +1183,7 @@ A Windows installer (or VS Code extension install hook) deploys a default set.
 
 **Tasks:**
 - [x] Define `scenarios.xsd` schema (Scenario, Steps, Step, ScenarioRef, Parameters)
-  - [ ] **Still pending:** XSD file not yet authored; TypeScript loader provides de facto schema enforcement.
+  - [x] `apptemplates/scenarios.xsd` authored — formal XSD with Scenario, Steps, Step, ScenarioRef, Parameters.
 - [x] Author `apptemplates/calculator/scenarios.xml` with: `intro`, `compute`, `teardown-*`
 - [x] Author `apptemplates/notepad/scenarios.xml` with: `intro`, `new-document`, `type-text`, `save`, `close-window`, `teardown-*`
 - [x] Author `apptemplates/chrome/scenarios.xml` with: `intro`, `navigate`, `fill-form`, `read-page`, `close-tab`, `teardown-*`

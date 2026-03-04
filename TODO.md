@@ -382,9 +382,9 @@ Continue in same priority after this section:
 - [x] Screenshot capture
 
 ### Test Scenarios
-- [ ] `scenarios/browser-google-search.json`
-- [ ] `scenarios/browser-form-fill.json`
-- [ ] `scenarios/browser-dom-navigation.json`
+- [x] `scenarios/browser-google-search.json`
+- [x] `scenarios/browser-form-fill.json`
+- [x] `scenarios/browser-dom-navigation.json`
 
 ---
 

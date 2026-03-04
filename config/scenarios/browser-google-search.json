@@ -1,0 +1,91 @@
+{
+  "$schema": "automation-scenario-v1",
+  "name": "Browser Google Search",
+  "description": "Launches Brave browser, navigates to Google, performs a search, and reads results. Uses BrowserWin.exe via helper_BrowserWin MCP tool. Target: brave:9222.",
+  "version": "1.0",
+  "metadata": {
+    "helper": "BrowserWin.exe",
+    "target": "brave:9222",
+    "requires": "Brave started with --remote-debugging-port=9222 (use {LAUNCH} first)"
+  },
+  "variables": {
+    "browserTarget": "brave:9222",
+    "searchQuery": "OpenAI MCP automation"
+  },
+  "steps": [
+    {
+      "id": 1,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{LAUNCH:visible}",
+        "waitSeconds": 3
+      },
+      "description": "Launch Brave with CDP debug port (or reuse existing session)",
+      "assert": {
+        "contains": "success"
+      }
+    },
+    {
+      "id": 2,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{NAVIGATE:https://www.google.com}",
+        "waitSeconds": 2
+      },
+      "description": "Navigate to Google"
+    },
+    {
+      "id": 3,
+      "action": "readValue",
+      "params": {
+        "target": "${browserTarget}",
+        "storeAs": "pageTitle"
+      },
+      "description": "Read page title to confirm Google loaded",
+      "assert": {
+        "contains": "Google"
+      }
+    },
+    {
+      "id": 4,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{FILL:input[name=q]:${searchQuery}}",
+        "waitMilliseconds": 500
+      },
+      "description": "Fill search box"
+    },
+    {
+      "id": 5,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{SENDKEYS:{ENTER}}",
+        "waitSeconds": 2
+      },
+      "description": "Submit search"
+    },
+    {
+      "id": 6,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{QUERYTREE:3}",
+        "waitMilliseconds": 500
+      },
+      "description": "Query DOM tree of search results page (depth 3)"
+    },
+    {
+      "id": 7,
+      "action": "readValue",
+      "params": {
+        "target": "${browserTarget}",
+        "storeAs": "resultsPage"
+      },
+      "description": "Read page title to confirm results loaded"
+    }
+  ]
+}

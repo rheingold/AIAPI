@@ -1,0 +1,136 @@
+{
+  "$schema": "automation-scenario-v1",
+  "name": "Browser DOM Navigation",
+  "description": "Demonstrates DOM tree querying at various depths, reading element values, and executing JavaScript expressions via EXEC, using BrowserWin.exe CDP. Target: brave:9222.",
+  "version": "1.0",
+  "metadata": {
+    "helper": "BrowserWin.exe",
+    "target": "brave:9222",
+    "requires": "Brave started with --remote-debugging-port=9222 (use {LAUNCH} first)"
+  },
+  "variables": {
+    "browserTarget": "brave:9222",
+    "testUrl": "https://example.com"
+  },
+  "steps": [
+    {
+      "id": 1,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{LAUNCH:visible}",
+        "waitSeconds": 3
+      },
+      "description": "Ensure browser is running with CDP debug port"
+    },
+    {
+      "id": 2,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{NAVIGATE:${testUrl}}",
+        "waitSeconds": 2
+      },
+      "description": "Navigate to example.com"
+    },
+    {
+      "id": 3,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{READ}",
+        "waitMilliseconds": 300
+      },
+      "description": "Read page title, URL, and meta description"
+    },
+    {
+      "id": 4,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{QUERYTREE}",
+        "waitMilliseconds": 500
+      },
+      "description": "Query DOM tree at default depth (3)"
+    },
+    {
+      "id": 5,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{QUERYTREE:5}",
+        "waitMilliseconds": 500
+      },
+      "description": "Query DOM tree at depth 5 (deeper)"
+    },
+    {
+      "id": 6,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{READELEM:h1}",
+        "waitMilliseconds": 300
+      },
+      "description": "Read the h1 heading text via CSS selector"
+    },
+    {
+      "id": 7,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{READELEM:p}",
+        "waitMilliseconds": 300
+      },
+      "description": "Read the first paragraph text"
+    },
+    {
+      "id": 8,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{EXEC:document.title}",
+        "waitMilliseconds": 300
+      },
+      "description": "Execute JavaScript: read document.title"
+    },
+    {
+      "id": 9,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{EXEC:document.querySelectorAll('a').length}",
+        "waitMilliseconds": 300
+      },
+      "description": "Execute JavaScript: count all anchor tags"
+    },
+    {
+      "id": 10,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{CLICKNAME:More information...}",
+        "waitSeconds": 2
+      },
+      "description": "Click the 'More information...' link by visible text"
+    },
+    {
+      "id": 11,
+      "action": "readValue",
+      "params": {
+        "target": "${browserTarget}",
+        "storeAs": "newPage"
+      },
+      "description": "Read title/URL of the navigated page"
+    },
+    {
+      "id": 12,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{SCREENSHOT}",
+        "waitMilliseconds": 500
+      },
+      "description": "Capture a screenshot (saved to %TEMP%\\aiapi_screenshot_*.png)"
+    }
+  ]
+}

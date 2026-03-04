@@ -1,0 +1,129 @@
+{
+  "$schema": "automation-scenario-v1",
+  "name": "Browser Form Fill",
+  "description": "Demonstrates filling a web form using BrowserWin.exe: FILL for text inputs, CHECK/UNCHECK for checkboxes, CLICKID/CLICKNAME for submission. Uses httpbin.org forms-post as a test target. Target: brave:9222.",
+  "version": "1.0",
+  "metadata": {
+    "helper": "BrowserWin.exe",
+    "target": "brave:9222",
+    "requires": "Brave started with --remote-debugging-port=9222 (use {LAUNCH} first)"
+  },
+  "variables": {
+    "browserTarget": "brave:9222",
+    "testUrl": "https://httpbin.org/forms/post",
+    "customerName": "Alice Example",
+    "custPhone": "555-123-4567",
+    "custEmail": "alice@example.test"
+  },
+  "steps": [
+    {
+      "id": 1,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{LAUNCH:visible}",
+        "waitSeconds": 3
+      },
+      "description": "Ensure browser is running with CDP debug port"
+    },
+    {
+      "id": 2,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{NAVIGATE:${testUrl}}",
+        "waitSeconds": 2
+      },
+      "description": "Navigate to httpbin form page"
+    },
+    {
+      "id": 3,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{QUERYTREE:2}",
+        "waitMilliseconds": 300
+      },
+      "description": "Inspect form structure (depth 2)"
+    },
+    {
+      "id": 4,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{FILL:input[name=custname]:${customerName}}",
+        "waitMilliseconds": 400
+      },
+      "description": "Fill customer name field"
+    },
+    {
+      "id": 5,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{FILL:input[name=custemail]:${custEmail}}",
+        "waitMilliseconds": 400
+      },
+      "description": "Fill email field"
+    },
+    {
+      "id": 6,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{FILL:input[name=custtel]:${custPhone}}",
+        "waitMilliseconds": 400
+      },
+      "description": "Fill phone field"
+    },
+    {
+      "id": 7,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{CHECK:input[name=size][value=large]}",
+        "waitMilliseconds": 300
+      },
+      "description": "Select 'Large' pizza size"
+    },
+    {
+      "id": 8,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{CHECK:input[name=topping][value=cheese]}",
+        "waitMilliseconds": 300
+      },
+      "description": "Check 'Cheese' topping"
+    },
+    {
+      "id": 9,
+      "action": "readValue",
+      "params": {
+        "target": "${browserTarget}",
+        "storeAs": "formPage"
+      },
+      "description": "Read page title before submission"
+    },
+    {
+      "id": 10,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{CLICKID:button[type=submit]}",
+        "waitSeconds": 2
+      },
+      "description": "Click Submit button"
+    },
+    {
+      "id": 11,
+      "action": "sendKeys",
+      "params": {
+        "target": "${browserTarget}",
+        "keys": "{READ}",
+        "waitMilliseconds": 300
+      },
+      "description": "Read submitted form response page"
+    }
+  ]
+}

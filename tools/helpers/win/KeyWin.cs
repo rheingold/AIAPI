@@ -30,6 +30,9 @@ namespace KeyWin
         static extern bool BringWindowToTop(IntPtr hWnd);
 
         [DllImport("user32.dll")]
+        static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
         static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
         delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
@@ -54,6 +57,9 @@ namespace KeyWin
 
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, [Out] StringBuilder lParam);
 
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
@@ -460,6 +466,88 @@ namespace KeyWin
             }, IntPtr.Zero);
 
             return match;
+        }
+
+        /// <summary>
+        /// For UWP/WinUI apps, both ApplicationFrameWindow (AppFrameHost.exe) and
+        /// Windows.UI.Core.CoreWindow (app process) share the same window title, so
+        /// FindWindowByPartialTitle may return either one non-deterministically.
+        /// This helper always resolves to the CoreWindow that actually receives keyboard input.
+        /// Checks in order: direct-child search, already-CoreWindow check, top-level sibling search.
+        /// </summary>
+        static IntPtr ResolveCoreWindow(IntPtr hwnd)
+        {
+            // 1. Direct child — some hosting configurations nest CoreWindow under AppFrameWindow
+            IntPtr coreChild = FindWindowEx(hwnd, IntPtr.Zero, "Windows.UI.Core.CoreWindow", null);
+            if (coreChild != IntPtr.Zero)
+            {
+                Console.Error.WriteLine("DEBUG: ResolveCoreWindow: found as child=" + coreChild);
+                return coreChild;
+            }
+
+            // 2. hwnd is already CoreWindow — use it directly
+            var classSb = new StringBuilder(256);
+            GetClassName(hwnd, classSb, 256);
+            string hwndClass = classSb.ToString();
+            if (hwndClass == "Windows.UI.Core.CoreWindow")
+            {
+                Console.Error.WriteLine("DEBUG: ResolveCoreWindow: hwnd IS CoreWindow=" + hwnd);
+                return hwnd;
+            }
+
+            // 3. Sibling search: enumerate ALL top-level windows (visible AND invisible)
+            //    to find one with class "Windows.UI.Core.CoreWindow" and a title that
+            //    matches hwnd's title.
+            //    NOTE: Do NOT filter by IsWindowVisible — after a UIA InvokePattern the
+            //    CoreWindow may be briefly invisible during WinRT animations while still
+            //    being the correct target.
+            //    For ApplicationFrameWindow hosts (UWP, WinUI), retry up to 4 times with
+            //    150ms pause because after a UIA event (e.g. clearButton Invoke) the
+            //    CoreWindow may be briefly recreated and temporarily absent.
+            var titleSb = new StringBuilder(256);
+            GetWindowText(hwnd, titleSb, 256);
+            string targetTitle = titleSb.ToString();
+
+            int maxAttempts = (hwndClass == "ApplicationFrameWindow") ? 4 : 1;
+            IntPtr found = IntPtr.Zero;
+
+            for (int attempt = 0; attempt < maxAttempts && found == IntPtr.Zero; attempt++)
+            {
+                if (attempt > 0)
+                {
+                    Console.Error.WriteLine("DEBUG: ResolveCoreWindow: retry #" + attempt + " after 150ms");
+                    Thread.Sleep(150);
+                }
+
+                EnumWindows((hWnd2, lp) =>
+                {
+                    if (hWnd2 == hwnd) return true;
+                    var cls2 = new StringBuilder(256);
+                    GetClassName(hWnd2, cls2, 256);
+                    if (cls2.ToString() == "Windows.UI.Core.CoreWindow")
+                    {
+                        var ttl2 = new StringBuilder(256);
+                        GetWindowText(hWnd2, ttl2, 256);
+                        string t2 = ttl2.ToString();
+                        // Both titles must be non-empty to avoid false matches on
+                        // blank-titled CoreWindows (Game Bar, Search, etc.)
+                        if (!string.IsNullOrEmpty(targetTitle) && !string.IsNullOrEmpty(t2) &&
+                            (t2.IndexOf(targetTitle, StringComparison.OrdinalIgnoreCase) >= 0
+                             || targetTitle.IndexOf(t2, StringComparison.OrdinalIgnoreCase) >= 0))
+                        {
+                            found = hWnd2;
+                            Console.Error.WriteLine("DEBUG: ResolveCoreWindow: found sibling CoreWindow=" + hWnd2);
+                            return false; // stop
+                        }
+                    }
+                    return true;
+                }, IntPtr.Zero);
+            }
+
+            if (found != IntPtr.Zero) return found;
+
+            Console.Error.WriteLine("DEBUG: ResolveCoreWindow: no CoreWindow found, using hwnd=" + hwnd);
+            return hwnd;
         }
 
         static string BuildSendKeysSequence(string keys)
@@ -1243,16 +1331,197 @@ namespace KeyWin
             }
         }
 
-        static string ReadDisplayText(IntPtr hwnd)
+        // Maps Windows 11 Calculator AutomationIds to key sequences for DirectSendKeys.
+        // Input is sent directly to the CoreWindow child (XAML/WinUI input target).
+        // '=' is mapped to "=" which DirectSendKeys Path 3 converts to WM_KEYDOWN(VK_RETURN).
+        static readonly System.Collections.Generic.Dictionary<string, string> _buttonKeyMap =
+            new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "num0Button", "0" }, { "num1Button", "1" }, { "num2Button", "2" },
+                { "num3Button", "3" }, { "num4Button", "4" }, { "num5Button", "5" },
+                { "num6Button", "6" }, { "num7Button", "7" }, { "num8Button", "8" },
+                { "num9Button", "9" },
+                { "plusButton", "+" },
+                { "minusButton", "-" },
+                { "multiplyButton", "*" },
+                { "divideButton", "/" },
+                { "equalButton", "=" },         // DirectSendKeys '=' → WM_KEYDOWN(VK_RETURN)
+                { "percentButton", "%" },
+                { "clearButton", "{ESC}" },     // {ESC} → DirectSendKeys Path 3 GetVirtualKeyCode
+                { "clearEntryButton", "{ESC}" },
+                { "backSpaceButton", "{BACKSPACE}" },
+                { "decimalSeparatorButton", "." },
+                { "negateButton", "{F9}" },
+            };
+
+        // Win32 class names of native edit/rich-edit controls used inside text editors.
+        static readonly string[] EditClassNames = {
+            "Edit", "RichEdit", "RICHEDIT50W", "RICHEDIT60W", "RichEditD2DPT", "RichEditA"
+        };
+
+        /// <summary>
+        /// Enumerate child windows of hwnd looking for a standard Win32 Edit / RichEdit
+        /// control, then use WM_GETTEXT to read its text without requiring window focus.
+        /// Works on classic Win32 Notepad and WinUI 3 Notepad (RichEditD2DPT child).
+        /// </summary>
+        static string ReadTextFromChildEditWindow(IntPtr hwnd)
         {
+            string result = null;
+            EnumChildWindows(hwnd, (child, lp) =>
+            {
+                var cls = new StringBuilder(128);
+                GetClassName(child, cls, 128);
+                string clsStr = cls.ToString();
+                bool isEdit = false;
+                foreach (var ec in EditClassNames)
+                {
+                    if (clsStr.IndexOf(ec, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        isEdit = true;
+                        break;
+                    }
+                }
+                if (!isEdit) return true; // continue
+                // Found an edit-type window — WM_GETTEXTLENGTH then WM_GETTEXT
+                IntPtr lenPtr = SendMessage(child, 0x000E /* WM_GETTEXTLENGTH */, IntPtr.Zero, IntPtr.Zero);
+                int len = lenPtr.ToInt32();
+                if (len > 0)
+                {
+                    var sb = new StringBuilder(len + 2);
+                    SendMessage(child, 0x000D /* WM_GETTEXT */, new IntPtr(len + 1), sb);
+                    result = sb.ToString();
+                    Console.Error.WriteLine("DEBUG: ReadTextFromChildEditWindow class=" + clsStr + " len=" + result.Length);
+                    return false; // stop
+                }
+                return true; // keep looking (empty edit, try next)
+            }, IntPtr.Zero);
+            return result;
+        }
+
+        /// <summary>
+        /// Walk UIA tree up to maxDepth looking for an element that supports TextPattern.
+        /// Skips ControlType.Text elements (labels/status-bar), which have TextPattern
+        /// but only expose single words or status strings, not document content.
+        /// Returns the full document text, or null if not found.
+        /// Does not require focus — reads directly via UIA.
+        /// </summary>
+        static string FindTextViaTextPattern(AutomationElement element, int depth, int maxDepth)
+        {
+            if (element == null || depth > maxDepth) return null;
             try
             {
-                var root = AutomationElement.FromHandle(hwnd);
+                // Skip ControlType.Text — these are labels / status-bar items, not document content
+                if (element.Current.ControlType != ControlType.Text)
+                {
+                    var textPat = element.GetCurrentPattern(TextPattern.Pattern) as TextPattern;
+                    if (textPat != null)
+                    {
+                        string text = textPat.DocumentRange.GetText(-1);
+                        if (text != null) return text;
+                    }
+                }
+            }
+            catch { }
+            // Recurse into children
+            try
+            {
+                var walker = new TreeWalker(Condition.TrueCondition);
+                var child = walker.GetFirstChild(element);
+                while (child != null)
+                {
+                    string result = FindTextViaTextPattern(child, depth + 1, maxDepth);
+                    if (result != null) return result;
+                    child = walker.GetNextSibling(child);
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        static string ReadDisplayText(IntPtr hwnd)
+        {
+            // Get window title upfront — used to detect "tab label" false positives
+            var winTitleSb = new StringBuilder(512);
+            GetWindowText(hwnd, winTitleSb, 512);
+            string windowTitle = winTitleSb.ToString();
+
+            // Detect text-editor windows by class name.
+            // Windows 11 Notepad uses class "Notepad" and doesn't expose Document/Edit controls.
+            var classSb2 = new StringBuilder(128);
+            GetClassName(hwnd, classSb2, 128);
+            string winClass = classSb2.ToString();
+            bool isTextEditor = winClass.IndexOf("Notepad", StringComparison.OrdinalIgnoreCase) >= 0
+                             || winClass.IndexOf("Scintilla", StringComparison.OrdinalIgnoreCase) >= 0
+                             || winClass.IndexOf("RichEdit", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            // For UWP/WinUI apps hosted via ApplicationFrameWindow: resolve to the actual
+            // CoreWindow so that the UIA tree contains the app's real elements.
+            // If hwnd is already a CoreWindow or a plain Win32 window, this is a no-op.
+            IntPtr uiaHwnd = ResolveCoreWindow(hwnd);
+
+            try
+            {
+                var root = AutomationElement.FromHandle(uiaHwnd);
                 AutomationElement display = null;
 
                 // Prefer CalculatorResults AutomationId (for Calculator)
                 var condId = new PropertyCondition(AutomationElement.AutomationIdProperty, "CalculatorResults");
                 display = root.FindFirst(TreeScope.Descendants, condId);
+
+                // If CalculatorResults not found, the CoreWindow HWND may be stale (briefly
+                // recreated after a UIA InvokePattern such as clearButton or equalButton).
+                // Wait 300ms for the new CoreWindow to initialize, then try again.
+                // Also try via AppFrame: RESET/clearButton searches from AppFrame and succeeds,
+                // so CalculatorResults should also be accessible from AppFrame.
+                if (display == null && !isTextEditor)
+                {
+                    Console.Error.WriteLine("DEBUG: ReadDisplayText CalculatorResults not found, retrying from AppFrame after 300ms");
+                    Thread.Sleep(300);
+                    try
+                    {
+                        // Search for an ApplicationFrameWindow with matching title
+                        IntPtr appFrame = IntPtr.Zero;
+                        EnumWindows((h, lp) =>
+                        {
+                            if (!IsWindowVisible(h)) return true;
+                            var cs2 = new StringBuilder(128);
+                            GetClassName(h, cs2, 128);
+                            if (cs2.ToString() == "ApplicationFrameWindow")
+                            {
+                                var ts2 = new StringBuilder(256);
+                                GetWindowText(h, ts2, 256);
+                                if (!string.IsNullOrEmpty(windowTitle) &&
+                                    ts2.ToString().IndexOf(windowTitle, StringComparison.OrdinalIgnoreCase) >= 0)
+                                {
+                                    appFrame = h;
+                                    return false;
+                                }
+                            }
+                            return true;
+                        }, IntPtr.Zero);
+                        if (appFrame != IntPtr.Zero)
+                        {
+                            var rootFrame = AutomationElement.FromHandle(appFrame);
+                            display = rootFrame.FindFirst(TreeScope.Descendants, condId);
+                            if (display != null)
+                                Console.Error.WriteLine("DEBUG: ReadDisplayText CalculatorResults found via AppFrame=" + appFrame);
+                        }
+                        // If still not found, try fresh CoreWindow via title lookup
+                        if (display == null)
+                        {
+                            IntPtr freshHwnd = FindWindowByPartialTitle(windowTitle);
+                            IntPtr freshUia = ResolveCoreWindow(freshHwnd != IntPtr.Zero ? freshHwnd : uiaHwnd);
+                            var freshRoot = AutomationElement.FromHandle(freshUia);
+                            display = freshRoot.FindFirst(TreeScope.Descendants, condId);
+                            if (display != null)
+                                Console.Error.WriteLine("DEBUG: ReadDisplayText CalculatorResults found via fresh CoreWindow=" + freshUia);
+                        }
+                    }
+                    catch (Exception retryEx)
+                    {
+                        Console.Error.WriteLine("DEBUG: ReadDisplayText retry error: " + retryEx.Message);
+                    }
+                }
 
                 // For text editors: prefer Document control (modern Notepad, Word etc.)
                 if (display == null)
@@ -1276,8 +1545,9 @@ namespace KeyWin
                     }
                 }
 
-                // Last resort: any Text element (Calculator fallback)
-                if (display == null)
+                // Last resort: any Text element (Calculator fallback).
+                // Skip for known text-editor windows where ControlType.Text only gives tab labels.
+                if (display == null && !isTextEditor)
                 {
                     var condText = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Text);
                     display = root.FindFirst(TreeScope.Descendants, condText);
@@ -1324,13 +1594,134 @@ namespace KeyWin
                                 return match.Value.Trim();
                             }
                         }
-                        return name;
+                        // Reject if the Name just mirrors the window title — it's a label, not content
+                        if (!string.IsNullOrEmpty(windowTitle) &&
+                            name.IndexOf(windowTitle, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            Console.Error.WriteLine("DEBUG: ReadDisplayText: Text element name matches window title — skipping (tab label)");
+                            // fall through to clipboard fallback
+                        }
+                        else
+                        {
+                            return name;
+                        }
                     }
                 }
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine("DEBUG: Read display error: " + ex.Message);
+            }
+
+            // ── Win32 child edit window (WM_GETTEXT) ─────────────────────────────────
+            // Try to find a native RichEdit/Edit child HWND and use WM_GETTEXT directly.
+            // Works on Win11 Notepad (RichEditD2DPT) and classic Notepad (Edit).
+            // No focus required.
+            if (isTextEditor)
+            {
+                try
+                {
+                    string editText = ReadTextFromChildEditWindow(hwnd);
+                    if (!string.IsNullOrEmpty(editText))
+                    {
+                        Console.Error.WriteLine("DEBUG: ReadDisplayText WM_GETTEXT returned " + editText.Length + " chars");
+                        return editText;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine("DEBUG: ReadDisplayText WM_GETTEXT error: " + ex.Message);
+                }
+            }
+
+            // ── TextPattern fallback ─────────────────────────────────────────────────
+            // Walk UIA tree looking for any element that supports TextPattern.
+            // This works on Windows 11 Notepad (WinUI 3 RichEditBox) without needing
+            // focus or clipboard.  No focus stealing required.
+            if (isTextEditor)
+            {
+                try
+                {
+                    Console.Error.WriteLine("DEBUG: ReadDisplayText TextPattern scan for hwnd=" + hwnd);
+                    var root2 = AutomationElement.FromHandle(hwnd);
+                    string textPatResult = FindTextViaTextPattern(root2, 0, 5);
+                    if (textPatResult != null)
+                    {
+                        Console.Error.WriteLine("DEBUG: ReadDisplayText TextPattern got " + textPatResult.Length + " chars");
+                        return textPatResult;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine("DEBUG: ReadDisplayText TextPattern error: " + ex.Message);
+                }
+            }
+
+            // ── Clipboard fallback ────────────────────────────────────────────────────
+            // For text-editor apps (Windows 11 Notepad) that don't expose Document/Edit
+            // via classic UIA: restore window, bring to foreground, Ctrl+A (select all),
+            // Ctrl+C (copy), then read clipboard.
+            // For other XAML apps (Calculator): just Ctrl+C.
+            if (isTextEditor)
+            {
+                try
+                {
+                    Console.Error.WriteLine("DEBUG: ReadDisplayText Ctrl+A/Ctrl+C clipboard for text editor hwnd=" + hwnd);
+                    // Restore minimized window first — SetForegroundWindow does NOT restore
+                    ShowWindow(hwnd, 9 /* SW_RESTORE */);
+                    Thread.Sleep(100);
+                    // Use AttachThreadInput trick so SetForegroundWindow is never silently
+                    // ignored by Windows foreground-steal prevention (background process issue).
+                    IntPtr fgWnd2 = GetForegroundWindow();
+                    int _fgPid2;
+                    uint fgThread2 = (uint)GetWindowThreadProcessId(fgWnd2, out _fgPid2);
+                    uint myThread2 = GetCurrentThreadId();
+                    bool attached2 = fgThread2 != 0 && fgThread2 != myThread2 &&
+                                     AttachThreadInput(fgThread2, myThread2, true);
+                    Console.Error.WriteLine("DEBUG: ReadDisplayText AttachThreadInput attached=" + attached2);
+                    SetForegroundWindow(hwnd);
+                    BringWindowToTop(hwnd);
+                    Thread.Sleep(200);
+                    if (attached2) AttachThreadInput(fgThread2, myThread2, false);
+                    System.Windows.Forms.SendKeys.SendWait("^a");   // select all
+                    Thread.Sleep(150);
+                    System.Windows.Forms.SendKeys.SendWait("^c");   // copy
+                    Thread.Sleep(500);
+                    string clip = System.Windows.Forms.Clipboard.GetText();
+                    Console.Error.WriteLine("DEBUG: ReadDisplayText editor clipboard len=" + (clip != null ? clip.Length : -1));
+                    // Return even empty string — empty document is valid
+                    if (clip != null) return clip;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine("DEBUG: ReadDisplayText editor clipboard error: " + ex.Message);
+                }
+            }
+
+            // Clipboard fallback for XAML/WinUI non-editor apps (e.g. Windows 11 Calculator).
+            // Send Ctrl+C to the CoreWindow so the app copies its display value to clipboard.
+            try
+            {
+                IntPtr target = ResolveCoreWindow(hwnd);
+                Console.Error.WriteLine("DEBUG: ReadDisplayText clipboard via CoreWindow=" + target);
+                PostMessage(target, 0x0100 /*WM_KEYDOWN*/, (IntPtr)0x11 /*VK_CONTROL*/, IntPtr.Zero);
+                PostMessage(target, 0x0100 /*WM_KEYDOWN*/, (IntPtr)0x43 /*'C'*/, IntPtr.Zero);
+                Thread.Sleep(10);
+                PostMessage(target, 0x0101 /*WM_KEYUP*/,   (IntPtr)0x43, IntPtr.Zero);
+                PostMessage(target, 0x0101 /*WM_KEYUP*/,   (IntPtr)0x11, IntPtr.Zero);
+                Thread.Sleep(350);
+                string clip = System.Windows.Forms.Clipboard.GetText().Trim();
+                if (!string.IsNullOrWhiteSpace(clip))
+                {
+                    Console.Error.WriteLine("DEBUG: ReadDisplayText clipboard: " + clip);
+                    // Strip localized descriptive prefix, e.g. "Displej je 32" → "32"
+                    var m = Regex.Match(clip, @"[\d\+\-\*/\.,\(\)eE]+$");
+                    return m.Success ? m.Value.Trim() : clip;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("DEBUG: ReadDisplayText clipboard fallback error: " + ex.Message);
             }
             return null;
         }
@@ -1808,19 +2199,24 @@ namespace KeyWin
                     }
                     catch { }
 
-                    // 2. Fallback: send Escape then Ctrl+Z × 20 to undo all
+                    // 2. Fallback: send Escape twice via CoreWindow to fully clear state.
+                    //    For UWP apps (Calculator etc.) the clearButton is in XAML and cannot be
+                    //    found via System.Windows.Automation. ESC sent to the CoreWindow clears the
+                    //    current expression; a second ESC clears history/memory.
+                    //    Do NOT use Ctrl+Z  — that corrupts Calculator's state.
                     if (!resetDone)
                     {
-                        PostMessage(resetHwnd, WM_KEYDOWN, (IntPtr)0x1B, IntPtr.Zero);  // ESC
-                        Thread.Sleep(100);
-                        for (int i = 0; i < 20; i++)
-                        {
-                            PostMessage(resetHwnd, WM_KEYDOWN, (IntPtr)0x11, IntPtr.Zero);  // CTRL
-                            PostMessage(resetHwnd, WM_KEYDOWN, (IntPtr)0x5A, IntPtr.Zero);  // Z
-                            PostMessage(resetHwnd, WM_KEYUP,   (IntPtr)0x5A, IntPtr.Zero);
-                            PostMessage(resetHwnd, WM_KEYUP,   (IntPtr)0x11, IntPtr.Zero);
-                        }
-                        Console.WriteLine("{\"success\":true,\"action\":\"reset\",\"method\":\"ctrl+z×20\"}");
+                        IntPtr resetTarget = ResolveCoreWindow(resetHwnd);
+                        Console.Error.WriteLine("DEBUG: RESET ESC fallback → target=" + resetTarget);
+                        PostMessage(resetTarget, WM_KEYDOWN, (IntPtr)0x1B, IntPtr.Zero);  // ESC down
+                        Thread.Sleep(30);
+                        PostMessage(resetTarget, WM_KEYUP,   (IntPtr)0x1B, IntPtr.Zero);  // ESC up
+                        Thread.Sleep(80);
+                        PostMessage(resetTarget, WM_KEYDOWN, (IntPtr)0x1B, IntPtr.Zero);  // ESC down (2nd)
+                        Thread.Sleep(30);
+                        PostMessage(resetTarget, WM_KEYUP,   (IntPtr)0x1B, IntPtr.Zero);  // ESC up
+                        Thread.Sleep(80);
+                        Console.WriteLine("{\"success\":true,\"action\":\"reset\",\"method\":\"esc×2\"}");
                     }
                     return 0;
                 }
@@ -1957,6 +2353,13 @@ namespace KeyWin
 
                 Console.Error.WriteLine("DEBUG: Window found, handle: " + hwnd);
 
+                // For UWP/WinUI apps hosted via ApplicationFrameWindow: resolve to the
+                // CoreWindow that actually receives input and exposes the full UIA tree.
+                // No-op for plain Win32 windows and for direct HANDLE: targets that are
+                // already a CoreWindow.
+                hwnd = ResolveCoreWindow(hwnd);
+                Console.Error.WriteLine("DEBUG: Resolved hwnd: " + hwnd);
+
                 // Always bring window to foreground so the user can see what is happening.
                 // (Direct/PostMessage injection works without focus, but visibility is expected.)
                 SetForegroundWindow(hwnd);
@@ -2030,6 +2433,77 @@ namespace KeyWin
                     if (InvokeButtonByName(root, buttonId))
                     {
                         Console.WriteLine("{\"success\":true,\"action\":\"clickid\",\"elementId\":\"" + EscapeJson(buttonId) + "\"}");
+                        return 0;
+                    }
+                    // Keyboard fallback for well-known button IDs (e.g. Windows 11 Calculator
+                    // which uses XAML/WinUI and is inaccessible to .NET 4.0 System.Windows.Automation).
+                    string btnKey;
+                    if (_buttonKeyMap.TryGetValue(buttonId, out btnKey))
+                    {
+                        // Find the Windows.UI.Core.CoreWindow that actually receives keyboard input.
+                        // Both AppFrameWindow and CoreWindow share the same title in UWP apps, so hwnd
+                        // might be either. ResolveCoreWindow reliably targets the input-receiving window.
+                        const uint WM_KEYDOWN_MSG = 0x0100;
+                        const uint WM_KEYUP_MSG   = 0x0101;
+                        const uint WM_CHAR_MSG    = 0x0102;
+                        IntPtr inputTarget = ResolveCoreWindow(hwnd);
+
+                        // Map char → VK code for WM_KEYDOWN (in addition to WM_CHAR for full compatibility)
+                        // Using numpad VK codes for operators ensures Calculator recognises them.
+                        Func<char, uint> charToVk = (c) => {
+                            switch (c) {
+                                case '0': return 0x60;  // VK_NUMPAD0
+                                case '1': return 0x61;  // VK_NUMPAD1
+                                case '2': return 0x62;
+                                case '3': return 0x63;
+                                case '4': return 0x64;
+                                case '5': return 0x65;
+                                case '6': return 0x66;
+                                case '7': return 0x67;
+                                case '8': return 0x68;
+                                case '9': return 0x69;  // VK_NUMPAD9
+                                case '.': return 0x6E;  // VK_DECIMAL
+                                case '+': return 0x6B;  // VK_ADD
+                                case '-': return 0x6D;  // VK_SUBTRACT
+                                case '*': return 0x6A;  // VK_MULTIPLY
+                                case '/': return 0x6F;  // VK_DIVIDE
+                                case '%': return 0x35;  // VK_5 (shift+5 = %, but send plain VK_5 + WM_CHAR)
+                                default:  return 0;
+                            }
+                        };
+
+                        Console.Error.WriteLine("DEBUG: CLICKID keyboard map \u2192 target=" + inputTarget + " key='" + btnKey + "'");
+                        if (btnKey == "{ESC}") {
+                            PostMessage(inputTarget, WM_KEYDOWN_MSG, (IntPtr)0x1B, IntPtr.Zero); Thread.Sleep(10);
+                            PostMessage(inputTarget, WM_KEYUP_MSG,   (IntPtr)0x1B, IntPtr.Zero);
+                        } else if (btnKey == "{BACKSPACE}") {
+                            PostMessage(inputTarget, WM_KEYDOWN_MSG, (IntPtr)0x08, IntPtr.Zero); Thread.Sleep(10);
+                            PostMessage(inputTarget, WM_KEYUP_MSG,   (IntPtr)0x08, IntPtr.Zero);
+                        } else if (btnKey == "{F9}") {
+                            PostMessage(inputTarget, WM_KEYDOWN_MSG, (IntPtr)0x78, IntPtr.Zero); Thread.Sleep(10);
+                            PostMessage(inputTarget, WM_KEYUP_MSG,   (IntPtr)0x78, IntPtr.Zero);
+                        } else {
+                            foreach (char c in btnKey) {
+                                if (c == '=') {  // '=' → ENTER (Enter = equals in Calculator)
+                                    PostMessage(inputTarget, WM_KEYDOWN_MSG, (IntPtr)0x0D, IntPtr.Zero); Thread.Sleep(10);
+                                    PostMessage(inputTarget, WM_KEYUP_MSG,   (IntPtr)0x0D, IntPtr.Zero);
+                                } else {
+                                    uint vk = charToVk(c);
+                                    if (vk != 0) {
+                                        PostMessage(inputTarget, WM_KEYDOWN_MSG, (IntPtr)(int)vk, IntPtr.Zero);
+                                        Thread.Sleep(5);
+                                    }
+                                    PostMessage(inputTarget, WM_CHAR_MSG, (IntPtr)c, IntPtr.Zero);
+                                    if (vk != 0) {
+                                        Thread.Sleep(5);
+                                        PostMessage(inputTarget, WM_KEYUP_MSG, (IntPtr)(int)vk, IntPtr.Zero);
+                                    }
+                                }
+                                Thread.Sleep(30);
+                            }
+                        }
+                        Thread.Sleep(80);
+                        Console.WriteLine("{\"success\":true,\"action\":\"clickid\",\"elementId\":\"" + EscapeJson(buttonId) + "\",\"method\":\"keyboard\"}");
                         return 0;
                     }
                     Console.Error.WriteLine("DEBUG: CLICKID - element not found: " + buttonId);
@@ -2128,6 +2602,8 @@ namespace KeyWin
                     string reSel = reMatch.Groups[1].Value;
                     var reRoot = AutomationElement.FromHandle(hwnd);
                     string reVal = WinUtils.ReadElementValue(reRoot, reSel);
+                    // COM UIA fallback for XAML/WinUI apps
+                    if (reVal == null) reVal = WinUtils.ReadTextByComUia(hwnd, reSel);
                     if (reVal != null)
                     {
                         Console.WriteLine("{\"success\":true,\"action\":\"readelem\",\"selector\":\"" + EscapeJson(reSel) + "\",\"value\":\"" + EscapeJson(reVal) + "\"}");

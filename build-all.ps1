@@ -26,21 +26,28 @@ $uiac   = (Get-ChildItem "$env:WINDIR\Microsoft.NET" -Recurse -Filter UIAutomati
 $uiat   = (Get-ChildItem "$env:WINDIR\Microsoft.NET" -Recurse -Filter UIAutomationTypes.dll   -EA SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1).FullName
 $wbase  = (Get-ChildItem "$env:WINDIR\Microsoft.NET" -Recurse -Filter WindowsBase.dll         -EA SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1).FullName
 $wforms = (Get-ChildItem "$env:WINDIR\Microsoft.NET" -Recurse -Filter System.Windows.Forms.dll -EA SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+$mcsharp = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\Microsoft.CSharp.dll"
+if (-not (Test-Path $mcsharp)) { $mcsharp = "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\Microsoft.CSharp.dll" }
 
 Write-Host "uiac:   $uiac"
 Write-Host "uiat:   $uiat"
 Write-Host "wbase:  $wbase"
 Write-Host "wforms: $wforms"
 
+# Kill any running helper daemons so the output EXEs are not file-locked during compile
+Write-Host "=== Stopping helper daemons ==="
+Stop-Process -Name "KeyWin","BrowserWin" -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 300
+
 # Build KeyWin.exe  (WinCommon.cs merged in — shared UIA helpers, FILL/READELEM support)
 Write-Host "=== Building KeyWin.exe ==="
-& $csc /nologo /target:winexe "/out:$helpersDestDir\KeyWin.exe" "/r:$uiac" "/r:$uiat" "/r:$wbase" "/r:$wforms" $helperCommonSrc $winCommonSrc $keySrc
+& $csc /nologo /target:winexe "/out:$helpersDestDir\KeyWin.exe" "/r:$uiac" "/r:$uiat" "/r:$wbase" "/r:$wforms" "/r:$mcsharp" $helperCommonSrc $winCommonSrc $keySrc
 Write-Host "KeyWin exit: $LASTEXITCODE"
 
 # Build BrowserWin.exe  (WinCommon.cs adds UIA fallback; needs same DLL set as KeyWin)
 Write-Host "=== Building BrowserWin.exe ==="
 & $csc /nologo /target:exe "/out:$helpersDestDir\BrowserWin.exe" `
-    "/r:$uiac" "/r:$uiat" "/r:$wbase" "/r:$wforms" `
+    "/r:$uiac" "/r:$uiat" "/r:$wbase" "/r:$wforms" "/r:$mcsharp" `
     $helperCommonSrc $winCommonSrc $browserSrc
 Write-Host "BrowserWin exit: $LASTEXITCODE"
 

@@ -1361,4 +1361,58 @@ public static class WinUtils
         inp[0].mi.dwFlags = MOUSEEVENTF_LEFTUP;
         SendInput(1, inp, Marshal.SizeOf(typeof(INPUT)));
     }
+
+    // ── COM IUIAutomation3 fallback (XAML / WinUI / CoreWindow apps) ─────────
+    // The managed System.Windows.Automation wrapper (UIAutomation v2) cannot
+    // traverse XAML Islands / CoreWindow / WinUI3 hosted controls.
+    // IUIAutomation3 (CLSID CUIAutomation8) CAN access these trees.
+    // We use 'dynamic' + late-bound COM to avoid declaring full interface stubs.
+
+    // CLSID_CUIAutomation8: {E22AD333-B25F-460C-83D0-0581107395C9}
+    // Fallback CLSID_CUIAutomation: {FF48DBA4-60EF-4201-AA87-54103EEF594E}
+    static readonly Guid CUIAutomation8Clsid =
+        new Guid("E22AD333-B25F-460C-83D0-0581107395C9");
+    static readonly Guid CUIAutomationClsid =
+        new Guid("FF48DBA4-60EF-4201-AA87-54103EEF594E");
+
+    // UIA property / pattern IDs
+    const int UIA_AutomationIdPropertyId = 30011;
+    const int UIA_NamePropertyId         = 30005;
+    const int UIA_InvokePatternId        = 10000;
+    const int UIA_ValuePatternId         = 10002;
+    const int UIA_TreeScope_Descendants  = 4;
+
+    static object CreateComUia()
+    {
+        Type t = Type.GetTypeFromCLSID(CUIAutomation8Clsid, false);
+        if (t == null) t = Type.GetTypeFromCLSID(CUIAutomationClsid, false);
+        if (t == null) return null;
+        try { return Activator.CreateInstance(t); }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Find an element by AutomationId via COM IUIAutomation (handles XAML/WinUI/CoreWindow apps
+    /// that .NET System.Windows.Automation cannot traverse) and invoke it (click).
+    /// Returns true if the element was found and invoked successfully.
+    /// </summary>
+    public static bool InvokeByComUia(IntPtr hwnd, string automationId)
+    {
+        // COM dynamic dispatch cannot bind IUIAutomation (IUnknown only, no IDispatch).
+        // Keyboard fallback is handled in KeyWin.cs CLICKID dispatch instead.
+        return false;
+    }
+
+    /// <summary>
+    /// Find an element by AutomationId via COM IUIAutomation and return its value string.
+    /// Tries ValuePattern.CurrentValue first, then element.CurrentName.
+    /// Returns null if not found or an error occurs.
+    /// </summary>
+    public static string ReadTextByComUia(IntPtr hwnd, string automationId)
+    {
+        // COM dynamic dispatch cannot bind IUIAutomation (IUnknown only, no IDispatch).
+        // Clipboard fallback is handled in KeyWin.cs ReadDisplayText instead.
+        return null;
+    }
 }
+

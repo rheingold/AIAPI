@@ -949,7 +949,7 @@ server-side intercept that is simpler and works across all helpers uniformly.
   - `testSession.start(name, overrideDir?)` / `testSession.finish()` / `testSession.status()`
   - `main()` opens session before test sections, closes it after with summary printout
   - `--session-dir=<path>` CLI override: SESSION_DIR_ARG constant (wiring with testSession pending)
-- [ ] Dashboard Settings tab: `testSessionDir` path field (deferred — dashboard already reads
+- [x] Dashboard Settings tab: `testSessionDir` path field (deferred — dashboard already reads
   it from `dashboard-settings.json` via `setSessionBaseDir`)
 
 ---

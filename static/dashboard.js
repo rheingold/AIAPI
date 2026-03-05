@@ -655,7 +655,11 @@ async function loadSettings() {
         : (settings.paths.helperPaths || './dist/win/*.exe');
       document.getElementById('setting-helper-paths').value = helperPaths;
     }
-    
+
+    if (settings.testSessionDir !== undefined) {
+      document.getElementById('setting-session-dir').value = settings.testSessionDir || './test-sessions';
+    }
+
     if (settings.security) {
       document.getElementById('setting-require-signature').checked = settings.security.requireSignature || false;
       document.getElementById('setting-require-os-enforcement').checked = settings.security.requireOsEnforcement || false;
@@ -715,6 +719,7 @@ async function saveSettings() {
         logLevel: document.getElementById('setting-log-level').value,
         tokenExpiry: parseInt(document.getElementById('setting-token-expiry').value),
       },
+      testSessionDir: document.getElementById('setting-session-dir').value || './test-sessions',
     };
     
     const response = await fetch('/api/settings', {

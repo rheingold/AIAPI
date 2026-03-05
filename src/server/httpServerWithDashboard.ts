@@ -74,6 +74,7 @@ export class HttpServerWithDashboard {
       advancedFilters: [],
       disabledHelpers: [] as string[],
       appTemplatesDir: './apptemplates',
+      testSessionDir: './test-sessions',
     };
     
     // Register this dashboard as log receiver
@@ -1495,6 +1496,7 @@ export class HttpServerWithDashboard {
         },
         currentWorkingDir: process.cwd(),
         currentToken: this.sessionTokenManager?.generateToken() || null,
+        testSessionDir: this.config.testSessionDir || './test-sessions',
       };
 
       res.writeHead(200);
@@ -1536,6 +1538,11 @@ export class HttpServerWithDashboard {
         this.config.mcpPort = settings.server.port;
         this.config.logLevel = settings.server.logLevel;
         this.config.tokenExpiry = settings.server.tokenExpiry;
+      }
+
+      if (typeof settings.testSessionDir === 'string' && settings.testSessionDir.trim()) {
+        this.config.testSessionDir = settings.testSessionDir.trim();
+        this.helperRegistry?.setSessionBaseDir(this.config.testSessionDir);
       }
 
       // Persist settings to dashboard-settings.json

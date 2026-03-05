@@ -259,7 +259,7 @@ interface ActiveSession {
 }
 
 /**
- * Discovers .exe helpers via --api-schema, registers them as MCP tools,
+ * Discovers .exe helpers via {"action":"_schema"} stdin wire protocol, registers them as MCP tools,
  * and routes tool calls to persistent daemon processes.
  */
 export class HelperRegistry {
@@ -316,11 +316,13 @@ export class HelperRegistry {
     }
   }
 
-  /** Run --api-schema (one-shot) to get the helper's JSON schema. */
+  /** Query the helper's JSON schema via the unified stdin wire protocol (`{"action":"_schema"}`). */
   private querySchema(exePath: string): Promise<HelperSchema | null> {
     return new Promise((resolve) => {
       const env = this.buildEnv();
-      const proc = spawn(exePath, ['--api-schema'], { env, timeout: 5000 });
+      // Use --listen-stdin (one-shot) + {"action":"_schema"} — same wire protocol as commands,
+      // eliminates the need for a separate --api-schema code path in helpers.
+      const proc = spawn(exePath, ['--listen-stdin'], { env, timeout: 5000 });
       let out = '';
       proc.stdout.on('data', (d: Buffer) => (out += d.toString()));
       proc.on('close', () => {
@@ -332,6 +334,9 @@ export class HelperRegistry {
         } catch { resolve(null); }
       });
       proc.on('error', () => resolve(null));
+      // Send _schema request and close stdin — one-shot mode exits after first command
+      proc.stdin.write('{"action":"_schema"}\n');
+      proc.stdin.end();
     });
   }
 

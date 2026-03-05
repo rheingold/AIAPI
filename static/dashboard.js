@@ -996,10 +996,24 @@ function filterSearch(term) {
 function validateAllFilters() {
   const issues = [];
   for (const f of advancedFilters) {
-    if (!f.action) issues.push(`Filter ${f.id}: missing action`);
-    if (!f.helper) issues.push(`Filter ${f.id}: missing helper`);
+    if (!f.action)  issues.push(`Filter ${f.id}: missing action`);
+    if (!f.helper)  issues.push(`Filter ${f.id}: missing helper`);
     if (!f.command) issues.push(`Filter ${f.id}: missing command`);
     if (!f.pattern) issues.push(`Filter ${f.id}: missing pattern`);
+
+    // Schema-based command name validation using cached helper schemas
+    if (f.command && f.command !== '*' && f.helper) {
+      const schema = cachedHelperSchemas[f.helper];
+      if (schema?.commands) {
+        const cmdName = f.command.replace(/^\{|\}$/g, '').toUpperCase();
+        const known = schema.commands.some(c => c.name.replace(/^\{|\}$/g, '').toUpperCase() === cmdName);
+        if (!known) {
+          issues.push(`Filter ${f.id}: command "${f.command}" not found in ${f.helper} schema (known: ${
+            schema.commands.map(c => `{${c.name.replace(/^\{|\}$/g,'').toUpperCase()}}`).join(', ')
+          })`);
+        }
+      }
+    }
   }
   if (issues.length === 0) {
     alert(`✅ All ${advancedFilters.length} filter(s) are valid`);

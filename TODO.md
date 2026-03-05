@@ -226,11 +226,11 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
   - [x] View schema button (full command details popup via `/api/getHelperSchema`)
   - [x] Commands tab showing inline command list (toggle per helper card)
   
-- [ ] **Security Filter Integration**:
-  - [ ] Use schemas to validate filter syntax
-  - [ ] Autocomplete command names from discovered schemas
-  - [ ] Parameter validation against schema types
-  - [ ] Context-aware filter suggestions
+- [x] **Security Filter Integration**:
+  - [x] Use schemas to validate filter syntax — `validateAllFilters()` now cross-checks command names against cached helper schemas
+  - [x] Autocomplete command names from discovered schemas — `loadHelperCommandsForFilter()` uses `/api/getHelperSchema`
+  - [x] Parameter validation against schema types — `updateParameterSuggestions()` populates `<datalist>` from command examples
+  - [ ] Context-aware filter suggestions (full XPath/UI-tree aware, future)
   
 - [x] **Benefits Achieved**:
   - [x] ✅ Foundation for pluggable helper architecture
@@ -440,8 +440,8 @@ All transports handle these before routing to the helper's own command dispatch:
   Explorer). Replace with `_auth` message.
 - [x] **`--inject-mode=direct tmpFile`** — ✅ DONE: replaced by `--listen-stdin` pipe in
   `HelperRegistry.callCommand()`. Temp file, `fs.writeFileSync`, and `os.tmpdir()` removed.
-- [ ] **`--api-schema` CLI flag** — replace with `{"action":"_schema"}` (unified with wire
-  protocol; flag can remain as alias for backwards compatibility during transition).
+- [x] **`--api-schema` CLI flag** — `HelperRegistry.ts` `querySchema()` now uses `--listen-stdin` +
+  `{"action":"_schema"}` (same wire protocol as commands); `--api-schema` remains as alias in helpers.
 - [ ] Keep: `SKIP_SESSION_AUTH=true` env var — not a credential, just a dev/test bypass flag,
   acceptable in env.
 

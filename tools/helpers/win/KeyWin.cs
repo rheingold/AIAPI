@@ -1977,13 +1977,7 @@ namespace KeyWin
                     // processName / keys resolution and command dispatch.
                     Main(new string[] { tgt, act });
                 };
-                Func<string> kwSchema = () =>
-                {
-                    var sb = new StringBuilder();
-                    sb.Append("{\"helper\":\"KeyWin.exe\",\"version\":\"1.0.0\",");
-                    sb.Append("\"description\":\"Windows UI automation helper with form controls and element manipulation\"}");
-                    return sb.ToString();
-                };
+                Func<string> kwSchema = GetApiSchema;
                 return HelperCommon.RunStdinListener(persistent, kwDispatch, kwSchema);
             }
 
@@ -2748,7 +2742,7 @@ namespace KeyWin
             }
         }
 
-        static void OutputApiSchema()
+        static string GetApiSchema()
         {
             // Simple JSON serialization without System.Text.Json (not available in older .NET)
             var sb = new StringBuilder();
@@ -2787,10 +2781,10 @@ namespace KeyWin
             sb.AppendLine("    { \"name\": \"UNCHECK\", \"description\": \"Uncheck a checkbox by AutomationId or Name. Uses TogglePattern. Idempotent: no-op if already unchecked.\", \"parameters\": [ { \"name\": \"selector\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{UNCHECK:rememberMe}\"] },");
             sb.AppendLine("    { \"name\": \"MOUSEDOWN\", \"description\": \"Press and hold left mouse button at screen coordinates (x,y). Use with MOUSEUP for drag-and-drop. SendInput MOUSEEVENTF_LEFTDOWN.\", \"parameters\": [ { \"name\": \"coordinates\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{MOUSEDOWN:100,200}\"] },");
             sb.AppendLine("    { \"name\": \"MOUSEUP\", \"description\": \"Release left mouse button at screen coordinates (x,y). Completes a drag started with MOUSEDOWN. SendInput MOUSEEVENTF_LEFTUP.\", \"parameters\": [ { \"name\": \"coordinates\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{MOUSEUP:300,400}\"] }");
-            sb.AppendLine("  ]");
-            sb.AppendLine("}");
-            
-            Console.WriteLine(sb.ToString());
+            sb.AppendLine("  ]\n}");
+            return sb.ToString();
         }
+
+        static void OutputApiSchema() { Console.WriteLine(GetApiSchema()); }
     }
 }

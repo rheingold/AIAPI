@@ -73,18 +73,7 @@ namespace BrowserWin
                         // action  is the {COMMAND:param} envelope.
                         Main(new string[] { tgt, act });
                     };
-                    Func<string> browserSchema = () =>
-                    {
-                        var sb = new StringBuilder();
-                        sb.Append("{");
-                        sb.Append("  \"helper\": \"BrowserWin.exe\",");
-                        sb.Append("  \"version\": \"1.0.0\",");
-                        sb.Append("  \"description\": \"Browser automation helper using Chrome DevTools Protocol (CDP). Requires a Chromium browser started with --remote-debugging-port=<port>.\",");
-                        sb.Append("  \"targetDescription\": \"Browser name with optional CDP port: 'brave', 'msedge', 'chrome', 'brave:9223'. Default port: 9222.\",");
-                        sb.Append("  \"commands\": []");   // brief inline; full schema via --api-schema
-                        sb.Append("}");
-                        return sb.ToString();
-                    };
+                    Func<string> browserSchema = GetApiSchema;
                     return HelperCommon.RunStdinListener(persistent, browserDispatch, browserSchema);
                 }
 
@@ -2417,7 +2406,7 @@ namespace BrowserWin
         //  API Schema
         // ──────────────────────────────────────────────────────────────────────
 
-        static void OutputApiSchema()
+        static string GetApiSchema()
         {
             var sb = new StringBuilder();
             sb.AppendLine("{");
@@ -2462,8 +2451,9 @@ namespace BrowserWin
             sb.AppendLine("    { \"name\": \"MOUSEUP\", \"description\": \"Release left mouse button at screen coordinates (x,y) via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Completes a drag started with MOUSEDOWN.\", \"parameters\": [ { \"name\": \"coords\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"{MOUSEUP:300,400}\"] }");
             sb.AppendLine("  ]");
             sb.AppendLine("}");
-
-            Console.WriteLine(sb.ToString());
+            return sb.ToString();
         }
+
+        static void OutputApiSchema() { Console.WriteLine(GetApiSchema()); }
     }
 }

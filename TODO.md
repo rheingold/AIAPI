@@ -156,7 +156,7 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
   - [x] Placeholder prompt for paths (basic - implemented)
   - [ ] Real native file/folder dialog integration (Windows API)
   - [x] Show current "." path prominently at top of settings
-  - [ ] Remember last browsed locations per field
+  - [x] Remember last browsed locations per field — done (localStorage per field ID; Browse prompt pre-populates; onChange auto-saves)
 - [x] **Security Filters Configuration (TREE-BASED - INITIAL IMPLEMENTATION)**:
   - [x] **Filter Format**: `ALLOW/DENY process → Helper.exe::{COMMAND}/pattern` (display)
   - [x] **UI Components (initial)**:
@@ -179,11 +179,11 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
     - [x] `POST /api/filters` — saves filter list to server memory + disk (`dashboard-settings.json`)
     - [x] Filters load from `dashboard-settings.json` on server startup (survive restarts)
   - [ ] **Pending / Future**:
-    - [ ] Persist filters to disk (write to config JSON file)
-    - [ ] Pre-defined command templates dropdown
-    - [ ] Parameter autocomplete from discovered helper schemas
-    - [ ] Test filter button (dry-run simulation against known targets)
-    - [ ] Import filters from JSON file
+    - [x] Persist filters to disk (write to config JSON file) — done (POST /api/filters → `dashboard-settings.json`)
+    - [x] Pre-defined command templates dropdown — done (`FILTER_TEMPLATES` array + `applyFilterTemplate()`)
+    - [x] Parameter autocomplete from discovered helper schemas — done (`loadHelperCommandsForFilter()`)
+    - [x] Test filter button (dry-run simulation against known targets) — done (`handleTestFilter` + `btn-test-filter`)
+    - [x] Import filters from JSON file — done (`importFilters()` with replace/merge prompt)
     - [ ] Criteria: window title matching, binary hash, process path
     - [ ] RegExp pattern support in pattern field
     - [ ] XPath-like UI tree path filtering
@@ -195,8 +195,8 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
   - [x] Blocked file paths (textarea)
 - [ ] Validation:
   - [x] Check if paths exist (implemented)
-  - [x] Validate key file integrity (implemented)
-  - [ ] Test security configuration
+  - [x] Validate key file integrity (implemented, now includes size check)
+  - [x] Test security configuration — done (config.json parse, config.json.sig hash comparison, helper .exe discovery)
   - [ ] Preview effective permissions
 
 ### 🔌 Dynamic Helper API Discovery (CRITICAL ARCHITECTURE) ✅ COMPLETED
@@ -315,7 +315,7 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
   - [x] Security status (enabled/disabled, valid keys) — in header status bar
   - [x] Key expiry warnings — ⚠️ indicator when keys missing
   - [x] Helper count indicator — shows N loaded helpers
-  - [ ] Configuration issues panel (errors/warnings listing)
+  - [x] Configuration issues panel (errors/warnings listing) — done (`validateConfiguration()` auto-runs on load + `config-status` div in Settings)
 
 ---
 

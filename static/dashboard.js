@@ -18,6 +18,14 @@ const state = {
   }
 };
 
+// ---- Path localStorage helpers ----
+function saveLastBrowsed(fieldId, value) {
+  try { if (fieldId && value) localStorage.setItem('aiapi_path_' + fieldId, value); } catch (e) {}
+}
+function getLastBrowsed(fieldId) {
+  try { return localStorage.getItem('aiapi_path_' + fieldId) || ''; } catch (e) { return ''; }
+}
+
 // Initialize Dashboard
 document.addEventListener('DOMContentLoaded', () => {
   initializeNavigation();
@@ -582,15 +590,24 @@ function initializeSettings() {
     }
   });
   
-  // Browse buttons
+  // Browse buttons — remember last entered path per field (localStorage)
   document.querySelectorAll('.btn-browse').forEach(btn => {
     btn.addEventListener('click', () => {
       const targetId = btn.dataset.target;
       const input = document.getElementById(targetId);
-      // In a real implementation, this would open a file dialog
-      // For now, just allow manual input
-      const path = prompt('Enter path:', input.value);
-      if (path) input.value = path;
+      const current = input.value || getLastBrowsed(targetId);
+      const path = prompt('Enter path:', current);
+      if (path !== null && path !== undefined) {
+        input.value = path;
+        saveLastBrowsed(targetId, path);
+      }
+    });
+  });
+
+  // Auto-save path inputs to localStorage whenever the user types/pastes
+  document.querySelectorAll('.path-input input[type="text"]').forEach(input => {
+    input.addEventListener('change', () => {
+      if (input.id) saveLastBrowsed(input.id, input.value);
     });
   });
   
@@ -644,20 +661,23 @@ async function loadSettings() {
       document.getElementById('current-working-dir').textContent = settings.currentWorkingDir;
     }
     
-    // Apply settings to form
+    // Apply settings to form and sync to localStorage for Browse prompts
+    const setPath = (id, val) => {
+      if (val) { document.getElementById(id).value = val; saveLastBrowsed(id, val); }
+    };
     if (settings.paths) {
-      document.getElementById('setting-scenarios-path').value = settings.paths.scenarios || './config/scenarios';
-      document.getElementById('setting-security-path').value = settings.paths.security || './config/security';
-      document.getElementById('setting-public-key').value = settings.paths.publicKey || './config/security/public.key.enc';
-      document.getElementById('setting-private-key').value = settings.paths.privateKey || './config/security/private.key.enc';
+      setPath('setting-scenarios-path', settings.paths.scenarios || './config/scenarios');
+      setPath('setting-security-path', settings.paths.security || './config/security');
+      setPath('setting-public-key', settings.paths.publicKey || './config/security/public.key.enc');
+      setPath('setting-private-key', settings.paths.privateKey || './config/security/private.key.enc');
       const helperPaths = Array.isArray(settings.paths.helperPaths)
         ? settings.paths.helperPaths.join(', ')
         : (settings.paths.helperPaths || './dist/win/*.exe');
-      document.getElementById('setting-helper-paths').value = helperPaths;
+      setPath('setting-helper-paths', helperPaths);
     }
 
     if (settings.testSessionDir !== undefined) {
-      document.getElementById('setting-session-dir').value = settings.testSessionDir || './test-sessions';
+      setPath('setting-session-dir', settings.testSessionDir || './test-sessions');
     }
 
     if (settings.security) {

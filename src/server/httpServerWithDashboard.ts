@@ -1565,67 +1565,125 @@ export class HttpServerWithDashboard {
     try {
       const fs = require('fs');
       const path = require('path');
-      const checks = [];
+      const checks: { status: string; message: string }[] = [];
 
-      // Check scenarios path
+      // ── Folders ──────────────────────────────────────────────
       const scenariosPath = this.config.scenariosPath || './scenarios';
       checks.push({
         status: fs.existsSync(scenariosPath) ? 'ok' : 'error',
         message: `Scenarios folder: ${scenariosPath}`,
       });
 
-      // Check security path
       const securityPath = this.config.securityPath || './security';
       checks.push({
         status: fs.existsSync(securityPath) ? 'ok' : 'error',
         message: `Security folder: ${securityPath}`,
       });
 
-      // Check public key
-      const publicKeyPath = this.config.publicKeyPath || './security/public.key.enc';
-      checks.push({
-        status: fs.existsSync(publicKeyPath) ? 'ok' : 'warning',
-        message: `Public key: ${publicKeyPath}`,
-      });
+      // ── Key files (existence + non-trivial size) ─────────────
+      const checkKeyFile = (label: string, filePath: string) => {
+        if (!fs.existsSync(filePath)) {
+          checks.push({ status: 'warning', message: `${label}: not found (${filePath})` });
+        } else {
+          const size = fs.statSync(filePath).size;
+          checks.push({
+            status: size > 32 ? 'ok' : 'warning',
+            message: `${label}: ${filePath} (${size} bytes${size <= 32 ? ' — suspiciously small' : ''})`,
+          });
+        }
+      };
+      checkKeyFile('Public key', this.config.publicKeyPath || './security/public.key.enc');
+      checkKeyFile('Private key', this.config.privateKeyPath || './security/private.key.enc');
 
-      // Check private key
-      const privateKeyPath = this.config.privateKeyPath || './security/private.key.enc';
-      checks.push({
-        status: fs.existsSync(privateKeyPath) ? 'ok' : 'warning',
-        message: `Private key: ${privateKeyPath}`,
-      });
+      // ── security/config.json + its signature ─────────────────
+      const configJsonPath = path.join(securityPath, 'config.json');
+      const configSigPath  = path.join(securityPath, 'config.json.sig');
+      if (!fs.existsSync(configJsonPath)) {
+        checks.push({ status: 'warning', message: `Security config: not found (${configJsonPath})` });
+      } else {
+        let parsed = false;
+        try { JSON.parse(fs.readFileSync(configJsonPath, 'utf8')); parsed = true; } catch (_) {}
+        checks.push({
+          status: parsed ? 'ok' : 'error',
+          message: `Security config: ${configJsonPath} — JSON ${parsed ? 'valid' : 'INVALID'}`,
+        });
 
-      // Check session token
+        checks.push({
+          status: fs.existsSync(configSigPath) ? 'ok' : 'warning',
+          message: `Security config signature: ${configSigPath}${fs.existsSync(configSigPath) ? '' : ' — not found'}`,
+        });
+
+        // If .sig exists, verify the embedded configHash matches the actual file
+        if (fs.existsSync(configSigPath)) {
+          try {
+            const crypto = require('crypto');
+            const sigMeta = JSON.parse(fs.readFileSync(configSigPath, 'utf8'));
+            if (sigMeta.configHash) {
+              const actualHash = crypto.createHash('sha256')
+                .update(fs.readFileSync(configJsonPath, 'utf8'), 'utf8')
+                .digest('hex');
+              const match = actualHash === sigMeta.configHash;
+              checks.push({
+                status: match ? 'ok' : 'error',
+                message: `Security config hash: ${match ? 'matches signature ✓' : 'MISMATCH — config.json may have been tampered with!'}`,
+              });
+            }
+          } catch (sigErr) {
+            checks.push({ status: 'warning', message: `Security config signature: could not parse (${sigErr})` });
+          }
+        }
+      }
+
+      // ── Helper executables ────────────────────────────────────
+      const helperPatterns: string[] = Array.isArray(this.config.helperPaths) && this.config.helperPaths.length > 0
+        ? this.config.helperPaths
+        : ['./dist/helpers/*.exe'];
+
+      for (const pattern of helperPatterns) {
+        const baseDir = path.dirname(pattern);
+        const glob = path.basename(pattern);
+        const isGlob = glob.includes('*') || glob.includes('?');
+        if (!fs.existsSync(baseDir)) {
+          checks.push({ status: 'warning', message: `Helper path not found: ${baseDir}` });
+          continue;
+        }
+        if (isGlob) {
+          // Simple glob: only supports * and ? in basename
+          const re = new RegExp(
+            '^' + glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$',
+            'i');
+          const exes = (fs.readdirSync(baseDir) as string[]).filter(f => re.test(f));
+          if (exes.length === 0) {
+            checks.push({ status: 'warning', message: `Helper pattern ${pattern}: no files found` });
+          } else {
+            checks.push({ status: 'ok', message: `Helper pattern ${pattern}: ${exes.length} file(s) — ${exes.join(', ')}` });
+          }
+        } else {
+          const fullPath = path.join(baseDir, glob);
+          checks.push({
+            status: fs.existsSync(fullPath) ? 'ok' : 'warning',
+            message: `Helper executable: ${fullPath}`,
+          });
+        }
+      }
+
+      // ── Session token manager ─────────────────────────────────
       checks.push({
         status: this.sessionTokenManager ? 'ok' : 'warning',
         message: 'Session token manager',
       });
 
-      // Check helper executables paths
-      const helperPaths = Array.isArray(this.config.helperPaths) && this.config.helperPaths.length > 0
-        ? this.config.helperPaths
-        : ['./dist/win/*.exe'];
-
-      const helperChecks = helperPaths.map((pattern: string) => {
-        const baseDir = path.dirname(pattern);
-        const exists = fs.existsSync(baseDir);
-        return {
-          status: exists ? 'ok' : 'warning',
-          message: `Helper path: ${pattern}`,
-        };
-      });
-      checks.push(...helperChecks);
-
-      // Check security filters
-      const hasFilters =
-        (this.config.allowedExecutables?.length || 0) > 0 ||
-        (this.config.blockedExecutables?.length || 0) > 0 ||
-        (this.config.allowedPaths?.length || 0) > 0 ||
-        (this.config.blockedPaths?.length || 0) > 0;
-      
+      // ── Security filter rules ─────────────────────────────────
+      const advancedCount = (this.config.advancedFilters || []).length;
+      const legacyCount =
+        (this.config.allowedExecutables?.length || 0) +
+        (this.config.blockedExecutables?.length || 0) +
+        (this.config.allowedPaths?.length || 0) +
+        (this.config.blockedPaths?.length || 0);
+      const totalFilters = advancedCount + legacyCount;
       checks.push({
-        status: hasFilters ? 'ok' : 'warning',
-        message: `Security filters configured: ${hasFilters ? 'Yes' : 'No (all access allowed)'}`,
+        status: totalFilters > 0 ? 'ok' : 'warning',
+        message: `Security filters: ${totalFilters} rule(s) configured${totalFilters === 0 ? ' — all access allowed' : ` (${advancedCount} advanced, ${legacyCount} legacy)`}`,
       });
 
       res.writeHead(200);

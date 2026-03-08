@@ -1215,7 +1215,7 @@ A Windows installer (or VS Code extension install hook) deploys a default set.
   - [x] Implemented in `httpServerWithDashboard.ts` `handleRunAppTemplateScenario`
 - [x] Dashboard Settings tab: "App Templates" card showing loaded apps + scenario counts
   - [x] Added `📚 App Templates` nav section + `loadAppTemplates()` in dashboard.html/js
-- [ ] Scenario editor: visual step builder (drag-drop reorder, ScenarioRef picker)
+- [x] Scenario editor: visual step builder (drag-drop reorder, ScenarioRef picker)
 
 ### App Template Namespacing / Package Layout (LOW PRIORITY)
 **Goal:** Organise `apptemplates/` into a reverse-domain namespace hierarchy, similar to

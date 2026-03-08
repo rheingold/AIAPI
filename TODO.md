@@ -536,8 +536,10 @@ The target future state is for each helper to implement a clean `ExecuteCommand(
 and `GetSchema()` that HelperCommon calls — but the current approach works and is backward-compat.
 
 - [ ] Refactor `KeyWin.cs`: extract dispatch into `ExecuteCommand(target, action)` method
-- [ ] Refactor `BrowserWin.cs`: extract `GetSchema()` returning string; `DispatchForStdin`
-  to call `ExecuteCommand()` directly (avoids Main() re-invoke overhead)
+- [x] Refactor `BrowserWin.cs`: extract `GetSchema()` returning string; `DispatchCommand`
+  added as static method — all 3 transport listener lambdas (stdin, HTTP, pipe) now call
+  `DispatchCommand` directly instead of re-invoking `Main()`. `GetApiSchema()` was already
+  extracted; used as method-group `Func<string>` in all three listeners. ✅
 - [x] Update `scripts/build-win-tools.ps1` to include `HelperCommon.cs` in each compile line ✅
 
 ---

@@ -72,17 +72,7 @@ namespace BrowserWin
                     HelperCommon.RunAuthHandshake(skipAuth);
 
                     bool persistent = HelperCommon.HasFlag(args, "--persistent");
-                    // Provide a dispatch wrapper that calls this same Main() with
-                    // [target, action] — avoids duplicating the command dispatch logic.
-                    Action<string, string> browserDispatch = (tgt, act) =>
-                    {
-                        // Build synthesised args the same way direct CLI invocation works.
-                        // target  may be "brave", "msedge", "chrome", "brave:9222" etc.
-                        // action  is the {COMMAND:param} envelope.
-                        Main(new string[] { tgt, act });
-                    };
-                    Func<string> browserSchema = GetApiSchema;
-                    return HelperCommon.RunStdinListener(persistent, browserDispatch, browserSchema);
+                    return HelperCommon.RunStdinListener(persistent, DispatchCommand, GetApiSchema);
                 }
 
                 // ── HTTP listener mode (--listen-port=N) ──────────────────────
@@ -99,12 +89,7 @@ namespace BrowserWin
                             Console.Error.WriteLine("AIAPI: --listen-port requires a valid port number (1-65535)");
                             return 1;
                         }
-                        Action<string, string> browserDispatch = (tgt, act) =>
-                        {
-                            Main(new string[] { tgt, act });
-                        };
-                        Func<string> browserSchema = GetApiSchema;
-                        return HelperCommon.RunHttpListener(port, browserDispatch, browserSchema);
+                        return HelperCommon.RunHttpListener(port, DispatchCommand, GetApiSchema);
                     }
                 }
 
@@ -120,12 +105,7 @@ namespace BrowserWin
                             Console.Error.WriteLine("AIAPI: --listen-pipe requires a pipe name");
                             return 1;
                         }
-                        Action<string, string> browserDispatch = (tgt, act) =>
-                        {
-                            Main(new string[] { tgt, act });
-                        };
-                        Func<string> browserSchema = GetApiSchema;
-                        return HelperCommon.RunNamedPipeListener(pipeName, browserDispatch, browserSchema);
+                        return HelperCommon.RunNamedPipeListener(pipeName, DispatchCommand, GetApiSchema);
                     }
                 }
 
@@ -213,6 +193,30 @@ namespace BrowserWin
         // ──────────────────────────────────────────────────────────────────────
         //  Command dispatch
         // ──────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Parses the "browser[:port]" target string and routes directly to
+        /// ExecuteCommand — used as the Action&lt;string,string&gt; delegate by all
+        /// transport listeners (stdin, HTTP, named-pipe).  Avoids the overhead
+        /// of re-invoking Main() for every command in daemon mode.
+        /// </summary>
+        static void DispatchCommand(string target, string action)
+        {
+            string browser = target;
+            int    port    = 9222;
+            int    colon   = target.LastIndexOf(':');
+            if (colon > 0)
+            {
+                string portStr = target.Substring(colon + 1);
+                int    parsed;
+                if (int.TryParse(portStr, out parsed))
+                {
+                    port    = parsed;
+                    browser = target.Substring(0, colon);
+                }
+            }
+            ExecuteCommand(browser, action, port);
+        }
 
         static int ExecuteCommand(string browser, string command, int port)
         {

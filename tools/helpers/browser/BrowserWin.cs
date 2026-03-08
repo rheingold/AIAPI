@@ -108,6 +108,27 @@ namespace BrowserWin
                     }
                 }
 
+                // ── Named pipe listener mode (--listen-pipe=Name or --listen-pipe=\\.\pipe\Name) ──
+                // Accepts one client at a time; reconnects automatically after each disconnect.
+                // Example: BrowserWin.exe --listen-pipe=AIAPI_BrowserWin
+                {
+                    string pipeName = HelperCommon.GetFlagValue(args, "--listen-pipe");
+                    if (pipeName != null)
+                    {
+                        if (pipeName.Length == 0)
+                        {
+                            Console.Error.WriteLine("AIAPI: --listen-pipe requires a pipe name");
+                            return 1;
+                        }
+                        Action<string, string> browserDispatch = (tgt, act) =>
+                        {
+                            Main(new string[] { tgt, act });
+                        };
+                        Func<string> browserSchema = GetApiSchema;
+                        return HelperCommon.RunNamedPipeListener(pipeName, browserDispatch, browserSchema);
+                    }
+                }
+
                 // ── HelperRegistry inject-mode (same contract as KeyWin.exe) ──
                 // HelperRegistry.callCommand() writes a temp file:
                 //   line 1: target  (e.g. "brave", "msedge", "brave:9223")

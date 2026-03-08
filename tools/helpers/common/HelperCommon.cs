@@ -604,6 +604,136 @@ public static class HelperCommon
         return 0;
     }
 
+    // ── RunNamedPipeListener ──────────────────────────────────────────────────
+    /// <summary>
+    /// Windows named-pipe JSON command listener.
+    ///
+    /// Creates a single-instance named-pipe server.  After each client
+    /// disconnects the pipe is recreated so a new client can connect
+    /// (multi-caller, sequential).  The server stops only when a client sends
+    /// <c>{"action":"_exit"}</c>.
+    ///
+    /// <paramref name="pipeName"/> may be supplied as a bare name ("MyPipe") or
+    /// as a full path ("\\.\pipe\MyPipe") — the prefix is stripped if present.
+    ///
+    /// The wire protocol is identical to the stdin listener: one JSON object
+    /// per line; built-in _schema / _ping / _exit handled before dispatch.
+    ///
+    /// Requires System.Core.dll (System.IO.Pipes namespace, .NET 3.5+).
+    /// </summary>
+    public static int RunNamedPipeListener(
+        string pipeName,
+        Action<string, string> dispatch,
+        Func<string> getSchema)
+    {
+        // Accept both "\\.\pipe\MyPipe" and bare "MyPipe"
+        const string pfx = "\\\\.\\pipe\\";
+        if (pipeName.StartsWith(pfx, StringComparison.OrdinalIgnoreCase))
+            pipeName = pipeName.Substring(pfx.Length);
+        if (pipeName.Length == 0)
+        {
+            Console.Error.WriteLine("AIAPI: RunNamedPipeListener: pipe name is empty");
+            return 1;
+        }
+
+        var utf8 = new System.Text.UTF8Encoding(false);  // no BOM
+        Console.Error.WriteLine("AIAPI: named pipe listener ready at \\\\.\\pipe\\" + pipeName);
+
+        while (true)
+        {
+            // ── Create pipe server instance ─────────────────────────────────
+            System.IO.Pipes.NamedPipeServerStream pipe;
+            try
+            {
+                pipe = new System.IO.Pipes.NamedPipeServerStream(
+                    pipeName,
+                    System.IO.Pipes.PipeDirection.InOut,
+                    1,   // single server instance; re-created after each disconnect
+                    System.IO.Pipes.PipeTransmissionMode.Byte,
+                    System.IO.Pipes.PipeOptions.None);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("AIAPI: RunNamedPipeListener: cannot create pipe '" +
+                    pipeName + "': " + ex.Message);
+                return 1;
+            }
+
+            // ── Wait for next client ────────────────────────────────────────
+            try { pipe.WaitForConnection(); }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("AIAPI: RunNamedPipeListener: wait failed: " + ex.Message);
+                try { pipe.Dispose(); } catch { }
+                break;
+            }
+
+            // ── Serve client: redirect Console.Out to the pipe ─────────────
+            // Same pattern as RunStdinListener — Console.Out is replaced with
+            // an IdInjectingWriter that targets the pipe StreamWriter so dispatch
+            // functions write directly to the connected client.
+            var origOut    = Console.Out;
+            var pipeWriter = new System.IO.StreamWriter(pipe, utf8) { AutoFlush = true };
+            var pipeReader = new System.IO.StreamReader(pipe, utf8);
+            var injectWr   = new IdInjectingWriter(pipeWriter);
+            Console.SetOut(injectWr);
+
+            bool exitReceived = false;
+            try
+            {
+                string line;
+                while ((line = pipeReader.ReadLine()) != null)
+                {
+                    line = line.Trim();
+                    if (line.Length == 0) continue;
+
+                    string id     = HcJson.GetString(line, "id")     ?? "";
+                    string action = HcJson.GetString(line, "action") ?? "";
+                    string target = HcJson.GetString(line, "target") ?? "";
+
+                    injectWr.CurrentId = id;
+
+                    if (action == "_schema")
+                    {
+                        try { Console.WriteLine(getSchema()); }
+                        catch (Exception ex) { Console.WriteLine(HcJson.Err(id, "schema_error: " + ex.Message)); }
+                    }
+                    else if (action == "_ping")
+                    {
+                        Console.WriteLine("{\"success\":true,\"pong\":true}");
+                    }
+                    else if (action == "_exit")
+                    {
+                        Console.WriteLine("{\"success\":true,\"message\":\"bye\"}");
+                        exitReceived = true;
+                        break;
+                    }
+                    else if (action.Length == 0)
+                    {
+                        Console.WriteLine(HcJson.Err(id, "missing_action"));
+                    }
+                    else
+                    {
+                        try   { dispatch(target, action); }
+                        catch (Exception ex) { Console.WriteLine(HcJson.Err(id, ex.Message)); }
+                    }
+                }
+            }
+            catch { /* client disconnected mid-stream */ }
+            finally
+            {
+                Console.SetOut(origOut);
+                try { pipe.Disconnect(); } catch { }
+                try { pipe.Dispose();    } catch { }
+            }
+
+            if (exitReceived) return 0;
+            // Client disconnected — loop back and accept the next client
+        }
+
+        return 0;
+    }
+
     // ── RunStdinListener ──────────────────────────────────────────────────────
     /// <summary>
     /// Newline-delimited JSON stdin listener.

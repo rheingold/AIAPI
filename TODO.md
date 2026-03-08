@@ -519,7 +519,10 @@ tools/
   to `HelperCommon.cs`; `--listen-port=N` flag wired in `KeyWin.cs` and `BrowserWin.cs`.
   Dispatches via same `Console.Out`-capture pattern as stdin; built-in `_schema`, `_ping`,
   `_exit`, id-injection all work over HTTP. Smoke-tested live (`pong=True id=1`). ✅
-- [ ] `RunNamedPipeListener(string pipeName)` — Windows named pipe server thread
+- [x] `RunNamedPipeListener(string pipeName)` — Windows named pipe server thread; added to
+  `HelperCommon.cs`; `--listen-pipe=Name` flag wired in `KeyWin.cs` and `BrowserWin.cs`.
+  Re-accepts clients after disconnect (multi-caller sequential). `Console.Out` redirected to
+  pipe writer for connection duration. Smoke-tested live (`pong=True id=7`). ✅
 - [x] `AuthState` class — tracks `_auth` state, securityConfig path, sessionKey; added to
   `HelperCommon.cs` with fields `Authenticated`, `SkippedAuth`, `HelperNonce`, `ServerNonce`,
   `PkBytes`, `SecurityConfigPath`, `SessionKey` (SessionKey null until SecurityLib).

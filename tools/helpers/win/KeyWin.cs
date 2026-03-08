@@ -2012,6 +2012,27 @@ namespace KeyWin
                 }
             }
 
+            // ── Named pipe listener mode (--listen-pipe=Name or --listen-pipe=\\.\pipe\Name) ──
+            // Accepts one client at a time; reconnects automatically after each disconnect.
+            // Example: KeyWin.exe --listen-pipe=AIAPI_KeyWin
+            {
+                string pipeName = HelperCommon.GetFlagValue(args, "--listen-pipe");
+                if (pipeName != null)
+                {
+                    if (pipeName.Length == 0)
+                    {
+                        Console.Error.WriteLine("AIAPI: --listen-pipe requires a pipe name");
+                        return 1;
+                    }
+                    Action<string, string> kwDispatch = (tgt, act) =>
+                    {
+                        Main(new string[] { tgt, act });
+                    };
+                    Func<string> kwSchema = GetApiSchema;
+                    return HelperCommon.RunNamedPipeListener(pipeName, kwDispatch, kwSchema);
+                }
+            }
+
             try
             {
                 // Verify session token from MCP server

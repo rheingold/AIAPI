@@ -1836,6 +1836,16 @@ export class HttpServerWithDashboard {
    */
   private wildcardMatch(pattern: string, text: string): boolean {
     if (!pattern || pattern === '*') return true;
+    // Regex syntax: /pattern/ or /pattern/i
+    const reMatch = pattern.match(/^\/(.+)\/(i?)$/);
+    if (reMatch) {
+      try {
+        return new RegExp(reMatch[1], reMatch[2] || 'i').test(text);
+      } catch {
+        return false; // invalid regex → no match
+      }
+    }
+    // Glob syntax: * = any sequence, ? = any char
     const safe = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
     return new RegExp(`^${safe}$`, 'i').test(text);
   }

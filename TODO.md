@@ -184,8 +184,8 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
     - [x] Parameter autocomplete from discovered helper schemas — done (`loadHelperCommandsForFilter()`)
     - [x] Test filter button (dry-run simulation against known targets) — done (`handleTestFilter` + `btn-test-filter`)
     - [x] Import filters from JSON file — done (`importFilters()` with replace/merge prompt)
-    - [ ] Criteria: window title matching, binary hash, process path
-    - [ ] RegExp pattern support in pattern field
+    - [x] Criteria: window title matching, binary hash, process path — redesigned: encoded directly in `process` field using spec format (`calc.exe[SHA256:abc…]` / `SHA256:abc…`) per COMMAND_ALIGNMENT.md; old invented checkbox fields removed
+    - [x] RegExp pattern support in pattern field — `/regex/` or `/regex/i` syntax supported in all pattern fields (process, command, pattern); wildcardMatch in mcpServer.ts + httpServerWithDashboard.ts updated; dashboard hint + help section updated
     - [ ] XPath-like UI tree path filtering
     - [ ] Office/Browser document structure filters
 - [x] Old Security Filters (basic lists - implemented):

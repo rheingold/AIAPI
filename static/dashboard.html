@@ -329,13 +329,19 @@
                   <br><em>Block navigation to malicious domains in any browser</em></li>
               </ul>
               
-              <h4>Pattern Wildcards:</h4>
+              <h4>Pattern Wildcards (glob):</h4>
               <ul>
-                <li><code>*</code> - Match any characters (zero or more)</li>
-                <li><code>?</code> - Match single character</li>
-                <li><code>[abc]</code> - Match any character in brackets</li>
-                <li><code>[a-z]</code> - Match range of characters</li>
-                <li><code>{regex}</code> - Use full regex pattern</li>
+                <li><code>*</code> — match any characters (zero or more)</li>
+                <li><code>?</code> — match any single character</li>
+                <li><code>num*Button</code> — num0Button, num1Button, …</li>
+              </ul>
+
+              <h4>Pattern Regex (<code>/…/</code> syntax):</h4>
+              <ul>
+                <li><code>/num\dButton/</code> — match any single-digit num button</li>
+                <li><code>/^(calc|notepad)\.exe$/i</code> — exact name, case-insensitive</li>
+                <li><code>/Submit(\s+Button)?/i</code> — Submit or Submit Button</li>
+                <li>Wrap the regex in <code>/…/</code>; optionally append <code>i</code> for case-insensitive</li>
               </ul>
             </div>
           </details>
@@ -592,19 +598,21 @@
         <div class="form-group">
           <label for="filter-pattern">Parameter Pattern:</label>
           <div class="input-with-button">
-            <input type="text" id="filter-pattern" placeholder="num*Button or * for all" 
+            <input type="text" id="filter-pattern" placeholder="num*Button or * for all"
                    list="parameter-suggestions"
-                   title="Use * for wildcards, ? for single char — suggestions from schema">
+                   title="Glob: * = any sequence, ? = any char | Regex: /pattern/ or /pattern/i">
             <button type="button" onclick="openUITreeBrowser()" class="btn-tool" id="btn-browse-tree">🌳 Browse UI Tree</button>
           </div>
           <datalist id="parameter-suggestions"></datalist>
           <small>
-            <strong>Examples:</strong><br>
-            • For {CLICKID}: <code>num*Button</code> (allows num0Button, num1Button, etc.)<br>
-            • For {CLICKNAME}: <code>Submit*</code> (allows Submit, Submit Button, etc.)<br>
-            • For {SENDKEYS}: <code>*</code> (allows any keystrokes)<br>
-            • For {LAUNCH}: <code>calc.exe</code> or <code>notepad.exe</code><br>
-            • Use <code>*</code> to match all parameters
+            <strong>Glob examples:</strong><br>
+            • <code>num*Button</code> — matches num0Button, num1Button, …<br>
+            • <code>Submit*</code> — matches Submit, Submit Button, …<br>
+            • <code>*</code> — matches everything<br>
+            <strong>Regex examples</strong> (enclose in <code>/…/</code>):<br>
+            • <code>/num\dButton/</code> — matches any single-digit num button<br>
+            • <code>/^(calc|notepad)\.exe$/i</code> — exact process names<br>
+            • <code>/Submit(\s+Button)?/i</code> — Submit or Submit Button
           </small>
         </div>
         

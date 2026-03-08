@@ -2336,11 +2336,16 @@ function _seUpdate(i, field, val) {
   scenarioEditor.steps[i][field] = val;
 }
 
-/** Returns true if a filter rule's command matches the step's command (glob, case-insensitive). */
+/** Returns true if a filter rule's command matches the step's command (glob or /regex/, case-insensitive). */
 function _seFilterMatchesStep(filter, step) {
   const cmd = (filter.command || '').trim();
   const stepCmd = (step.command || '').trim();
   if (!cmd || cmd === '*') return true;
+  // Regex syntax: /pattern/ or /pattern/i
+  const reMatch = cmd.match(/^\/(.+)\/(i?)$/);
+  if (reMatch) {
+    try { return new RegExp(reMatch[1], reMatch[2] || 'i').test(stepCmd); } catch { return false; }
+  }
   const re = new RegExp('^' + cmd.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$', 'i');
   return re.test(stepCmd);
 }

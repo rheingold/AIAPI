@@ -421,6 +421,37 @@
           </div>
         </div>
 
+        <!-- Metadata panel (collapsible) -->
+        <details id="scenario-editor-meta-panel" style="margin-top:0.5rem;border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;">
+          <summary style="cursor:pointer;font-size:0.82rem;color:var(--text-secondary);user-select:none;">🔧 Scenario Metadata (helper, process, assistant, checksum)</summary>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 1rem;margin-top:0.5rem;font-size:0.82rem;">
+            <div>
+              <label for="se-meta-helper" style="display:block;margin-bottom:2px;">Helper exe:</label>
+              <select id="se-meta-helper" style="width:100%;padding:3px;">
+                <option value="">— inherit from template —</option>
+                <option value="KeyWin.exe">KeyWin.exe</option>
+                <option value="BrowserWin.exe">BrowserWin.exe</option>
+              </select>
+            </div>
+            <div>
+              <label for="se-meta-process" style="display:block;margin-bottom:2px;">Target process (e.g. calc.exe):</label>
+              <input type="text" id="se-meta-process" placeholder="calc.exe" style="width:100%;padding:3px;box-sizing:border-box;">
+            </div>
+            <div>
+              <label for="se-meta-apptitle" style="display:block;margin-bottom:2px;">Window title hint (for LISTWINDOWS):</label>
+              <input type="text" id="se-meta-apptitle" placeholder="Calculator" style="width:100%;padding:3px;box-sizing:border-box;">
+            </div>
+            <div>
+              <label for="se-meta-assistant" style="display:block;margin-bottom:2px;">Linked AI assistant:</label>
+              <input type="text" id="se-meta-assistant" placeholder="copilot / gpt-4o / …" style="width:100%;padding:3px;box-sizing:border-box;">
+            </div>
+            <div style="grid-column:1/-1;">
+              <label for="se-meta-checksum" style="display:block;margin-bottom:2px;">Binary SHA-256 checksum (informational):</label>
+              <input type="text" id="se-meta-checksum" placeholder="64-char hex SHA-256 of target binary" style="width:100%;padding:3px;box-sizing:border-box;font-family:monospace;">
+            </div>
+          </div>
+        </details>
+
         <!-- Steps table -->
         <div style="overflow-x:auto;margin-top:0.5rem;">
           <table id="scenario-editor-steps-table" style="width:100%;border-collapse:collapse;font-size:0.8rem;">

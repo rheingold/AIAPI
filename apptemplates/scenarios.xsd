@@ -65,6 +65,10 @@
     <xs:attribute name="process" type="xs:string" use="optional"/>
     <!-- app title-match hint for LISTWINDOWS window binding -->
     <xs:attribute name="app"    type="xs:string" use="optional"/>
+    <!-- AI assistant identifier that should prefer this scenario (informational) -->
+    <xs:attribute name="assistant" type="xs:string" use="optional"/>
+    <!-- expected SHA-256 hex digest of the target binary (informational / future enforcement) -->
+    <xs:attribute name="checksum"  type="xs:string" use="optional"/>
   </xs:complexType>
 
   <!-- ═══════════════════════════════════════════════════════════════════

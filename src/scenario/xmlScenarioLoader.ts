@@ -48,6 +48,16 @@ export interface RawXmlStep {
 export interface RawXmlScenario {
   id: string;
   label: string;
+  /** Which helper exe handles this scenario (KeyWin.exe / BrowserWin.exe / *). */
+  helper?: string;
+  /** Target process name hint, e.g. calc.exe. */
+  process?: string;
+  /** Window title / app hint for LISTWINDOWS binding. */
+  appTitle?: string;
+  /** AI assistant identifier that should use this scenario (informational). */
+  assistant?: string;
+  /** Expected SHA-256 hex digest of the target binary (informational / future enforcement). */
+  checksum?: string;
   steps: RawXmlStep[];
   params: XmlParam[];
 }
@@ -309,10 +319,15 @@ export class XmlScenarioLoader {
       throw new Error(`Scenario "${scenarioId}" not found. Available: ${available}`);
     }
     return {
-      id:     scenarioId,
-      label:  scenarioEl.getAttribute('label') ?? scenarioId,
-      steps:  this.extractRawSteps(scenarioEl),
-      params: this.extractParams(scenarioEl),
+      id:        scenarioId,
+      label:     scenarioEl.getAttribute('label') ?? scenarioId,
+      helper:    scenarioEl.getAttribute('helper')    ?? undefined,
+      process:   scenarioEl.getAttribute('process')   ?? undefined,
+      appTitle:  scenarioEl.getAttribute('app')        ?? undefined,
+      assistant: scenarioEl.getAttribute('assistant') ?? undefined,
+      checksum:  scenarioEl.getAttribute('checksum')  ?? undefined,
+      steps:     this.extractRawSteps(scenarioEl),
+      params:    this.extractParams(scenarioEl),
     };
   }
 
@@ -320,7 +335,13 @@ export class XmlScenarioLoader {
    * Save a modified scenario back to its scenarios.xml file.
    * Replaces the <Steps> element; preserves all other file content.
    */
-  save(app: string, scenarioId: string, label: string, steps: RawXmlStep[]): void {
+  save(
+    app: string,
+    scenarioId: string,
+    label: string,
+    steps: RawXmlStep[],
+    meta?: { helper?: string; process?: string; appTitle?: string; assistant?: string; checksum?: string }
+  ): void {
     const xmlPath = path.join(this.appTemplatesDir, app, 'scenarios.xml');
     if (!fs.existsSync(xmlPath)) throw new Error(`scenarios.xml not found for app: "${app}"`);
     const content = fs.readFileSync(xmlPath, 'utf-8');
@@ -331,6 +352,17 @@ export class XmlScenarioLoader {
     if (!scenarioEl) throw new Error(`Scenario "${scenarioId}" not found in ${app}/scenarios.xml`);
 
     scenarioEl.setAttribute('label', label);
+
+    // Update/remove optional metadata attributes when provided
+    if (meta) {
+      const setOrRemove = (attr: string, val?: string) =>
+        val ? scenarioEl.setAttribute(attr, val) : scenarioEl.removeAttribute(attr);
+      setOrRemove('helper',    meta.helper);
+      setOrRemove('process',   meta.process);
+      setOrRemove('app',       meta.appTitle);
+      setOrRemove('assistant', meta.assistant);
+      setOrRemove('checksum',  meta.checksum);
+    }
 
     // Find existing <Steps> or <steps> container, or create <Steps>
     let stepsEl: Element | undefined = this.findDirectChildCI(scenarioEl, 'steps');

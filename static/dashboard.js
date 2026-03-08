@@ -2248,6 +2248,9 @@ async function scenarioEditorPick(scenarioId) {
     document.getElementById('scenario-editor-btn-add').disabled = true;
     document.getElementById('scenario-editor-btn-addref').disabled = true;
     document.getElementById('scenario-editor-btn-save').disabled = true;
+    // Clear metadata panel
+    ['se-meta-helper','se-meta-process','se-meta-apptitle','se-meta-assistant','se-meta-checksum']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     return;
   }
   scenarioEditor.scenarioId = scenarioId;
@@ -2260,6 +2263,12 @@ async function scenarioEditorPick(scenarioId) {
     const labelEl = document.getElementById('scenario-editor-label');
     labelEl.placeholder = scenarioId;  // always show ID as placeholder hint
     labelEl.value = (d.label && d.label !== scenarioId) ? d.label : '';  // blank if label==id (fallback)
+    // Populate metadata panel
+    document.getElementById('se-meta-helper').value     = d.helper    || '';
+    document.getElementById('se-meta-process').value    = d.process   || '';
+    document.getElementById('se-meta-apptitle').value   = d.appTitle  || '';
+    document.getElementById('se-meta-assistant').value  = d.assistant || '';
+    document.getElementById('se-meta-checksum').value   = d.checksum  || '';
     document.getElementById('scenario-editor-empty').style.display = 'none';
     document.getElementById('scenario-editor-btn-add').disabled = false;
     document.getElementById('scenario-editor-btn-addref').disabled = false;
@@ -2358,6 +2367,16 @@ async function scenarioEditorSave() {
   const { app, scenarioId, steps } = scenarioEditor;
   if (!app || !scenarioId) return;
   const label = document.getElementById('scenario-editor-label').value.trim() || scenarioId;
+  // Collect metadata — unset fields become undefined so the server removes them from XML attrs
+  const metaRaw = {
+    helper:    document.getElementById('se-meta-helper')?.value.trim(),
+    process:   document.getElementById('se-meta-process')?.value.trim(),
+    appTitle:  document.getElementById('se-meta-apptitle')?.value.trim(),
+    assistant: document.getElementById('se-meta-assistant')?.value.trim(),
+    checksum:  document.getElementById('se-meta-checksum')?.value.trim(),
+  };
+  // Only include keys that have a value (undefined → server removes the attribute)
+  const meta = Object.fromEntries(Object.entries(metaRaw).filter(([,v]) => v));
   const btn = document.getElementById('scenario-editor-btn-save');
   btn.disabled = true;
   btn.textContent = '⏳ Saving...';
@@ -2365,7 +2384,7 @@ async function scenarioEditorSave() {
     const r = await fetch(
       `/api/appTemplates/${encodeURIComponent(app)}/scenarios/${encodeURIComponent(scenarioId)}`,
       { method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ label, steps }) }
+        body: JSON.stringify({ label, steps, meta }) }
     );
     const d = await r.json();
     if (d.success) {

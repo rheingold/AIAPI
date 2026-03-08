@@ -1150,7 +1150,7 @@ export class HttpServerWithDashboard {
     }
     const [, appName, scenarioId] = m;
     const body = await this.readBody(req);
-    let payload: { label?: string; steps?: RawXmlStep[] };
+    let payload: { label?: string; steps?: RawXmlStep[]; meta?: { helper?: string; process?: string; appTitle?: string; assistant?: string; checksum?: string } };
     try {
       payload = JSON.parse(body);
     } catch {
@@ -1166,7 +1166,7 @@ export class HttpServerWithDashboard {
     const templatesDir = path.resolve(process.cwd(), this.config.appTemplatesDir || './apptemplates');
     const loader = new XmlScenarioLoader(templatesDir);
     try {
-      loader.save(appName, scenarioId, payload.label ?? scenarioId, payload.steps);
+      loader.save(appName, scenarioId, payload.label ?? scenarioId, payload.steps, payload.meta);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true, app: appName, scenarioId }));
     } catch (err) {

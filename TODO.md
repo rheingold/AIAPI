@@ -1218,7 +1218,7 @@ A Windows installer (or VS Code extension install hook) deploys a default set.
 - [x] Scenario editor: visual step builder (drag-drop reorder, ScenarioRef picker)
   - [x] **Fix**: chrome `scenarios.xml` uses lowercase `<steps>/<step action=...>` + top-level `<ScenarioRef>` — made parser case-insensitive & iterates all Scenario children in document order
 - [ ] Scenario editor enhancements:
-  - [ ] **Metadata panel**: show/edit per-scenario metadata — `linked assistant`, `process/binary name`, `binary checksum` (mirrors the fields from Security Filter rules so a scenario knows which helper and process it targets)
+  - [x] **Metadata panel**: collapsible panel in scenario editor — helper, process, window title hint, linked assistant, binary checksum; round-trips through `loadRaw()` → `save()` via PUT body `meta` field; `RawXmlScenario` type extended; `scenarios.xsd` updated with `assistant` + `checksum` attributes
   - [x] **Auto-refresh App Templates list** after saving a scenario (call `loadAppTemplates()` on successful PUT)
   - [x] **Scenario label not synced**: `listScenarios` returns `id` as `label` for chrome (chrome XML lacks `label=` attr) — placeholder=id, value='' when label==id so input always shows the id hint
 - [ ] Dashboard Filter Rules enhancements:

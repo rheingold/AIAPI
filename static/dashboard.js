@@ -973,14 +973,17 @@ function deleteFilter(filterId) {
 
 function renderFilters(filterTerm = '') {
   const container = document.getElementById('filter-rules-list');
-  
+
   if (!container) return;
 
   const filtered = filterTerm
     ? advancedFilters.filter(f =>
         `${f.process} ${f.helper} ${f.command} ${f.pattern} ${f.description}`.toLowerCase().includes(filterTerm.toLowerCase()))
     : advancedFilters;
-  
+
+  // Delegate to inline table editor when Quick-Edit mode is active
+  if (filterTableMode) { renderFiltersTableView(filtered); return; }
+
   if (filtered.length === 0) {
     container.innerHTML = advancedFilters.length === 0
       ? '<div class="filter-rule-example" style="text-align: center; padding: 2rem; color: var(--text-secondary);"><h3>No filters configured</h3><p>Click "➕ Add Filter Rule" to create your first security filter</p></div>'
@@ -1010,11 +1013,98 @@ function renderFilters(filterTerm = '') {
 }
 
 let _filterSearchTerm = '';
+let filterTableMode = false;
 
 function filterSearch(term) {
   _filterSearchTerm = term;
   renderFilters(term);
 }
+
+// ── Filter Quick-Edit Table ────────────────────────────────────────
+function toggleFilterTableMode() {
+  filterTableMode = !filterTableMode;
+  const btn = document.getElementById('btn-filter-table-toggle');
+  if (btn) btn.textContent = filterTableMode ? '\ud83c\udccf Card View' : '\ud83d\uddc3\ufe0f Quick-Edit';
+  renderFilters(_filterSearchTerm);
+}
+
+/** Update one field on a filter in-memory (called by inline table inputs). */
+function _ftUpdate(id, field, value) {
+  const f = advancedFilters.find(f => f.id === id);
+  if (f) f[field] = value;
+}
+
+/** Move a filter row up (dir=-1) or down (dir=1) then re-render. */
+function _ftMove(id, dir) {
+  const idx = advancedFilters.findIndex(f => f.id === id);
+  if (idx < 0) return;
+  const swap = idx + dir;
+  if (swap < 0 || swap >= advancedFilters.length) return;
+  [advancedFilters[idx], advancedFilters[swap]] = [advancedFilters[swap], advancedFilters[idx]];
+  renderFilters(_filterSearchTerm);
+}
+
+/** Render filters as an inline-editable table (Quick-Edit mode). */
+function renderFiltersTableView(filters) {
+  const container = document.getElementById('filter-rules-list');
+  if (!container) return;
+  const n = filters.length;
+
+  if (n === 0) {
+    container.innerHTML = '<div class="filter-rule-example" style="text-align:center;padding:2rem;color:var(--text-secondary);">No filters \u2014 click \u2795 Add Filter Rule to create one.</div>';
+    return;
+  }
+
+  const esc = escapeHtml;
+  let html = `<div style="overflow-x:auto;">
+<table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+  <thead>
+    <tr style="background:var(--surface2,#1e1e2e);border-bottom:2px solid var(--border,#333);">
+      <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Action</th>
+      <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Process</th>
+      <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Helper</th>
+      <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Command</th>
+      <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Pattern</th>
+      <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Description</th>
+      <th style="padding:4px 6px;text-align:center;white-space:nowrap;">\u21d5 \ud83d\uddd1</th>
+    </tr>
+  </thead>
+  <tbody>`;
+
+  filters.forEach((f, i) => {
+    const rowBg = f.action === 'allow' ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.06)';
+    html += `
+    <tr style="border-bottom:1px solid var(--border,#333);background:${rowBg};">
+      <td style="padding:2px 4px;">
+        <select onchange="_ftUpdate(${f.id},'action',this.value)" style="width:95px;padding:2px;">
+          <option value="allow"${f.action==='allow'?' selected':''}>&#x2705; allow</option>
+          <option value="deny"${f.action==='deny'?' selected':''}>&#x1f6ab; deny</option>
+        </select>
+      </td>
+      <td style="padding:2px 4px;"><input type="text" value="${esc(f.process||'*')}" onchange="_ftUpdate(${f.id},'process',this.value)" style="width:100%;min-width:80px;padding:2px;box-sizing:border-box;"></td>
+      <td style="padding:2px 4px;">
+        <select onchange="_ftUpdate(${f.id},'helper',this.value)" style="width:120px;padding:2px;">
+          <option value="KeyWin.exe"${f.helper==='KeyWin.exe'?' selected':''}>KeyWin.exe</option>
+          <option value="BrowserWin.exe"${f.helper==='BrowserWin.exe'?' selected':''}>BrowserWin.exe</option>
+          <option value="*"${(f.helper||'*')==='*'?' selected':''}>* (any)</option>
+        </select>
+      </td>
+      <td style="padding:2px 4px;"><input type="text" value="${esc(f.command||'')}" onchange="_ftUpdate(${f.id},'command',this.value)" style="width:100%;min-width:90px;padding:2px;box-sizing:border-box;" placeholder="{CMD}"></td>
+      <td style="padding:2px 4px;"><input type="text" value="${esc(f.pattern||'')}" onchange="_ftUpdate(${f.id},'pattern',this.value)" style="width:100%;min-width:80px;padding:2px;box-sizing:border-box;" placeholder="*"></td>
+      <td style="padding:2px 4px;"><input type="text" value="${esc(f.description||'')}" onchange="_ftUpdate(${f.id},'description',this.value)" style="width:100%;min-width:120px;padding:2px;box-sizing:border-box;"></td>
+      <td style="padding:2px 4px;text-align:center;white-space:nowrap;">
+        <button onclick="_ftMove(${f.id},-1)" ${i===0?'disabled':''} style="padding:1px 5px;cursor:pointer;" title="Move up">\u2191</button>
+        <button onclick="_ftMove(${f.id},1)" ${i===n-1?'disabled':''} style="padding:1px 5px;cursor:pointer;" title="Move down">\u2193</button>
+        <button onclick="deleteFilter(${f.id})" style="padding:1px 5px;cursor:pointer;color:var(--error,#f87171);" title="Delete">\ud83d\uddd1</button>
+      </td>
+    </tr>`;
+  });
+
+  html += '\n  </tbody>\n</table>\n</div>';
+  html += '<p style="margin:0.5rem 0 0;font-size:0.78rem;color:var(--text-secondary,#888);">\u2139\ufe0f Changes are in-memory. Click <strong>\ud83d\udcbe Save All Filters</strong> to persist to disk.</p>';
+  container.innerHTML = html;
+}
+// ── End Quick-Edit Table ───────────────────────────────────────────
 
 function validateAllFilters() {
   const issues = [];
@@ -2167,7 +2257,9 @@ async function scenarioEditorPick(scenarioId) {
     const d = await r.json();
     if (!d.success) throw new Error(d.error || 'Failed to load steps');
     scenarioEditor.steps = (d.steps || []).map(s => Object.assign({}, s));
-    document.getElementById('scenario-editor-label').value = d.label || scenarioId;
+    const labelEl = document.getElementById('scenario-editor-label');
+    labelEl.placeholder = scenarioId;  // always show ID as placeholder hint
+    labelEl.value = (d.label && d.label !== scenarioId) ? d.label : '';  // blank if label==id (fallback)
     document.getElementById('scenario-editor-empty').style.display = 'none';
     document.getElementById('scenario-editor-btn-add').disabled = false;
     document.getElementById('scenario-editor-btn-addref').disabled = false;
@@ -2280,6 +2372,7 @@ async function scenarioEditorSave() {
       addLog('info', 'templates', `Saved ${steps.length} steps for ${app}/${scenarioId}`);
       btn.textContent = '✅ Saved';
       setTimeout(() => { btn.textContent = '💾 Save'; btn.disabled = false; }, 2000);
+      loadAppTemplates();  // refresh scenario counts on app cards
     } else {
       throw new Error(d.error || 'Save failed');
     }

@@ -401,7 +401,7 @@ Each helper supports one or more via CLI flags (combinable):
 |---|---|
 | `--listen-stdin` | Read JSON lines from stdin, write JSON lines to stdout. **Exit on EOF** (caller controls lifetime). |
 | `--listen-stdin --persistent` | Same but **ignore EOF** — only exit on `{"action":"_exit"}` or OS signal (SIGTERM / Ctrl-C). |
-| `--listen-pipe=\\.\pipe\Name` | Named pipe server — Windows, multi-caller, survives caller disconnects. |
+| `--listen-pipe=\\.\pipe\Name` | Named pipe server — Windows, multi-caller, survives caller disconnects. ✅ **IMPLEMENTED** — `RunNamedPipeListener` in HelperCommon.cs; wired in both helpers. |
 | `--listen-port=N` | HTTP JSON-RPC on `127.0.0.1:N` (loopback only). ✅ **IMPLEMENTED** — `RunHttpListener` in HelperCommon.cs; wired in both helpers. |
 | *(combined)* | `--listen-pipe=... --listen-port=N` runs both on two threads, one process. |
 | *(none / current)* | One-shot: `--inject-mode=direct tmpFile` or `--target=... --action=...` |

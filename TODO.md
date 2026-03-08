@@ -238,8 +238,8 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
   - [x] ✅ Automatic API discovery without code changes
 
 ### Interactive Scenario Editor
-- [ ] Visual scenario builder (no syntax knowledge required)
-- [ ] Features:
+- [x] Visual scenario builder — tabular step editor with command/target/parameter/conditional/note fields
+- [ ] Extended features (beyond current implementation):
   - [ ] Drag-and-drop step builder
   - [ ] IntelliSense-style autocomplete for:
     - [ ] Action types (launchProcess, clickElement, sendKeys, etc.)
@@ -263,17 +263,18 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
     - [ ] Run individual steps
     - [ ] Debug mode with breakpoints
     - [ ] Variable inspection
-- [ ] UI Components:
-  - [ ] Action palette (searchable list of all actions)
-  - [ ] Parameter forms (type-specific inputs)
-  - [ ] Step reordering (drag handles)
-  - [ ] Copy/paste/duplicate steps
-  - [ ] Undo/redo support
-- [ ] Integration:
-  - [ ] Save/load from scenarios folder
-  - [ ] Import existing .json scenarios
-  - [ ] Export to .json format
-  - [ ] Version control friendly output
+- [x] UI Components (implemented):
+  - [ ] Action palette (searchable list of all actions) — future
+  - [ ] Parameter forms (type-specific inputs) — future
+  - [x] Step reordering — ↑↓ buttons per row (`_seMoveStep`)
+  - [x] Duplicate steps — 📋 button per row (`_seDuplicateStep`)
+  - [x] Undo/redo support — `_seUndo()`/`_seRedo()` with history stack; triggered via Ctrl+Z/Ctrl+Y
+  - [ ] Drag-and-drop reorder — future enhancement
+- [x] Integration:
+  - [x] Save/load from scenarios folder — `scenarioEditorPick()` + `scenarioEditorSave()` (PUT endpoint)
+  - [x] Import existing .json scenarios — load from server via picker
+  - [x] Export to .json format — Save writes canonical scenario JSON / XML
+  - [ ] Version control friendly output — future (pretty-print / deterministic field order)
 
 ### Installer & Deployment
 - [ ] Windows Installer:
@@ -304,13 +305,13 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
   - [ ] Rollback on failure
 
 ### Dashboard Enhancements
-- [ ] Add "Settings" tab with configuration UI
-- [ ] Add "Scenario Editor" tab
-- [ ] Add "Security" tab:
-  - [ ] View current security config
-  - [ ] Edit security filters
-  - [ ] Test security rules
-  - [ ] View security logs/violations
+- [x] Add "Settings" tab with configuration UI — implemented (ports, paths, helpers, security toggle)
+- [x] Add "Scenario Editor" tab — implemented (tabular step editor, ↑↓ reorder, save/load, filter sync)
+- [x] Add "Security" tab:
+  - [x] View current security config — shown via `validateConfiguration()` / `GET /api/config/security`
+  - [x] Edit security filters — filter wizard + Quick-Edit table + inline 🛡️ links from scenario steps
+  - [x] Test security rules — "Test Rule" dry-run button + "Validate All" button
+  - [ ] View security logs/violations — audit log viewer in Security tab (not yet implemented)
 - [x] Add "Status" indicators:
   - [x] Security status (enabled/disabled, valid keys) — in header status bar
   - [x] Key expiry warnings — ⚠️ indicator when keys missing

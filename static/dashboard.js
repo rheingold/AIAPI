@@ -2215,7 +2215,9 @@ const scenarioEditor = {
   app: '',
   scenarioId: '',
   steps: [],
-  _expandedFilters: new Set()
+  _expandedFilters: new Set(),
+  _history: [],
+  _redoStack: []
 };
 
 function _seEsc(s) {
@@ -2229,6 +2231,8 @@ async function openScenarioEditor(appName) {
   scenarioEditor.scenarioId = '';
   scenarioEditor.steps = [];
   scenarioEditor._expandedFilters.clear();
+  scenarioEditor._history = [];
+  scenarioEditor._redoStack = [];
   document.getElementById('scenario-editor-appname').textContent = appName;
   document.getElementById('scenario-editor-label').value = '';
   document.getElementById('scenario-editor-steps-body').innerHTML = '';
@@ -2266,6 +2270,8 @@ async function scenarioEditorPick(scenarioId) {
     scenarioEditor.scenarioId = '';
     scenarioEditor.steps = [];
     scenarioEditor._expandedFilters.clear();
+    scenarioEditor._history = [];
+    scenarioEditor._redoStack = [];
     document.getElementById('scenario-editor-label').value = '';
     document.getElementById('scenario-editor-steps-body').innerHTML = '';
     document.getElementById('scenario-editor-empty').style.display = 'block';
@@ -2279,6 +2285,8 @@ async function scenarioEditorPick(scenarioId) {
   }
   scenarioEditor.scenarioId = scenarioId;
   scenarioEditor._expandedFilters.clear();
+  scenarioEditor._history = [];
+  scenarioEditor._redoStack = [];
   const app = scenarioEditor.app;
   try {
     const r = await fetch(`/api/appTemplates/${encodeURIComponent(app)}/scenarios/${encodeURIComponent(scenarioId)}/steps`);
@@ -2311,6 +2319,7 @@ function _seRenderRows() {
   const steps = scenarioEditor.steps;
   const n = steps.length;
   tbody.innerHTML = '';
+  _seUpdateUndoButtons();
   if (n === 0) {
     const tr = document.createElement('tr');
     tr.innerHTML = '<td colspan="8" style="padding:0.75rem;color:var(--text-secondary);text-align:center;">No steps — use the buttons below to add one.</td>';
@@ -2323,6 +2332,7 @@ function _seRenderRows() {
     const moveUp   = `<button onclick="_seMoveStep(${i},-1)" title="Move up" ${i===0?'disabled':''} style="padding:1px 5px;cursor:pointer;">↑</button>`;
     const moveDown = `<button onclick="_seMoveStep(${i},1)" title="Move down" ${i===n-1?'disabled':''} style="padding:1px 5px;cursor:pointer;">↓</button>`;
     const del      = `<button onclick="_seDeleteStep(${i})" title="Delete" style="padding:1px 5px;cursor:pointer;color:var(--error);">🗑</button>`;
+    const dup      = `<button onclick="_seDuplicateStep(${i})" title="Duplicate step" style="padding:1px 5px;cursor:pointer;">📋</button>`;
     const typeSel  = `<select onchange="_seUpdateType(${i},this.value)" style="width:100%;">
       <option${step.type==='Step'?' selected':''}>Step</option>
       <option${step.type==='ScenarioRef'?' selected':''}>ScenarioRef</option>
@@ -2336,7 +2346,7 @@ function _seRenderRows() {
           <input type="text" value="${_seEsc(step.ref)}" oninput="_seUpdate(${i},'ref',this.value)"
             placeholder="scenario-id" style="width:82%;">
         </td>
-        <td style="padding:3px;white-space:nowrap;">${moveUp}${moveDown}${del}</td>`;
+        <td style="padding:3px;white-space:nowrap;">${dup}${moveUp}${moveDown}${del}</td>`;
     } else {
       const expanded = scenarioEditor._expandedFilters.has(i);
       const filterBtn = `<button onclick="_seToggleFilters(${i})" title="Linked filter rules" style="padding:1px 5px;cursor:pointer;${expanded ? 'color:var(--accent);font-weight:bold;' : ''}">🛡️</button>`;
@@ -2348,7 +2358,7 @@ function _seRenderRows() {
         <td style="padding:3px;"><input type="text" value="${_seEsc(step.parameter)}" oninput="_seUpdate(${i},'parameter',this.value)" placeholder="value" style="width:100%;"></td>
         <td style="padding:3px;"><input type="text" value="${_seEsc(step.conditional)}" oninput="_seUpdate(${i},'conditional',this.value)" placeholder="" style="width:100%;"></td>
         <td style="padding:3px;"><input type="text" value="${_seEsc(step.note)}" oninput="_seUpdate(${i},'note',this.value)" placeholder="" style="width:100%;"></td>
-        <td style="padding:3px;white-space:nowrap;">${filterBtn}${moveUp}${moveDown}${del}</td>`;
+        <td style="padding:3px;white-space:nowrap;">${filterBtn}${dup}${moveUp}${moveDown}${del}</td>`;
     }
     tbody.appendChild(tr);
 
@@ -2436,6 +2446,7 @@ function _seOpenFilterFromStep(i) {
 function _seUpdateType(i, newType) {
   const s = scenarioEditor.steps[i];
   if (s.type === newType) return;
+  _seSnapshot();
   scenarioEditor.steps[i] = newType === 'ScenarioRef'
     ? { type: 'ScenarioRef', ref: '' }
     : { type: 'Step', command: '', target: '', parameter: '' };
@@ -2446,21 +2457,80 @@ function _seMoveStep(i, dir) {
   const steps = scenarioEditor.steps;
   const j = i + dir;
   if (j < 0 || j >= steps.length) return;
+  _seSnapshot();
   [steps[i], steps[j]] = [steps[j], steps[i]];
   _seRenderRows();
 }
 
 function _seDeleteStep(i) {
+  _seSnapshot();
   scenarioEditor.steps.splice(i, 1);
   _seRenderRows();
 }
 
+/**
+ * Save a snapshot of current steps to the undo history.
+ * Clears the redo stack (a new action invalidates forward history).
+ */
+function _seSnapshot() {
+  scenarioEditor._history.push(JSON.parse(JSON.stringify(scenarioEditor.steps)));
+  if (scenarioEditor._history.length > 100) scenarioEditor._history.shift(); // cap
+  scenarioEditor._redoStack = [];
+  _seUpdateUndoButtons();
+}
+
+function _seUpdateUndoButtons() {
+  const u = document.getElementById('scenario-editor-btn-undo');
+  const r = document.getElementById('scenario-editor-btn-redo');
+  if (u) u.disabled = scenarioEditor._history.length === 0;
+  if (r) r.disabled = scenarioEditor._redoStack.length === 0;
+}
+
+function _seUndo() {
+  if (scenarioEditor._history.length === 0) return;
+  scenarioEditor._redoStack.push(JSON.parse(JSON.stringify(scenarioEditor.steps)));
+  scenarioEditor.steps = scenarioEditor._history.pop();
+  scenarioEditor._expandedFilters.clear();
+  _seUpdateUndoButtons();
+  _seRenderRows();
+}
+
+function _seRedo() {
+  if (scenarioEditor._redoStack.length === 0) return;
+  scenarioEditor._history.push(JSON.parse(JSON.stringify(scenarioEditor.steps)));
+  scenarioEditor.steps = scenarioEditor._redoStack.pop();
+  scenarioEditor._expandedFilters.clear();
+  _seUpdateUndoButtons();
+  _seRenderRows();
+}
+
+function _seDuplicateStep(i) {
+  _seSnapshot();
+  const copy = JSON.parse(JSON.stringify(scenarioEditor.steps[i]));
+  scenarioEditor.steps.splice(i + 1, 0, copy);
+  _seRenderRows();
+}
+
+// Keyboard shortcuts: Ctrl+Z = undo, Ctrl+Y / Ctrl+Shift+Z = redo
+// Only fires when the scenario editor modal is open AND focus is not in a text field
+// (text fields keep native undo for in-field edits).
+document.addEventListener('keydown', (e) => {
+  const modal = document.getElementById('scenario-editor-modal');
+  if (!modal || !modal.classList.contains('active')) return;
+  const tag = (document.activeElement?.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  if (e.ctrlKey && !e.altKey && e.key === 'z' && !e.shiftKey) { e.preventDefault(); _seUndo(); }
+  else if (e.ctrlKey && !e.altKey && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); _seRedo(); }
+});
+
 function scenarioEditorAddStep() {
+  _seSnapshot();
   scenarioEditor.steps.push({ type: 'Step', command: '', target: '', parameter: '' });
   _seRenderRows();
 }
 
 function scenarioEditorAddRef() {
+  _seSnapshot();
   scenarioEditor.steps.push({ type: 'ScenarioRef', ref: '' });
   _seRenderRows();
 }

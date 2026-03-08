@@ -63,6 +63,14 @@ namespace BrowserWin
                 // so the existing dispatch path handles it without code duplication.
                 if (args[0] == "--listen-stdin")
                 {
+                    // Auth handshake must happen before RunStdinListener.
+                    // When SKIP_SESSION_AUTH=true (dev default), RunAuthHandshake returns
+                    // immediately without reading any bytes from stdin.
+                    bool skipAuth = string.Equals(
+                        System.Environment.GetEnvironmentVariable("SKIP_SESSION_AUTH"),
+                        "true", StringComparison.OrdinalIgnoreCase);
+                    HelperCommon.RunAuthHandshake(skipAuth);
+
                     bool persistent = HelperCommon.HasFlag(args, "--persistent");
                     // Provide a dispatch wrapper that calls this same Main() with
                     // [target, action] — avoids duplicating the command dispatch logic.

@@ -1,6 +1,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
 import { globalLogger } from '../utils/Logger';
 
 export interface HelperCommandParam {
@@ -64,6 +65,12 @@ class HelperDaemon {
   private shuttingDown = false;
   /** Monotonically-incrementing request sequence — echoed by HelperCommon as "id" */
   private requestSeq = 0;
+  /** Auth startup phase.  'skip' when SKIP_SESSION_AUTH=true (current dev default). */
+  private startupPhase: 'skip' | 'awaiting_hello' | 'awaiting_ok' | 'ready' = 'skip';
+  /** Resolved immediately (SKIP_SESSION_AUTH=true) or after _auth_ok is received. */
+  private readyPromise: Promise<void> = Promise.resolve();
+  private startupResolve: (() => void) | null = null;
+  private startupReject: ((e: Error) => void) | null = null;
 
   constructor(
     public readonly exePath: string,
@@ -75,8 +82,22 @@ class HelperDaemon {
   start(): void {
     if (this.proc && !this.proc.killed) return;
     this.buffer = '';
+    // Determine auth mode and set up readyPromise before spawning so that
+    // onData() routes correctly from the first byte received.
+    const env = this.buildEnv();
+    const skipAuth = env['SKIP_SESSION_AUTH'] === 'true';
+    if (skipAuth) {
+      this.startupPhase = 'skip';
+      this.readyPromise = Promise.resolve();
+    } else {
+      this.startupPhase = 'awaiting_hello';
+      this.readyPromise = new Promise<void>((resolve, reject) => {
+        this.startupResolve = resolve;
+        this.startupReject  = reject;
+      });
+    }
     const proc = spawn(this.exePath, ['--listen-stdin', '--persistent'], {
-      env: this.buildEnv(),
+      env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     this.proc = proc;
@@ -140,7 +161,59 @@ class HelperDaemon {
     const { json, remaining } = HelperDaemon.extractJson(this.buffer);
     if (json !== null) {
       this.buffer = remaining;
-      this.dispatchResponse(json);
+      if (this.startupPhase === 'awaiting_hello' || this.startupPhase === 'awaiting_ok') {
+        this.handleStartupMessage(json);
+      } else {
+        this.dispatchResponse(json);
+      }
+    }
+  }
+
+  /**
+   * Handle the _auth_hello / _auth_ok exchange on the TypeScript (server) side.
+   * Active only when SKIP_SESSION_AUTH is NOT set (currently never reached because
+   * buildEnv() always sets SKIP_SESSION_AUTH=true — skeleton for future activation).
+   *
+   * Protocol:
+   *   Helper sends: {"action":"_auth_hello","helperNonce":"<b64>","exeHash":"<hex>", ...}
+   *   Server sends: {"action":"_auth","pk":"","serverNonce":"<b64>","securityConfig":"", ...}
+   *   Helper sends: {"action":"_auth_ok"}
+   *   → readyPromise resolves; normal command traffic begins.
+   */
+  private handleStartupMessage(json: string): void {
+    try {
+      const msg = JSON.parse(json);
+      if (this.startupPhase === 'awaiting_hello') {
+        if (msg.action !== '_auth_hello') {
+          this.startupPhase = 'ready';
+          this.startupReject?.(new Error(`auth_protocol: expected _auth_hello, got action=${msg.action}`));
+          return;
+        }
+        // TODO: verify msg.exeHash against security/config.json when SecurityLib is available.
+        const serverNonce = crypto.randomBytes(32).toString('base64');
+        const authMsg = JSON.stringify({
+          action: '_auth',
+          pk: '',              // TODO: getRawPrivateKeyBytes() from CertificateManager
+          serverNonce,
+          securityConfig: '', // TODO: resolved path to security/config.json
+          helperExePath: this.exePath,
+        });
+        this.proc!.stdin!.write(authMsg + '\n');
+        this.startupPhase = 'awaiting_ok';
+        globalLogger.debug('HelperDaemon', `[${path.basename(this.exePath)}] _auth sent to helper`);
+      } else if (this.startupPhase === 'awaiting_ok') {
+        if (msg.action !== '_auth_ok') {
+          this.startupPhase = 'ready';
+          this.startupReject?.(new Error(`auth_protocol: expected _auth_ok, got action=${msg.action}`));
+          return;
+        }
+        this.startupPhase = 'ready';
+        this.startupResolve?.();
+        globalLogger.info('HelperDaemon', `[${path.basename(this.exePath)}] auth handshake complete`);
+      }
+    } catch (e) {
+      this.startupPhase = 'ready';
+      this.startupReject?.(e instanceof Error ? e : new Error(String(e)));
     }
   }
 
@@ -201,11 +274,14 @@ class HelperDaemon {
     const mySlot = this.queueTail;
     this.queueTail = new Promise<void>(r => { releaseQueue = r; });
 
-    return mySlot.then(() =>
-      new Promise<any>((resolve) => {
-        // Ensure daemon is alive
-        if (!this.proc || this.proc.killed) this.start();
+    return mySlot.then(async () => {
+      // Ensure daemon is alive (also resets readyPromise+startupPhase when restarting).
+      if (!this.proc || this.proc.killed) this.start();
 
+      // Wait for auth handshake (resolves immediately when SKIP_SESSION_AUTH=true).
+      await this.readyPromise;
+
+      return new Promise<any>((resolve) => {
         this.pendingResolve = (v: any) => { releaseQueue(); resolve(v); };
         this.pendingTimer = setTimeout(() => {
           const pr = this.pendingResolve;
@@ -224,8 +300,8 @@ class HelperDaemon {
           if (this.pendingTimer) { clearTimeout(this.pendingTimer); this.pendingTimer = null; }
           if (pr) { releaseQueue(); pr({ success: false, error: `write_error: ${e}` }); }
         }
-      })
-    );
+      });
+    });
   }
 }
 

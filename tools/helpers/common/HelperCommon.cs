@@ -263,6 +263,36 @@ public sealed class IdInjectingWriter : System.IO.TextWriter
     }
 }
 
+// ── AuthState ────────────────────────────────────────────────────────────────
+/// <summary>
+/// Holds authentication state produced by the _auth_hello → _auth → _auth_ok
+/// handshake between a helper .exe and the MCP server.
+///
+/// When SKIP_SESSION_AUTH=true (current dev default), only SkippedAuth is set.
+/// Full crypto (HKDF session key) requires SecurityLib — set SessionKey to null
+/// until that integration is complete.
+/// </summary>
+public class AuthState
+{
+    /// <summary>True once the full _auth handshake completed and _auth_ok was sent.</summary>
+    public bool Authenticated;
+    /// <summary>True when SKIP_SESSION_AUTH=true bypassed the handshake.</summary>
+    public bool SkippedAuth;
+    /// <summary>32-byte helper-side nonce sent in _auth_hello.</summary>
+    public byte[] HelperNonce;
+    /// <summary>32-byte server-side nonce received in _auth.</summary>
+    public byte[] ServerNonce;
+    /// <summary>Raw PKCS#8 private key bytes received in _auth (base64-decoded).</summary>
+    public byte[] PkBytes;
+    /// <summary>security/config.json path received in _auth.</summary>
+    public string SecurityConfigPath;
+    /// <summary>
+    /// HKDF-derived session key (32 bytes). Null until SecurityLib integration.
+    /// Both sides derive: HKDF-SHA256(pk, SHA256(serverNonce||helperNonce), "AIAPI-v1-session")
+    /// </summary>
+    public byte[] SessionKey;
+}
+
 // ── HelperCommon ─────────────────────────────────────────────────────────────
 /// <summary>
 /// Shared CLI-flag helpers and stdin listener loop.
@@ -331,6 +361,92 @@ public static class HelperCommon
             }
         }
         return result;
+    }
+
+    // ── RunAuthHandshake ──────────────────────────────────────────────────────
+    /// <summary>
+    /// Performs the _auth_hello → _auth → _auth_ok exchange on stdin/stdout.
+    ///
+    /// Must be called from each helper's main() in the --listen-stdin branch,
+    /// BEFORE calling RunStdinListener().  Both methods independently wrap
+    /// Console.OpenStandardInput/Output() — sequential execution on the same
+    /// underlying OS pipe handle is safe with no leftover buffering.
+    ///
+    /// When skipAuth is true (SKIP_SESSION_AUTH env var = "true"), returns
+    /// immediately with AuthState.SkippedAuth = true so the rest of the helper
+    /// operates without change.
+    ///
+    /// If the exchange fails (stdin closes, wrong action received), exits with
+    /// exit code 78 (SECURITY_TAMPER sentinel).
+    /// </summary>
+    public static AuthState RunAuthHandshake(bool skipAuth)
+    {
+        var state = new AuthState();
+        if (skipAuth) { state.SkippedAuth = true; return state; }
+
+        var utf8   = new System.Text.UTF8Encoding(false);   // no BOM
+        var reader = new System.IO.StreamReader(Console.OpenStandardInput(),  utf8);
+        var writer = new System.IO.StreamWriter(Console.OpenStandardOutput(), utf8) { AutoFlush = true };
+
+        // 1. Compute self SHA-256 (exe path from executing assembly).
+        string exeHash = "";
+        try
+        {
+            string exePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+            using (var fs  = System.IO.File.OpenRead(exePath))
+            {
+                byte[] h = sha.ComputeHash(fs);
+                var sb = new System.Text.StringBuilder(64);
+                foreach (byte b in h) sb.Append(b.ToString("x2"));
+                exeHash = sb.ToString();
+            }
+        }
+        catch { /* non-fatal — send empty hash */ }
+
+        // 2. Generate 32-byte helper nonce.
+        var nonce = new byte[32];
+        using (var rng = new System.Security.Cryptography.RNGCryptoServiceProvider())
+            rng.GetBytes(nonce);
+        state.HelperNonce = nonce;
+
+        // 3. Send _auth_hello.
+        writer.WriteLine(
+            "{\"action\":\"_auth_hello\",\"helperNonce\":\"" +
+            HcJson.EscapeStr(Convert.ToBase64String(nonce)) +
+            "\",\"exeHash\":\"" + HcJson.EscapeStr(exeHash) + "\",\"dllHash\":\"\"}");
+
+        // 4. Read _auth response (blocking — server drives timing).
+        string authLine = reader.ReadLine();
+        if (authLine == null)
+        {
+            Console.Error.WriteLine("AIAPI: stdin closed before _auth — exiting (78).");
+            System.Environment.Exit(78);
+        }
+
+        string authAction = HcJson.GetString(authLine, "action") ?? "";
+        if (!string.Equals(authAction, "_auth", StringComparison.Ordinal))
+        {
+            Console.Error.WriteLine("AIAPI: expected _auth, got: " +
+                authLine.Substring(0, Math.Min(120, authLine.Length)));
+            System.Environment.Exit(78);
+        }
+
+        // 5. Parse fields from _auth.
+        string pkB64       = HcJson.GetString(authLine, "pk")            ?? "";
+        string srvNonceB64 = HcJson.GetString(authLine, "serverNonce")   ?? "";
+        state.SecurityConfigPath = HcJson.GetString(authLine, "securityConfig") ?? "";
+        try { state.PkBytes     = Convert.FromBase64String(pkB64);       } catch { state.PkBytes     = new byte[0]; }
+        try { state.ServerNonce = Convert.FromBase64String(srvNonceB64); } catch { state.ServerNonce = new byte[0]; }
+
+        // TODO (SecurityLib): sec_load(state.PkBytes, state.SecurityConfigPath);
+        // TODO (SecurityLib): sec_hkdf_sha256(state.PkBytes,
+        //   Concat(state.ServerNonce, state.HelperNonce), "AIAPI-v1-session", out state.SessionKey)
+
+        // 6. Send _auth_ok.
+        writer.WriteLine("{\"action\":\"_auth_ok\"}");
+        state.Authenticated = true;
+        return state;
     }
 
     // ── RunStdinListener ──────────────────────────────────────────────────────

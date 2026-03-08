@@ -517,7 +517,9 @@ tools/
   with `_schema`, `_exit` built-ins; one-shot (persistent=false) and loop (persistent=true)
 - [ ] `RunHttpListener(int port)` — HTTP/1.1 minimal server (System.Net.HttpListener)
 - [ ] `RunNamedPipeListener(string pipeName)` — Windows named pipe server thread
-- [ ] `AuthState` class — tracks `_auth` state, securityConfig path, sessionKey
+- [x] `AuthState` class — tracks `_auth` state, securityConfig path, sessionKey; added to
+  `HelperCommon.cs` with fields `Authenticated`, `SkippedAuth`, `HelperNonce`, `ServerNonce`,
+  `PkBytes`, `SecurityConfigPath`, `SessionKey` (SessionKey null until SecurityLib).
 - [x] `ParseArgs(string[] args)` → unified flag parser — `ParseArgs` + `GetFlagValue` added to
   `HelperCommon.cs`; also `HcJson.GetBool()` and `HcJson.GetInt()` (needed by `_auth` parser).
 
@@ -675,14 +677,18 @@ derive the same temporary session key via HKDF — the session key is never tran
 
 ### Implementation Tasks
 
-- [ ] `CertificateManager.ts`: add `getRawPrivateKeyBytes()` — returns decrypted PKCS#8 bytes
+- [x] `CertificateManager.ts`: add `getRawPrivateKeyBytes()` — returns decrypted PKCS#8 bytes
   after password unlock; keep in a `Buffer` in memory, never write to disk
-- [ ] `HelperRegistry.ts`: spawn helper, wait for `_auth_hello`, verify `exeHash` against
-  `security/config.json`; send `_auth` with raw PK bytes + serverNonce
+- [x] `HelperRegistry.ts`: spawn helper, wait for `_auth_hello`, verify `exeHash` against
+  `security/config.json`; send `_auth` with raw PK bytes + serverNonce — wire protocol
+  stub done; `HelperDaemon` has `startupPhase`/`readyPromise`/`handleStartupMessage()` for
+  full auth flow; exeHash verification + PK loading are TODO (SecurityLib)
 - [ ] `HelperRegistry.ts`: remove `MCP_SESSION_TOKEN`, `MCP_SESSION_SECRET`, `SKIP_SESSION_AUTH`
   env vars (replace with in-pipe auth)
-- [ ] `HelperCommon.cs`: implement `RunAuthHandshake()` — sends `_auth_hello`, receives
-  `_auth`, calls `sec_load()`, derives `sessionKey` via HKDF
+- [x] `HelperCommon.cs`: implement `RunAuthHandshake()` — sends `_auth_hello`, receives
+  `_auth`, calls `sec_load()`, derives `sessionKey` via HKDF; `RunAuthHandshake(skipAuth)`
+  added; helpers call it in `--listen-stdin` branch before `RunStdinListener()`;
+  `sec_load()` + HKDF are TODO (SecurityLib)
 - [ ] `SecurityLib.cpp`: implement `sec_hkdf_sha256(pk, pkLen, salt, saltLen, info, out, outLen)`
   (or use Windows `BCryptDeriveKeyPBKDF2`/`BCryptKeyDerivation` for HKDF)
 - [ ] All subsequent command messages include `"hmac":"HMAC-SHA256(sessionKey, JSON-body)"`;

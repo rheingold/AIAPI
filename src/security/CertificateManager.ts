@@ -272,6 +272,31 @@ ${Buffer.from(JSON.stringify({ certData, signature: signature.toString('base64')
     }
 
     /**
+     * Decrypt the private key and return the raw PKCS#8 DER bytes in memory.
+     *
+     * The returned Buffer is kept in process memory only — never written to disk.
+     * Used by HelperRegistry to provide the `pk` field in the `_auth` handshake
+     * message sent to helper processes over the stdin pipe.
+     *
+     * @param password Password for the private key file (1M-iteration PBKDF2)
+     * @returns Buffer containing DER-encoded PKCS#8 private key bytes
+     */
+    getRawPrivateKeyBytes(password: string): Buffer {
+        if (!fs.existsSync(this.privateKeyPath)) {
+            throw new Error('Private key not found. Run initialize() first.');
+        }
+        const encryptedPrivate = this.loadEncryptedKey(this.privateKeyPath);
+        const pem = this.decryptKey(encryptedPrivate, password);
+
+        // Strip PEM header/footer lines and decode the base64 body to DER bytes.
+        const b64 = pem
+            .split('\n')
+            .filter(l => !l.startsWith('-----') && l.trim().length > 0)
+            .join('');
+        return Buffer.from(b64, 'base64');
+    }
+
+    /**
      * Check if keys exist
      */
     keysExist(): { public: boolean; private: boolean } {

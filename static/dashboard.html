@@ -398,6 +398,65 @@
     </div>
   </div>
 
+  <!-- Scenario Step Editor Modal -->
+  <div id="scenario-editor-modal" class="modal">
+    <div class="modal-content" style="max-width:900px;width:95vw;">
+      <div class="modal-header">
+        <h3 id="scenario-editor-title">✏️ Edit Scenario – <span id="scenario-editor-appname"></span></h3>
+        <button class="modal-close" onclick="closeScenarioEditor()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- Scenario picker + label row -->
+        <div class="form-group" style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;">
+          <div style="flex:0 0 auto;min-width:160px;">
+            <label for="scenario-editor-picker">Scenario:</label>
+            <select id="scenario-editor-picker" onchange="scenarioEditorPick(this.value)">
+              <option value="">— select —</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:180px;">
+            <label for="scenario-editor-label">Label:</label>
+            <input type="text" id="scenario-editor-label" placeholder="Human-readable label" style="width:100%;box-sizing:border-box;">
+          </div>
+        </div>
+
+        <!-- Steps table -->
+        <div style="overflow-x:auto;margin-top:0.5rem;">
+          <table id="scenario-editor-steps-table" style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+            <thead>
+              <tr style="background:var(--bg-secondary);text-align:left;">
+                <th style="padding:4px 6px;width:34px;">#</th>
+                <th style="padding:4px 6px;width:90px;">Type</th>
+                <th style="padding:4px 6px;width:130px;">Command / Ref</th>
+                <th style="padding:4px 6px;width:160px;">Target</th>
+                <th style="padding:4px 6px;">Parameter</th>
+                <th style="padding:4px 6px;width:110px;">Conditional</th>
+                <th style="padding:4px 6px;width:100px;">Note</th>
+                <th style="padding:4px 6px;width:72px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="scenario-editor-steps-body">
+              <!-- rows inserted by renderStepRows() -->
+            </tbody>
+          </table>
+        </div>
+        <div id="scenario-editor-empty" style="color:var(--text-secondary);padding:1rem 0;display:none;">
+          No scenario selected. Choose one above.
+        </div>
+
+        <!-- Add step buttons -->
+        <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+          <button class="btn-secondary" onclick="scenarioEditorAddStep()" id="scenario-editor-btn-add" disabled>＋ Add Step</button>
+          <button class="btn-secondary" onclick="scenarioEditorAddRef()" id="scenario-editor-btn-addref" disabled>🔗 Add ScenarioRef</button>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:0.75rem;padding:1rem 1.5rem;border-top:1px solid var(--border);">
+        <button class="btn-secondary" onclick="closeScenarioEditor()">Cancel</button>
+        <button class="btn-primary" id="scenario-editor-btn-save" onclick="scenarioEditorSave()" disabled>💾 Save</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Filter Editor Modal -->
   <div id="filter-editor-modal" class="modal">
     <div class="modal-content">

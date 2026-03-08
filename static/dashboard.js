@@ -408,6 +408,7 @@ async function loadAppTemplates() {
         <div style="margin-top:0.5rem;">
           <a href="/api/appTemplates/${app.name}/tree" target="_blank" class="btn-secondary" style="font-size:0.75rem;padding:0.2rem 0.5rem;">View tree.xml</a>
           <a href="/api/appTemplates/${app.name}/scenarios" target="_blank" class="btn-secondary" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-left:0.4rem;">View scenarios.xml</a>
+          ${app.hasScenarios ? `<button class="btn-secondary" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-left:0.4rem;" onclick="openScenarioEditor('${app.name}')">✏️ Edit Scenarios</button>` : ''}
         </div>`;
       container.appendChild(card);
     });
@@ -2093,4 +2094,197 @@ async function showHelperSchema(helperName) {
 function closeHelperSchema() {
   const modal = document.getElementById('helper-schema-modal');
   if (modal) modal.classList.remove('active');
+}
+
+// ─── Scenario Step Editor ────────────────────────────────────────────────────
+
+const scenarioEditor = {
+  app: '',
+  scenarioId: '',
+  steps: []
+};
+
+function _seEsc(s) {
+  return String(s ?? '')
+    .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+    .replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function openScenarioEditor(appName) {
+  scenarioEditor.app = appName;
+  scenarioEditor.scenarioId = '';
+  scenarioEditor.steps = [];
+  document.getElementById('scenario-editor-appname').textContent = appName;
+  document.getElementById('scenario-editor-label').value = '';
+  document.getElementById('scenario-editor-steps-body').innerHTML = '';
+  document.getElementById('scenario-editor-empty').style.display = 'block';
+  document.getElementById('scenario-editor-btn-add').disabled = true;
+  document.getElementById('scenario-editor-btn-addref').disabled = true;
+  document.getElementById('scenario-editor-btn-save').disabled = true;
+
+  // Populate scenario picker
+  const picker = document.getElementById('scenario-editor-picker');
+  picker.innerHTML = '<option value="">Loading...</option>';
+  try {
+    const r = await fetch(`/api/appTemplates/${encodeURIComponent(appName)}/scenarios/list`);
+    const d = await r.json();
+    picker.innerHTML = '<option value="">— select a scenario —</option>';
+    (d.scenarios || []).forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = `${s.label} (${s.id})`;
+      picker.appendChild(opt);
+    });
+  } catch(e) {
+    picker.innerHTML = `<option value="">Error: ${e.message}</option>`;
+  }
+
+  document.getElementById('scenario-editor-modal').classList.add('active');
+}
+
+function closeScenarioEditor() {
+  document.getElementById('scenario-editor-modal').classList.remove('active');
+}
+
+async function scenarioEditorPick(scenarioId) {
+  if (!scenarioId) {
+    scenarioEditor.scenarioId = '';
+    scenarioEditor.steps = [];
+    document.getElementById('scenario-editor-label').value = '';
+    document.getElementById('scenario-editor-steps-body').innerHTML = '';
+    document.getElementById('scenario-editor-empty').style.display = 'block';
+    document.getElementById('scenario-editor-btn-add').disabled = true;
+    document.getElementById('scenario-editor-btn-addref').disabled = true;
+    document.getElementById('scenario-editor-btn-save').disabled = true;
+    return;
+  }
+  scenarioEditor.scenarioId = scenarioId;
+  const app = scenarioEditor.app;
+  try {
+    const r = await fetch(`/api/appTemplates/${encodeURIComponent(app)}/scenarios/${encodeURIComponent(scenarioId)}/steps`);
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error || 'Failed to load steps');
+    scenarioEditor.steps = (d.steps || []).map(s => Object.assign({}, s));
+    document.getElementById('scenario-editor-label').value = d.label || scenarioId;
+    document.getElementById('scenario-editor-empty').style.display = 'none';
+    document.getElementById('scenario-editor-btn-add').disabled = false;
+    document.getElementById('scenario-editor-btn-addref').disabled = false;
+    document.getElementById('scenario-editor-btn-save').disabled = false;
+    _seRenderRows();
+    addLog('debug', 'templates', `Loaded ${scenarioEditor.steps.length} steps for ${app}/${scenarioId}`);
+  } catch(e) {
+    addLog('error', 'templates', `Failed to load steps: ${e.message}`);
+    alert(`Failed to load steps: ${e.message}`);
+  }
+}
+
+function _seRenderRows() {
+  const tbody = document.getElementById('scenario-editor-steps-body');
+  const steps = scenarioEditor.steps;
+  const n = steps.length;
+  tbody.innerHTML = '';
+  if (n === 0) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="8" style="padding:0.75rem;color:var(--text-secondary);text-align:center;">No steps — use the buttons below to add one.</td>';
+    tbody.appendChild(tr);
+    return;
+  }
+  steps.forEach((step, i) => {
+    const tr = document.createElement('tr');
+    tr.style.borderBottom = '1px solid var(--border)';
+    const moveUp   = `<button onclick="_seMoveStep(${i},-1)" title="Move up" ${i===0?'disabled':''} style="padding:1px 5px;cursor:pointer;">↑</button>`;
+    const moveDown = `<button onclick="_seMoveStep(${i},1)" title="Move down" ${i===n-1?'disabled':''} style="padding:1px 5px;cursor:pointer;">↓</button>`;
+    const del      = `<button onclick="_seDeleteStep(${i})" title="Delete" style="padding:1px 5px;cursor:pointer;color:var(--error);">🗑</button>`;
+    const typeSel  = `<select onchange="_seUpdateType(${i},this.value)" style="width:100%;">
+      <option${step.type==='Step'?' selected':''}>Step</option>
+      <option${step.type==='ScenarioRef'?' selected':''}>ScenarioRef</option>
+    </select>`;
+    if (step.type === 'ScenarioRef') {
+      tr.innerHTML = `
+        <td style="padding:3px 6px;color:var(--text-secondary);">${i+1}</td>
+        <td style="padding:3px;">${typeSel}</td>
+        <td colspan="5" style="padding:3px 6px;">
+          <label style="font-size:0.75rem;opacity:0.7;">ref:</label>
+          <input type="text" value="${_seEsc(step.ref)}" oninput="_seUpdate(${i},'ref',this.value)"
+            placeholder="scenario-id" style="width:82%;">
+        </td>
+        <td style="padding:3px;white-space:nowrap;">${moveUp}${moveDown}${del}</td>`;
+    } else {
+      tr.innerHTML = `
+        <td style="padding:3px 6px;color:var(--text-secondary);">${i+1}</td>
+        <td style="padding:3px;">${typeSel}</td>
+        <td style="padding:3px;"><input type="text" value="${_seEsc(step.command)}" oninput="_seUpdate(${i},'command',this.value)" placeholder="{SENDKEYS}" style="width:100%;"></td>
+        <td style="padding:3px;"><input type="text" value="${_seEsc(step.target)}" oninput="_seUpdate(${i},'target',this.value)" placeholder="HANDLE:main" style="width:100%;"></td>
+        <td style="padding:3px;"><input type="text" value="${_seEsc(step.parameter)}" oninput="_seUpdate(${i},'parameter',this.value)" placeholder="value" style="width:100%;"></td>
+        <td style="padding:3px;"><input type="text" value="${_seEsc(step.conditional)}" oninput="_seUpdate(${i},'conditional',this.value)" placeholder="" style="width:100%;"></td>
+        <td style="padding:3px;"><input type="text" value="${_seEsc(step.note)}" oninput="_seUpdate(${i},'note',this.value)" placeholder="" style="width:100%;"></td>
+        <td style="padding:3px;white-space:nowrap;">${moveUp}${moveDown}${del}</td>`;
+    }
+    tbody.appendChild(tr);
+  });
+}
+
+function _seUpdate(i, field, val) {
+  scenarioEditor.steps[i][field] = val;
+}
+
+function _seUpdateType(i, newType) {
+  const s = scenarioEditor.steps[i];
+  if (s.type === newType) return;
+  scenarioEditor.steps[i] = newType === 'ScenarioRef'
+    ? { type: 'ScenarioRef', ref: '' }
+    : { type: 'Step', command: '', target: '', parameter: '' };
+  _seRenderRows();
+}
+
+function _seMoveStep(i, dir) {
+  const steps = scenarioEditor.steps;
+  const j = i + dir;
+  if (j < 0 || j >= steps.length) return;
+  [steps[i], steps[j]] = [steps[j], steps[i]];
+  _seRenderRows();
+}
+
+function _seDeleteStep(i) {
+  scenarioEditor.steps.splice(i, 1);
+  _seRenderRows();
+}
+
+function scenarioEditorAddStep() {
+  scenarioEditor.steps.push({ type: 'Step', command: '', target: '', parameter: '' });
+  _seRenderRows();
+}
+
+function scenarioEditorAddRef() {
+  scenarioEditor.steps.push({ type: 'ScenarioRef', ref: '' });
+  _seRenderRows();
+}
+
+async function scenarioEditorSave() {
+  const { app, scenarioId, steps } = scenarioEditor;
+  if (!app || !scenarioId) return;
+  const label = document.getElementById('scenario-editor-label').value.trim() || scenarioId;
+  const btn = document.getElementById('scenario-editor-btn-save');
+  btn.disabled = true;
+  btn.textContent = '⏳ Saving...';
+  try {
+    const r = await fetch(
+      `/api/appTemplates/${encodeURIComponent(app)}/scenarios/${encodeURIComponent(scenarioId)}`,
+      { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label, steps }) }
+    );
+    const d = await r.json();
+    if (d.success) {
+      addLog('info', 'templates', `Saved ${steps.length} steps for ${app}/${scenarioId}`);
+      btn.textContent = '✅ Saved';
+      setTimeout(() => { btn.textContent = '💾 Save'; btn.disabled = false; }, 2000);
+    } else {
+      throw new Error(d.error || 'Save failed');
+    }
+  } catch(e) {
+    addLog('error', 'templates', `Save failed: ${e.message}`);
+    alert(`Save failed: ${e.message}`);
+    btn.textContent = '💾 Save';
+    btn.disabled = false;
+  }
 }

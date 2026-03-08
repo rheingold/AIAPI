@@ -28,7 +28,29 @@ export interface XmlStep {
   conditional?: string;
   note?: string;
 }
+// ── Editor types ──────────────────────────────────────────────────────────────
 
+/** A single step as stored in the XML — before ScenarioRef resolution.
+ *  Used by the dashboard step editor for read/write operations. */
+export interface RawXmlStep {
+  type: 'Step' | 'ScenarioRef';
+  /** Step fields (when type === 'Step') */
+  command?: string;
+  target?: string;
+  parameter?: string;
+  conditional?: string;
+  note?: string;
+  /** ScenarioRef field (when type === 'ScenarioRef') */
+  ref?: string;
+}
+
+/** Raw unresolved scenario — suitable for the step editor. */
+export interface RawXmlScenario {
+  id: string;
+  label: string;
+  steps: RawXmlStep[];
+  params: XmlParam[];
+}
 export interface XmlParam {
   name: string;
   type: string;
@@ -269,6 +291,79 @@ export class XmlScenarioLoader {
     return { app, helper, process, scenarios };
   }
 
+  /**
+   * Load the UNRESOLVED step list for a scenario  ScenarioRef nodes appear as
+   * { type: 'ScenarioRef', ref: '...' } objects rather than being expanded.
+   * Used by the dashboard step editor for read/write operations.
+   */
+  loadRaw(app: string, scenarioId: string): RawXmlScenario {
+    const xmlPath = path.join(this.appTemplatesDir, app, 'scenarios.xml');
+    if (!fs.existsSync(xmlPath)) throw new Error(`scenarios.xml not found for app: "${app}"`);
+    const content = fs.readFileSync(xmlPath, 'utf-8');
+    const doc     = this.parseXml(content);
+    const scenarioEl = Array.from(doc.querySelectorAll('Scenario'))
+      .find(s => s.getAttribute('id') === scenarioId);
+    if (!scenarioEl) {
+      const available = Array.from(doc.querySelectorAll('Scenario'))
+        .map(s => s.getAttribute('id')).filter(Boolean).join(', ');
+      throw new Error(`Scenario "${scenarioId}" not found. Available: ${available}`);
+    }
+    return {
+      id:     scenarioId,
+      label:  scenarioEl.getAttribute('label') ?? scenarioId,
+      steps:  this.extractRawSteps(scenarioEl),
+      params: this.extractParams(scenarioEl),
+    };
+  }
+
+  /**
+   * Save a modified scenario back to its scenarios.xml file.
+   * Replaces the <Steps> element; preserves all other file content.
+   */
+  save(app: string, scenarioId: string, label: string, steps: RawXmlStep[]): void {
+    const xmlPath = path.join(this.appTemplatesDir, app, 'scenarios.xml');
+    if (!fs.existsSync(xmlPath)) throw new Error(`scenarios.xml not found for app: "${app}"`);
+    const content = fs.readFileSync(xmlPath, 'utf-8');
+    const dom     = new JSDOM(content, { contentType: 'text/xml' });
+    const doc     = dom.window.document;
+    const scenarioEl = Array.from(doc.querySelectorAll('Scenario'))
+      .find((s: any) => s.getAttribute('id') === scenarioId) as Element | undefined;
+    if (!scenarioEl) throw new Error(`Scenario "${scenarioId}" not found in ${app}/scenarios.xml`);
+
+    scenarioEl.setAttribute('label', label);
+
+    // Find / create <Steps>
+    let stepsEl: Element = (this.findDirectChild(scenarioEl, 'Steps') as unknown as Element);
+    if (!stepsEl) {
+      stepsEl = doc.createElement('Steps');
+      scenarioEl.appendChild(stepsEl);
+    }
+    while (stepsEl.firstChild) stepsEl.removeChild(stepsEl.firstChild);
+
+    for (const step of steps) {
+      stepsEl.appendChild(doc.createTextNode('\n      '));
+      if (step.type === 'ScenarioRef') {
+        const el = doc.createElement('ScenarioRef');
+        el.setAttribute('ref', step.ref ?? '');
+        stepsEl.appendChild(el);
+      } else {
+        const el = doc.createElement('Step');
+        if (step.command   !== undefined) el.setAttribute('command',   step.command);
+        if (step.target    !== undefined) el.setAttribute('target',    step.target);
+        if (step.parameter !== undefined) el.setAttribute('parameter', step.parameter);
+        if (step.conditional)             el.setAttribute('conditional', step.conditional);
+        if (step.note)                    el.setAttribute('note',      step.note);
+        stepsEl.appendChild(el);
+      }
+    }
+    stepsEl.appendChild(doc.createTextNode('\n    '));
+
+    const serializer = new ((dom.window as any).XMLSerializer)();
+    const xmlDecl = content.startsWith('<?xml') ? content.substring(0, content.indexOf('?>') + 2) + '\n' : '';
+    const body = serializer.serializeToString(doc.documentElement);
+    fs.writeFileSync(xmlPath, xmlDecl + body + '\n', 'utf-8');
+  }
+
   // â”€â”€ Static helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /**
@@ -350,5 +445,28 @@ export class XmlScenarioLoader {
     }
     return undefined;
   }
-}
 
+  /** Return raw (unresolved) steps from a scenario element for the step editor. */
+  private extractRawSteps(scenario: Element): RawXmlStep[] {
+    const result: RawXmlStep[] = [];
+    const stepsEl = this.findDirectChild(scenario, 'Steps');
+    if (!stepsEl) return result;
+    for (const child of Array.from(stepsEl.childNodes)) {
+      if (child.nodeType !== 1) continue;
+      const el = child as Element;
+      if (el.tagName === 'ScenarioRef') {
+        result.push({ type: 'ScenarioRef', ref: el.getAttribute('ref') ?? '' });
+      } else if (el.tagName === 'Step') {
+        result.push({
+          type:        'Step',
+          command:     el.getAttribute('command')     ?? '',
+          target:      el.getAttribute('target')      ?? '',
+          parameter:   el.getAttribute('parameter')   ?? '',
+          conditional: el.getAttribute('conditional') ?? undefined,
+          note:        el.getAttribute('note')        ?? undefined,
+        });
+      }
+    }
+    return result;
+  }
+}

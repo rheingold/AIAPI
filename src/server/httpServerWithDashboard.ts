@@ -12,7 +12,7 @@ import { SessionTokenManager } from '../security/SessionTokenManager';
 import { SecurityPolicy } from '../security/types';
 import { globalLogger } from '../utils/Logger';
 import { HelperRegistry } from '../helpers/HelperRegistry';
-import { XmlScenarioLoader, executeXmlScenario as runXmlScenario } from '../scenario/xmlScenarioLoader';
+import { XmlScenarioLoader, RawXmlStep, executeXmlScenario as runXmlScenario } from '../scenario/xmlScenarioLoader';
 
 const execFileAsync = promisify(execFile);
 
@@ -515,6 +515,18 @@ export class HttpServerWithDashboard {
       }
       if (pathname === '/api/appTemplates' && req.method === 'GET') {
         return this.handleListAppTemplates(req, res);
+      }
+      // GET /api/appTemplates/{app}/scenarios/list — JSON list of {id, label}
+      if (pathname.startsWith('/api/appTemplates/') && pathname.endsWith('/scenarios/list') && req.method === 'GET') {
+        return this.handleListTemplateScenarios(req, res, pathname);
+      }
+      // GET /api/appTemplates/{app}/scenarios/{id}/steps — raw unresolved step list for the editor
+      if (pathname.startsWith('/api/appTemplates/') && pathname.endsWith('/steps') && req.method === 'GET') {
+        return this.handleGetRawScenarioSteps(req, res, pathname);
+      }
+      // PUT /api/appTemplates/{app}/scenarios/{id} — save modified scenario
+      if (pathname.startsWith('/api/appTemplates/') && req.method === 'PUT') {
+        return this.handleSaveScenario(req, res, pathname);
       }
       if (pathname.startsWith('/api/appTemplates/') && req.method === 'GET') {
         return this.handleGetAppTemplate(req, res, pathname);
@@ -1054,6 +1066,113 @@ export class HttpServerWithDashboard {
       this.log('error', 'appTemplates', `Failed to read ${fileKey}.xml for ${appName}: ${error}`);
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: false, error: String(error) }));
+    }
+  }
+
+  /**
+   * GET /api/appTemplates/{app}/scenarios/list
+   * Returns JSON array of { id, label } for all scenarios in an app template.
+   * Used by the dashboard step editor to populate the scenario picker.
+   */
+  private handleListTemplateScenarios(
+    _req: http.IncomingMessage,
+    res: http.ServerResponse,
+    pathname: string
+  ): void {
+    const m = pathname.match(/^\/api\/appTemplates\/([^/]+)\/scenarios\/list$/);
+    if (!m) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Expected: /api/appTemplates/{app}/scenarios/list' }));
+      return;
+    }
+    const [, appName] = m;
+    const templatesDir = path.resolve(process.cwd(), this.config.appTemplatesDir || './apptemplates');
+    const loader = new XmlScenarioLoader(templatesDir);
+    try {
+      const info = loader.listScenarios(appName);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: true, app: appName, scenarios: info.scenarios }));
+    } catch (err) {
+      this.log('error', 'appTemplates', `listScenarios ${appName}: ${err}`);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: String(err) }));
+    }
+  }
+
+  /**
+   * GET /api/appTemplates/{app}/scenarios/{id}/steps
+   * Returns the raw (unresolved) step list for a specific scenario.
+   * Used by the dashboard step editor — ScenarioRef nodes appear as objects
+   * rather than being recursively expanded.
+   */
+  private handleGetRawScenarioSteps(
+    _req: http.IncomingMessage,
+    res: http.ServerResponse,
+    pathname: string
+  ): void {
+    // pathname: /api/appTemplates/{app}/scenarios/{id}/steps
+    const m = pathname.match(/^\/api\/appTemplates\/([^/]+)\/scenarios\/([^/]+)\/steps$/);
+    if (!m) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Expected: /api/appTemplates/{app}/scenarios/{id}/steps' }));
+      return;
+    }
+    const [, appName, scenarioId] = m;
+    const templatesDir = path.resolve(process.cwd(), this.config.appTemplatesDir || './apptemplates');
+    const loader = new XmlScenarioLoader(templatesDir);
+    try {
+      const raw = loader.loadRaw(appName, scenarioId);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: true, ...raw }));
+    } catch (err) {
+      this.log('error', 'appTemplates', `loadRaw ${appName}/${scenarioId}: ${err}`);
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: String(err) }));
+    }
+  }
+
+  /**
+   * PUT /api/appTemplates/{app}/scenarios/{id}
+   * Body: { label: string, steps: RawXmlStep[] }
+   * Saves the modified scenario back to scenarios.xml.
+   */
+  private async handleSaveScenario(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    pathname: string
+  ): Promise<void> {
+    // pathname: /api/appTemplates/{app}/scenarios/{id}
+    const m = pathname.match(/^\/api\/appTemplates\/([^/]+)\/scenarios\/([^/]+)$/);
+    if (!m) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Expected: /api/appTemplates/{app}/scenarios/{id}' }));
+      return;
+    }
+    const [, appName, scenarioId] = m;
+    const body = await this.readBody(req);
+    let payload: { label?: string; steps?: RawXmlStep[] };
+    try {
+      payload = JSON.parse(body);
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Invalid JSON body' }));
+      return;
+    }
+    if (!Array.isArray(payload.steps)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Body must have a steps array' }));
+      return;
+    }
+    const templatesDir = path.resolve(process.cwd(), this.config.appTemplatesDir || './apptemplates');
+    const loader = new XmlScenarioLoader(templatesDir);
+    try {
+      loader.save(appName, scenarioId, payload.label ?? scenarioId, payload.steps);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, app: appName, scenarioId }));
+    } catch (err) {
+      this.log('error', 'appTemplates', `saveScenario ${appName}/${scenarioId}: ${err}`);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: String(err) }));
     }
   }
 

@@ -1949,6 +1949,16 @@ namespace KeyWin
             return sb.ToString();
         }
 
+        /// <summary>
+        /// Dispatch a single command from any transport listener (stdin, HTTP, named pipe).
+        /// All three transports pass this as a method-group instead of an inline lambda
+        /// so the pattern mirrors BrowserWin.cs (commit 2e7bd59).
+        /// </summary>
+        static void DispatchCommand(string target, string action)
+        {
+            Main(new string[] { target, action });
+        }
+
         [STAThread]
         static int Main(string[] args)
         {
@@ -1976,17 +1986,7 @@ namespace KeyWin
                 HelperCommon.RunAuthHandshake(skipAuth);
 
                 bool persistent = HelperCommon.HasFlag(args, "--persistent");
-                Action<string, string> kwDispatch = (tgt, act) =>
-                {
-                    // Synthesise args that the normal Main() dispatch path expects:
-                    //   Main(new[]{ target, action })
-                    // The recursive call goes through VerifySessionToken (still
-                    // uses SKIP_SESSION_AUTH=true from env in Step-1), then normal
-                    // processName / keys resolution and command dispatch.
-                    Main(new string[] { tgt, act });
-                };
-                Func<string> kwSchema = GetApiSchema;
-                return HelperCommon.RunStdinListener(persistent, kwDispatch, kwSchema);
+                return HelperCommon.RunStdinListener(persistent, DispatchCommand, GetApiSchema);
             }
 
             // ── HTTP listener mode (--listen-port=N) ─────────────────────────────
@@ -2003,12 +2003,7 @@ namespace KeyWin
                         Console.Error.WriteLine("AIAPI: --listen-port requires a valid port number (1-65535)");
                         return 1;
                     }
-                    Action<string, string> kwDispatch = (tgt, act) =>
-                    {
-                        Main(new string[] { tgt, act });
-                    };
-                    Func<string> kwSchema = GetApiSchema;
-                    return HelperCommon.RunHttpListener(port, kwDispatch, kwSchema);
+                    return HelperCommon.RunHttpListener(port, DispatchCommand, GetApiSchema);
                 }
             }
 
@@ -2024,12 +2019,7 @@ namespace KeyWin
                         Console.Error.WriteLine("AIAPI: --listen-pipe requires a pipe name");
                         return 1;
                     }
-                    Action<string, string> kwDispatch = (tgt, act) =>
-                    {
-                        Main(new string[] { tgt, act });
-                    };
-                    Func<string> kwSchema = GetApiSchema;
-                    return HelperCommon.RunNamedPipeListener(pipeName, kwDispatch, kwSchema);
+                    return HelperCommon.RunNamedPipeListener(pipeName, DispatchCommand, GetApiSchema);
                 }
             }
 

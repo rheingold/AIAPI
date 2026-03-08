@@ -538,7 +538,7 @@ Currently helpers handle dispatch inline (re-invoke `Main([target,action])`).
 The target future state is for each helper to implement a clean `ExecuteCommand(target, action)`
 and `GetSchema()` that HelperCommon calls — but the current approach works and is backward-compat.
 
-- [ ] Refactor `KeyWin.cs`: extract dispatch into `ExecuteCommand(target, action)` method
+- [x] Refactor `KeyWin.cs`: extract dispatch into `DispatchCommand(target, action)` method-group (mirrors BrowserWin, commit ca93314+1)
 - [x] Refactor `BrowserWin.cs`: extract `GetSchema()` returning string; `DispatchCommand`
   added as static method — all 3 transport listener lambdas (stdin, HTTP, pipe) now call
   `DispatchCommand` directly instead of re-invoking `Main()`. `GetApiSchema()` was already

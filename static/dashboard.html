@@ -524,12 +524,14 @@
         </div>
         
         <div class="form-group">
-          <label for="filter-process">Target Process/Binary:</label>
-          <div class="input-with-button">
-            <input type="text" id="filter-process" placeholder="calc.exe or * for all" 
+          <label for="filter-process">Target Process:</label>
+          <div class="input-with-button" style="flex-wrap:wrap;gap:4px;">
+            <input type="text" id="filter-process" placeholder="calc.exe" style="flex:1;min-width:160px;"
                    list="process-suggestions">
-            <button type="button" onclick="openWindowSelector()" class="btn-tool">🪟 Select Window</button>
-            <button type="button" onclick="launchAndSelect()" class="btn-tool">🚀 Launch & Select</button>
+            <button type="button" onclick="openWindowSelector()" class="btn-tool">🪟 Window</button>
+            <button type="button" onclick="launchAndSelect()" class="btn-tool">🚀 Launch</button>
+            <button type="button" onclick="computeHashFromFile()" class="btn-tool" title="Compute SHA-256 from .exe file">📂 Hash File</button>
+            <button type="button" onclick="computeHashFromRunning()" class="btn-tool" title="Get SHA-256 of selected running process">🔍 Hash Process</button>
           </div>
           <datalist id="process-suggestions">
             <option value="*">
@@ -540,58 +542,12 @@
             <option value="chrome.exe">
             <option value="msedge.exe">
           </datalist>
-          <small>Select from running windows, launch new process, or enter manually</small>
+          <small>
+            <strong>Formats:</strong> process name (<code>calc.exe</code>) · hash only (<code>SHA256:5a8d…</code>) · name+hash (<code>calc.exe[SHA256:5a8d…]</code>) · <code>*</code> for all.<br>
+            Use <strong>📂 Hash File</strong> or <strong>🔍 Hash Process</strong> to compute and insert the hash automatically.
+            <span style="color:var(--warning)"> ⚠️ Do not use PID or HANDLE — transient, changes on restart.</span>
+          </small>
           <div id="process-details" class="process-details"></div>
-        </div>
-        
-        <div class="form-group">
-          <label>Process Identification Criteria:</label>
-          <div class="criteria-options">
-            <label class="checkbox-label">
-              <input type="checkbox" id="criteria-process-name" checked>
-              Process Name (e.g., calc.exe)
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" id="criteria-window-title">
-              Window Title (supports wildcards)
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" id="criteria-process-path">
-              Full Process Path
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" id="criteria-binary-hash">
-              Binary Hash (SHA256/MD5) - Most Secure ⭐
-            </label>
-          </div>
-          <div class="criteria-details">
-            <div class="criteria-field" id="field-window-title" style="display:none;">
-              <label>Window Title Pattern:</label>
-              <input type="text" id="filter-window-title" placeholder="*Calculator* or Kalkulačka">
-              <small>Use * for wildcards, e.g., *notepad* matches any notepad window</small>
-            </div>
-            <div class="criteria-field" id="field-process-path" style="display:none;">
-              <label>Process Path Pattern:</label>
-              <input type="text" id="filter-process-path" placeholder="C:\\Windows\\System32\\*.exe">
-              <small>Full or partial path with wildcards</small>
-            </div>
-            <div class="criteria-field" id="field-binary-hash" style="display:none;">
-              <label>Binary Hash:</label>
-              <select id="hash-algorithm" style="margin-bottom: 0.5rem;">
-                <option value="SHA256">SHA256 (Recommended)</option>
-                <option value="MD5">MD5 (Legacy)</option>
-              </select>
-              <input type="text" id="filter-binary-hash" placeholder="a3b2c1d4e5f6789abcdef..." pattern="[a-fA-F0-9]+">
-              <button type="button" onclick="computeHashFromFile()" class="btn-tool">📂 Compute from File</button>
-              <button type="button" onclick="computeHashFromRunning()" class="btn-tool">🔍 Get from Running Process</button>
-              <small>
-                <strong>Why use hash?</strong> Cryptographically verifies the exact binary. 
-                Cannot be spoofed by renaming. Detects tampering.
-                <br><strong>Example:</strong> SHA256:5a8d5f7e9c2b1a3d4e6f...
-              </small>
-            </div>
-          </div>
-          <small style="color: var(--warning);">⚠️ Don't use PID or HANDLE - they are transient and change on restart</small>
         </div>
         
         <div class="form-group">

@@ -817,6 +817,17 @@ async function loadFilters() {
       const data = await response.json();
       if (data.success && Array.isArray(data.filters)) {
         advancedFilters = data.filters;
+        // Migrate old filters that stored binary hash as separate invented fields
+        advancedFilters = advancedFilters.map(f => {
+          if (f.binaryHash && !String(f.process || '').includes(':')) {
+            const algo = f.hashAlgorithm || 'SHA256';
+            const proc = (f.process && f.process !== '*')
+              ? `${f.process}[${algo}:${f.binaryHash}]` : `${algo}:${f.binaryHash}`;
+            const { binaryHash, hashAlgorithm, windowTitle, processPath, ...rest } = f;
+            return { ...rest, process: proc };
+          }
+          return f;
+        });
         // Recalculate nextFilterId to avoid collisions
         if (advancedFilters.length > 0) {
           nextFilterId = Math.max(...advancedFilters.map(f => f.id || 0)) + 1;
@@ -866,7 +877,6 @@ function openFilterEditor(filterId = null) {
     document.getElementById('filter-command').value     = filter.command;
     document.getElementById('filter-pattern').value     = filter.pattern;
     document.getElementById('filter-description').value = filter.description || '';
-    _filterSetCriteria(filter);
   } else {
     title.textContent = 'Add Security Filter';
     document.getElementById('filter-action').value      = 'allow';
@@ -875,7 +885,6 @@ function openFilterEditor(filterId = null) {
     document.getElementById('filter-command').value     = '';
     document.getElementById('filter-pattern').value     = '';
     document.getElementById('filter-description').value = '';
-    _filterSetCriteria({});   // clear all criteria fields
   }
   
   updateFilterPreview();
@@ -906,32 +915,6 @@ function updateFilterPreview() {
   `;
 }
 
-function _filterReadCriteria() {
-  const wtCkd = document.getElementById('criteria-window-title')?.checked;
-  const ppCkd = document.getElementById('criteria-process-path')?.checked;
-  const bhCkd = document.getElementById('criteria-binary-hash')?.checked;
-  return {
-    windowTitle:   wtCkd ? (document.getElementById('filter-window-title')?.value.trim()  || '') : '',
-    processPath:   ppCkd ? (document.getElementById('filter-process-path')?.value.trim()  || '') : '',
-    binaryHash:    bhCkd ? (document.getElementById('filter-binary-hash')?.value.trim()    || '') : '',
-    hashAlgorithm: document.getElementById('hash-algorithm')?.value || 'SHA256',
-  };
-}
-
-function _filterSetCriteria(filter) {
-  const wt = filter.windowTitle || '';
-  const pp = filter.processPath || '';
-  const bh = filter.binaryHash  || '';
-  const ha = filter.hashAlgorithm || 'SHA256';
-  const show = (id, flag) => { const el = document.getElementById(id); if (el) el.style.display = flag ? 'block' : 'none'; };
-  const val  = (id, v)    => { const el = document.getElementById(id); if (el) el.value = v; };
-  const chk  = (id, v)    => { const el = document.getElementById(id); if (el) el.checked = v; };
-  chk('criteria-window-title',  !!wt); show('field-window-title',  !!wt); val('filter-window-title', wt);
-  chk('criteria-process-path',  !!pp); show('field-process-path',  !!pp); val('filter-process-path', pp);
-  chk('criteria-binary-hash',   !!bh); show('field-binary-hash',   !!bh); val('filter-binary-hash',  bh);
-  val('hash-algorithm', ha);
-}
-
 function saveFilter() {
   const action = document.getElementById('filter-action').value;
   const process = document.getElementById('filter-process').value.trim() || '*';
@@ -939,7 +922,6 @@ function saveFilter() {
   const command = document.getElementById('filter-command').value.trim();
   const pattern = document.getElementById('filter-pattern').value.trim();
   const description = document.getElementById('filter-description').value.trim();
-  const { windowTitle, processPath, binaryHash, hashAlgorithm } = _filterReadCriteria();
 
   if (!process) { alert('Target process is required (use * for all)'); return; }
   if (!command)  { alert('Command is required'); return; }
@@ -948,19 +930,17 @@ function saveFilter() {
   if (editingFilterId) {
     const filter = advancedFilters.find(f => f.id === editingFilterId);
     if (filter) {
-      Object.assign(filter, { action, process, helper, command, pattern, description,
-        windowTitle, processPath, binaryHash, hashAlgorithm });
+      Object.assign(filter, { action, process, helper, command, pattern, description });
+      // Remove any old invented fields that no longer belong
+      delete filter.windowTitle; delete filter.processPath;
+      delete filter.binaryHash;  delete filter.hashAlgorithm;
       addLogEntry('info', 'settings', `Filter updated: ${action.toUpperCase()} ${process} → ${helper}::${command}/${pattern}`);
     }
   } else {
-    advancedFilters.push({
-      id: nextFilterId++,
-      action, process, helper, command, pattern, description,
-      windowTitle, processPath, binaryHash, hashAlgorithm,
-    });
+    advancedFilters.push({ id: nextFilterId++, action, process, helper, command, pattern, description });
     addLogEntry('info', 'settings', `Filter added: ${action.toUpperCase()} ${process} → ${helper}::${command}/${pattern}`);
   }
-  
+
   renderFilters();
   closeFilterEditor();
   saveFilters();
@@ -988,7 +968,7 @@ function renderFilters(filterTerm = '') {
 
   const filtered = filterTerm
     ? advancedFilters.filter(f =>
-        `${f.process} ${f.helper} ${f.command} ${f.pattern} ${f.description} ${f.windowTitle||''} ${f.processPath||''} ${f.binaryHash||''}`
+        `${f.process} ${f.helper} ${f.command} ${f.pattern} ${f.description}`
           .toLowerCase().includes(filterTerm.toLowerCase()))
     : advancedFilters;
 
@@ -1006,12 +986,6 @@ function renderFilters(filterTerm = '') {
     const process = filter.process || '*';
     const filterPath = `${process} → ${filter.helper}::${filter.command}/${filter.pattern}`;
     const actionIcon = filter.action === 'allow' ? '✅' : '🚫';
-    // Build criteria badges
-    const badges = [];
-    if (filter.binaryHash)  badges.push(`<span title="Binary hash (${filter.hashAlgorithm||'SHA256'})" style="font-size:0.72rem;background:var(--surface2,#1e1e2e);padding:1px 5px;border-radius:3px;font-family:monospace;opacity:0.85;">#${escapeHtml(filter.binaryHash.substring(0,12))}…</span>`);
-    if (filter.processPath) badges.push(`<span title="Process path" style="font-size:0.72rem;background:var(--surface2,#1e1e2e);padding:1px 5px;border-radius:3px;opacity:0.85;">📂 ${escapeHtml(filter.processPath)}</span>`);
-    if (filter.windowTitle) badges.push(`<span title="Window title" style="font-size:0.72rem;background:var(--surface2,#1e1e2e);padding:1px 5px;border-radius:3px;opacity:0.85;">🪟 ${escapeHtml(filter.windowTitle)}</span>`);
-    const badgeRow = badges.length ? `<div style="margin-top:3px;display:flex;gap:4px;flex-wrap:wrap;">${badges.join('')}</div>` : '';
 
     return `
       <div class="filter-rule-example">
@@ -1024,7 +998,6 @@ function renderFilters(filterTerm = '') {
           </div>
         </div>
         <div class="filter-description">${escapeHtml(filter.description || 'No description')}</div>
-        ${badgeRow}
       </div>
     `;
   }).join('');
@@ -1083,7 +1056,6 @@ function renderFiltersTableView(filters) {
       <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Helper</th>
       <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Command</th>
       <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Pattern</th>
-      <th style="padding:4px 6px;text-align:left;white-space:nowrap;" title="Binary hash / Process path / Window title — click ✏️ to edit">Criteria ✏️</th>
       <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Description</th>
       <th style="padding:4px 6px;text-align:center;white-space:nowrap;">\u21d5 \ud83d\uddd1</th>
     </tr>
@@ -1110,12 +1082,6 @@ function renderFiltersTableView(filters) {
       </td>
       <td style="padding:2px 4px;"><input type="text" value="${esc(f.command||'')}" onchange="_ftUpdate(${f.id},'command',this.value)" style="width:100%;min-width:90px;padding:2px;box-sizing:border-box;" placeholder="{CMD}"></td>
       <td style="padding:2px 4px;"><input type="text" value="${esc(f.pattern||'')}" onchange="_ftUpdate(${f.id},'pattern',this.value)" style="width:100%;min-width:80px;padding:2px;box-sizing:border-box;" placeholder="*"></td>
-      <td style="padding:2px 4px;white-space:nowrap;">
-        ${f.binaryHash  ? `<span title="${esc(f.hashAlgorithm||'SHA256')}:${esc(f.binaryHash)}" style="cursor:default;">#${esc(f.binaryHash.substring(0,8))}\u2026</span>` : ''}
-        ${f.processPath ? `<span title="Path: ${esc(f.processPath)}" style="cursor:default;">\ud83d\udcc2</span>` : ''}
-        ${f.windowTitle ? `<span title="Title: ${esc(f.windowTitle)}" style="cursor:default;">\ud83e\ude9f</span>` : ''}
-        <button onclick="openFilterEditor(${f.id})" style="padding:1px 4px;cursor:pointer;font-size:0.75rem;" title="Edit all criteria">\u270f\ufe0f</button>
-      </td>
       <td style="padding:2px 4px;"><input type="text" value="${esc(f.description||'')}" onchange="_ftUpdate(${f.id},'description',this.value)" style="width:100%;min-width:120px;padding:2px;box-sizing:border-box;"></td>
       <td style="padding:2px 4px;text-align:center;white-space:nowrap;">
         <button onclick="_ftMove(${f.id},-1)" ${i===0?'disabled':''} style="padding:1px 5px;cursor:pointer;" title="Move up">\u2191</button>
@@ -1828,33 +1794,8 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Initialize criteria checkbox handlers
+// Wire up filter input live-preview
 document.addEventListener('DOMContentLoaded', () => {
-  const windowTitleCheckbox = document.getElementById('criteria-window-title');
-  const processPathCheckbox = document.getElementById('criteria-process-path');
-  const binaryHashCheckbox = document.getElementById('criteria-binary-hash');
-  
-  if (windowTitleCheckbox) {
-    windowTitleCheckbox.addEventListener('change', (e) => {
-      const field = document.getElementById('field-window-title');
-      field.style.display = e.target.checked ? 'block' : 'none';
-    });
-  }
-  
-  if (processPathCheckbox) {
-    processPathCheckbox.addEventListener('change', (e) => {
-      const field = document.getElementById('field-process-path');
-      field.style.display = e.target.checked ? 'block' : 'none';
-    });
-  }
-  
-  if (binaryHashCheckbox) {
-    binaryHashCheckbox.addEventListener('change', (e) => {
-      const field = document.getElementById('field-binary-hash');
-      field.style.display = e.target.checked ? 'block' : 'none';
-    });
-  }
-  
   // Update preview when any filter input changes
   const filterInputs = ['filter-action', 'filter-process', 'filter-helper', 'filter-command', 'filter-pattern'];
   filterInputs.forEach(id => {
@@ -1866,32 +1807,37 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-// Hash computation helpers
+// Hash computation helpers — write SHA256:<hex> (or name[SHA256:<hex>]) into filter-process
+function _mergeHashIntoProcess(existingProcess, hashHex) {
+  const p = (existingProcess || '').trim();
+  if (p && p !== '*' && !p.includes(':') && !p.includes('[')) {
+    return `${p}[SHA256:${hashHex}]`;
+  }
+  return `SHA256:${hashHex}`;
+}
+
 async function computeHashFromFile() {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = '.exe,.dll';
-  
+
   input.onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    
-    const algorithm = document.getElementById('hash-algorithm').value;
-    addLogEntry('info', 'security', `Computing ${algorithm} hash for ${file.name}...`);
-    
+    addLogEntry('info', 'security', `Computing SHA-256 hash for ${file.name}...`);
     try {
       const arrayBuffer = await file.arrayBuffer();
-      const hashBuffer = await crypto.subtle.digest(algorithm === 'SHA256' ? 'SHA-256' : 'MD5', arrayBuffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-      
-      document.getElementById('filter-binary-hash').value = hashHex;
-      addLogEntry('success', 'security', `${algorithm} hash computed: ${hashHex.substring(0, 16)}...`);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+      const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+      const procEl = document.getElementById('filter-process');
+      procEl.value = _mergeHashIntoProcess(procEl.value, hashHex);
+      updateFilterPreview();
+      addLogEntry('success', 'security', `SHA-256: ${hashHex.substring(0, 16)}…`);
     } catch (err) {
       addLogEntry('error', 'security', `Failed to compute hash: ${err.message}`);
     }
   };
-  
+
   input.click();
 }
 
@@ -1900,10 +1846,7 @@ async function computeHashFromRunning() {
     alert('Please select a running process from the Windows list first');
     return;
   }
-  
-  const algorithm = document.getElementById('hash-algorithm').value;
-  addLogEntry('info', 'security', `Requesting ${algorithm} hash for ${selectedWindow.title}...`);
-  
+  addLogEntry('info', 'security', `Requesting SHA-256 hash for ${selectedWindow.title}...`);
   try {
     const response = await fetch('/api/process-hash', {
       method: 'POST',
@@ -1911,14 +1854,15 @@ async function computeHashFromRunning() {
       body: JSON.stringify({
         processId: selectedWindow.pid,
         processName: selectedWindow.processName,
-        algorithm: algorithm
+        algorithm: 'SHA256'
       })
     });
-    
     const result = await response.json();
     if (result.success) {
-      document.getElementById('filter-binary-hash').value = result.hash;
-      addLogEntry('success', 'security', `${algorithm} hash retrieved: ${result.hash.substring(0, 16)}...`);
+      const procEl = document.getElementById('filter-process');
+      procEl.value = _mergeHashIntoProcess(procEl.value, result.hash);
+      updateFilterPreview();
+      addLogEntry('success', 'security', `SHA-256: ${result.hash.substring(0, 16)}…`);
     } else {
       addLogEntry('error', 'security', `Failed to get hash: ${result.error}`);
     }

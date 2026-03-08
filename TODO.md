@@ -1225,7 +1225,7 @@ A Windows installer (or VS Code extension install hook) deploys a default set.
   - [x] **Auto-refresh after save**: reload filter list in dashboard when rules are saved (calls `loadFilters()` after successful save ✅)
   - [x] **Table-based quick-edit** for filter rules — toggle with "🗃️ Quick-Edit" button; inline `<select>`/`<input>` per cell, move-up/down, delete; "💾 Save All Filters" persists; toggle back for card view
   - [x] **Binary hash / process path / window title criteria wired up** — `saveFilter()` now reads all three fields; `openFilterEditor()` restores them; card view shows hash prefix badge + path/title icons; Quick-Edit table shows Criteria column with ✏️ link back to modal; search includes these fields
-  - [ ] **Sync filter ↔ scenario**: when editing a scenario step, offer a "linked filter rules" sidebar showing rules that match the step's command+target; allow creating a new rule directly from a step
+  - [x] **Sync filter ↔ scenario**: when editing a scenario step, offer a "linked filter rules" sidebar showing rules that match the step's command+target; allow creating a new rule directly from a step
 
 ### App Template Namespacing / Package Layout (LOW PRIORITY)
 **Goal:** Organise `apptemplates/` into a reverse-domain namespace hierarchy, similar to

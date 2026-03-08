@@ -2165,7 +2165,8 @@ function closeHelperSchema() {
 const scenarioEditor = {
   app: '',
   scenarioId: '',
-  steps: []
+  steps: [],
+  _expandedFilters: new Set()
 };
 
 function _seEsc(s) {
@@ -2178,6 +2179,7 @@ async function openScenarioEditor(appName) {
   scenarioEditor.app = appName;
   scenarioEditor.scenarioId = '';
   scenarioEditor.steps = [];
+  scenarioEditor._expandedFilters.clear();
   document.getElementById('scenario-editor-appname').textContent = appName;
   document.getElementById('scenario-editor-label').value = '';
   document.getElementById('scenario-editor-steps-body').innerHTML = '';
@@ -2214,6 +2216,7 @@ async function scenarioEditorPick(scenarioId) {
   if (!scenarioId) {
     scenarioEditor.scenarioId = '';
     scenarioEditor.steps = [];
+    scenarioEditor._expandedFilters.clear();
     document.getElementById('scenario-editor-label').value = '';
     document.getElementById('scenario-editor-steps-body').innerHTML = '';
     document.getElementById('scenario-editor-empty').style.display = 'block';
@@ -2226,6 +2229,7 @@ async function scenarioEditorPick(scenarioId) {
     return;
   }
   scenarioEditor.scenarioId = scenarioId;
+  scenarioEditor._expandedFilters.clear();
   const app = scenarioEditor.app;
   try {
     const r = await fetch(`/api/appTemplates/${encodeURIComponent(app)}/scenarios/${encodeURIComponent(scenarioId)}/steps`);
@@ -2285,6 +2289,8 @@ function _seRenderRows() {
         </td>
         <td style="padding:3px;white-space:nowrap;">${moveUp}${moveDown}${del}</td>`;
     } else {
+      const expanded = scenarioEditor._expandedFilters.has(i);
+      const filterBtn = `<button onclick="_seToggleFilters(${i})" title="Linked filter rules" style="padding:1px 5px;cursor:pointer;${expanded ? 'color:var(--accent);font-weight:bold;' : ''}">🛡️</button>`;
       tr.innerHTML = `
         <td style="padding:3px 6px;color:var(--text-secondary);">${i+1}</td>
         <td style="padding:3px;">${typeSel}</td>
@@ -2293,14 +2299,84 @@ function _seRenderRows() {
         <td style="padding:3px;"><input type="text" value="${_seEsc(step.parameter)}" oninput="_seUpdate(${i},'parameter',this.value)" placeholder="value" style="width:100%;"></td>
         <td style="padding:3px;"><input type="text" value="${_seEsc(step.conditional)}" oninput="_seUpdate(${i},'conditional',this.value)" placeholder="" style="width:100%;"></td>
         <td style="padding:3px;"><input type="text" value="${_seEsc(step.note)}" oninput="_seUpdate(${i},'note',this.value)" placeholder="" style="width:100%;"></td>
-        <td style="padding:3px;white-space:nowrap;">${moveUp}${moveDown}${del}</td>`;
+        <td style="padding:3px;white-space:nowrap;">${filterBtn}${moveUp}${moveDown}${del}</td>`;
     }
     tbody.appendChild(tr);
+
+    // Inline expansion row — linked filter rules for this step
+    if (step.type === 'Step' && scenarioEditor._expandedFilters.has(i)) {
+      const expTr = document.createElement('tr');
+      expTr.style.background = 'var(--bg-secondary)';
+      const matched = advancedFilters.filter(f => _seFilterMatchesStep(f, step));
+      const matchHtml = matched.length === 0
+        ? '<em style="opacity:0.55;">No matching filter rules — use ➕ to create one.</em>'
+        : matched.map(f => {
+            const esc = escapeHtml;
+            const proc = f.process || '*';
+            return `<span class="filter-type ${f.action}" style="font-size:0.72rem;padding:2px 6px;margin:1px;display:inline-block;">
+              ${f.action==='allow'?'✅':'🚫'} ${esc(proc)} → ${esc(f.helper)}::${esc(f.command)}/${esc(f.pattern)}
+            </span>`;
+          }).join('');
+      expTr.innerHTML = `
+        <td colspan="8" style="padding:0.35rem 1rem 0.5rem 2.5rem;border-bottom:2px solid var(--accent,#007acc);">
+          <div style="font-size:0.76rem;color:var(--text-secondary);margin-bottom:5px;">
+            🛡️ <strong>Linked filter rules</strong> matching <code>${_seEsc(step.command || '*')}</code>
+            <span style="float:right;">
+              <button onclick="_seOpenFilterFromStep(${i})" style="padding:1px 8px;font-size:0.75rem;cursor:pointer;" title="Pre-fill filter editor from this step">➕ Create Rule from Step</button>
+            </span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;">${matchHtml}</div>
+        </td>`;
+      tbody.appendChild(expTr);
+    }
   });
 }
 
 function _seUpdate(i, field, val) {
   scenarioEditor.steps[i][field] = val;
+}
+
+/** Returns true if a filter rule's command matches the step's command (glob, case-insensitive). */
+function _seFilterMatchesStep(filter, step) {
+  const cmd = (filter.command || '').trim();
+  const stepCmd = (step.command || '').trim();
+  if (!cmd || cmd === '*') return true;
+  const re = new RegExp('^' + cmd.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$', 'i');
+  return re.test(stepCmd);
+}
+
+/** Toggle the linked-filters expansion row for step i. */
+function _seToggleFilters(i) {
+  if (scenarioEditor._expandedFilters.has(i)) {
+    scenarioEditor._expandedFilters.delete(i);
+  } else {
+    scenarioEditor._expandedFilters.add(i);
+  }
+  _seRenderRows();
+}
+
+/**
+ * Open the filter editor modal pre-filled from a scenario step.
+ * Uses the scenario metadata (helper, process) as defaults.
+ */
+function _seOpenFilterFromStep(i) {
+  const step = scenarioEditor.steps[i];
+  if (!step) return;
+  const process = document.getElementById('se-meta-process')?.value.trim() || '*';
+  const helper  = document.getElementById('se-meta-helper')?.value || 'KeyWin.exe';
+  const command = step.command || '';
+  const pattern = (step.parameter || '').trim() || '*';
+  const desc    = `From ${scenarioEditor.app}/${scenarioEditor.scenarioId} step ${i + 1}`;
+
+  openFilterEditor(null);   // open in add-new mode
+  requestAnimationFrame(() => {
+    document.getElementById('filter-process').value     = process;
+    document.getElementById('filter-helper').value      = helper;
+    document.getElementById('filter-command').value     = command;
+    document.getElementById('filter-pattern').value     = pattern;
+    document.getElementById('filter-description').value = desc;
+    updateFilterPreview();
+  });
 }
 
 function _seUpdateType(i, newType) {

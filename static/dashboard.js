@@ -839,6 +839,8 @@ async function saveFilters() {
     const data = await response.json();
     if (data.success) {
       addLog('info', 'filters', `Saved ${data.count} filter rule(s) to server`);
+      // Refresh the filter rules list so the display stays in sync
+      loadFilters();
     } else {
       addLog('error', 'filters', `Failed to save filters: ${data.error}`);
     }

@@ -240,7 +240,7 @@ export class XmlScenarioLoader {
     const content = fs.readFileSync(xmlPath, 'utf-8');
     const doc = this.parseXml(content);
 
-    const library = doc.querySelector('ScenarioLibrary');
+    const library = doc.querySelector('ScenarioLibrary') ?? doc.querySelector('Scenarios');
     const helperAttr  = library?.getAttribute('helper')  ?? 'KeyWin.exe';
     const processAttr = library?.getAttribute('process') ?? app;
 
@@ -277,7 +277,7 @@ export class XmlScenarioLoader {
     const content = fs.readFileSync(xmlPath, 'utf-8');
     const doc = this.parseXml(content);
 
-    const library = doc.querySelector('ScenarioLibrary');
+    const library = doc.querySelector('ScenarioLibrary') ?? doc.querySelector('Scenarios');
     const helper  = library?.getAttribute('helper')  ?? 'KeyWin.exe';
     const process = library?.getAttribute('process') ?? app;
 
@@ -332,8 +332,13 @@ export class XmlScenarioLoader {
 
     scenarioEl.setAttribute('label', label);
 
-    // Find / create <Steps>
-    let stepsEl: Element = (this.findDirectChild(scenarioEl, 'Steps') as unknown as Element);
+    // Find existing <Steps> or <steps> container, or create <Steps>
+    let stepsEl: Element | undefined = this.findDirectChildCI(scenarioEl, 'steps');
+    // Remove top-level ScenarioRef children (chrome style) that will be re-written into Steps
+    const topLevelRefs = Array.from(scenarioEl.childNodes)
+      .filter(n => n.nodeType === 1 && (n as Element).tagName.toLowerCase() === 'scenarioref');
+    topLevelRefs.forEach(n => scenarioEl.removeChild(n));
+
     if (!stepsEl) {
       stepsEl = doc.createElement('Steps');
       scenarioEl.appendChild(stepsEl);
@@ -392,21 +397,46 @@ export class XmlScenarioLoader {
     guard.add(id);
 
     const result: XmlStep[] = [];
-    const stepsEl = this.findDirectChild(scenario, 'Steps');
-    if (!stepsEl) return result;
 
-    for (const child of Array.from(stepsEl.childNodes)) {
+    // Walk ALL direct children of <Scenario> in document order.
+    // Chrome schema: <ScenarioRef> + <steps>/<step action=...>
+    // Calculator schema: <Steps>/<Step command=...> (with ScenarioRef inside Steps)
+    for (const child of Array.from(scenario.childNodes)) {
       if (child.nodeType !== 1 /* ELEMENT_NODE */) continue;
       const el = child as Element;
+      const tag = el.tagName.toLowerCase();
 
-      if (el.tagName === 'ScenarioRef') {
+      if (tag === 'scenarioref') {
+        // Top-level ScenarioRef (chrome style) — not inside <steps>
         const ref = el.getAttribute('ref') ?? '';
         const refScenario = scenarioMap.get(ref);
         if (!refScenario) throw new Error(`ScenarioRef "${ref}" not found in scenarios.xml`);
         result.push(...this.resolveSteps(refScenario, scenarioMap, guard));
-      } else if (el.tagName === 'Step') {
+      } else if (tag === 'steps') {
+        // Steps container — iterate its children
+        for (const sc of Array.from(el.childNodes)) {
+          if (sc.nodeType !== 1) continue;
+          const se = sc as Element;
+          const stag = se.tagName.toLowerCase();
+          if (stag === 'scenarioref') {
+            const ref = se.getAttribute('ref') ?? '';
+            const refScenario = scenarioMap.get(ref);
+            if (!refScenario) throw new Error(`ScenarioRef "${ref}" not found in scenarios.xml`);
+            result.push(...this.resolveSteps(refScenario, scenarioMap, guard));
+          } else if (stag === 'step') {
+            result.push({
+              command:     se.getAttribute('command') || se.getAttribute('action') || '',
+              target:      se.getAttribute('target')      ?? '',
+              parameter:   se.getAttribute('parameter')   ?? '',
+              conditional: se.getAttribute('conditional') ?? undefined,
+              note:        se.getAttribute('note')        ?? undefined,
+            });
+          }
+        }
+      } else if (tag === 'step') {
+        // Top-level step (unusual but tolerated)
         result.push({
-          command:     el.getAttribute('command')     ?? '',
+          command:     el.getAttribute('command') || el.getAttribute('action') || '',
           target:      el.getAttribute('target')      ?? '',
           parameter:   el.getAttribute('parameter')   ?? '',
           conditional: el.getAttribute('conditional') ?? undefined,
@@ -446,21 +476,53 @@ export class XmlScenarioLoader {
     return undefined;
   }
 
-  /** Return raw (unresolved) steps from a scenario element for the step editor. */
+  /** Case-insensitive variant of findDirectChild. */
+  private findDirectChildCI(parent: Element, tagNameLC: string): Element | undefined {
+    for (const child of Array.from(parent.childNodes)) {
+      if (child.nodeType === 1 && (child as Element).tagName.toLowerCase() === tagNameLC) {
+        return child as Element;
+      }
+    }
+    return undefined;
+  }
+
+  /** Return raw (unresolved) steps from a scenario element for the step editor.
+   * Handles both chrome schema (lowercase <steps>/<step action=...>, top-level <ScenarioRef>)
+   * and calculator schema (<Steps>/<Step command=...>, ScenarioRef inside Steps).
+   */
   private extractRawSteps(scenario: Element): RawXmlStep[] {
     const result: RawXmlStep[] = [];
-    const stepsEl = this.findDirectChild(scenario, 'Steps');
-    if (!stepsEl) return result;
-    for (const child of Array.from(stepsEl.childNodes)) {
+
+    for (const child of Array.from(scenario.childNodes)) {
       if (child.nodeType !== 1) continue;
       const el = child as Element;
-      if (el.tagName === 'ScenarioRef') {
+      const tag = el.tagName.toLowerCase();
+
+      if (tag === 'scenarioref') {
         result.push({ type: 'ScenarioRef', ref: el.getAttribute('ref') ?? '' });
-      } else if (el.tagName === 'Step') {
+      } else if (tag === 'steps') {
+        for (const sc of Array.from(el.childNodes)) {
+          if (sc.nodeType !== 1) continue;
+          const se = sc as Element;
+          const stag = se.tagName.toLowerCase();
+          if (stag === 'scenarioref') {
+            result.push({ type: 'ScenarioRef', ref: se.getAttribute('ref') ?? '' });
+          } else if (stag === 'step') {
+            result.push({
+              type:        'Step',
+              command:     se.getAttribute('command') || se.getAttribute('action') || '',
+              target:      se.getAttribute('target')      ?? '',
+              parameter:   se.getAttribute('parameter')   ?? '',
+              conditional: se.getAttribute('conditional') ?? undefined,
+              note:        se.getAttribute('note')        ?? undefined,
+            });
+          }
+        }
+      } else if (tag === 'step') {
         result.push({
-          type:        'Step',
-          command:     el.getAttribute('command')     ?? '',
-          target:      el.getAttribute('target')      ?? '',
+          type:    'Step',
+          command: el.getAttribute('command') || el.getAttribute('action') || '',
+          target:  el.getAttribute('target')      ?? '',
           parameter:   el.getAttribute('parameter')   ?? '',
           conditional: el.getAttribute('conditional') ?? undefined,
           note:        el.getAttribute('note')        ?? undefined,

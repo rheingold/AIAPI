@@ -1216,6 +1216,15 @@ A Windows installer (or VS Code extension install hook) deploys a default set.
 - [x] Dashboard Settings tab: "App Templates" card showing loaded apps + scenario counts
   - [x] Added `📚 App Templates` nav section + `loadAppTemplates()` in dashboard.html/js
 - [x] Scenario editor: visual step builder (drag-drop reorder, ScenarioRef picker)
+  - [x] **Fix**: chrome `scenarios.xml` uses lowercase `<steps>/<step action=...>` + top-level `<ScenarioRef>` — made parser case-insensitive & iterates all Scenario children in document order
+- [ ] Scenario editor enhancements:
+  - [ ] **Metadata panel**: show/edit per-scenario metadata — `linked assistant`, `process/binary name`, `binary checksum` (mirrors the fields from Security Filter rules so a scenario knows which helper and process it targets)
+  - [ ] **Auto-refresh App Templates list** after saving a scenario (call `loadAppTemplates()` on successful PUT)
+  - [ ] **Scenario label not synced**: `listScenarios` returns `id` as `label` for chrome (chrome XML lacks `label=` attr) — fall back to `id` already works but show `id` as placeholder in label input
+- [ ] Dashboard Filter Rules enhancements:
+  - [ ] **Auto-refresh after save**: reload filter list in dashboard when rules are saved (currently only page-reload updates the list; add `loadFilters()` call after successful save)
+  - [ ] **Table-based quick-edit** for filter rules similar to scenario step editor — row-per-rule table with inline editable fields (action, process, command, target-pattern) so rules can be reordered and edited without opening the full modal for each rule
+  - [ ] **Sync filter ↔ scenario**: when editing a scenario step, offer a "linked filter rules" sidebar showing rules that match the step's command+target; allow creating a new rule directly from a step
 
 ### App Template Namespacing / Package Layout (LOW PRIORITY)
 **Goal:** Organise `apptemplates/` into a reverse-domain namespace hierarchy, similar to

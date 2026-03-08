@@ -197,7 +197,7 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
   - [x] Check if paths exist (implemented)
   - [x] Validate key file integrity (implemented, now includes size check)
   - [x] Test security configuration — done (config.json parse, config.json.sig hash comparison, helper .exe discovery)
-  - [ ] Preview effective permissions
+  - [x] Preview effective permissions — "📊 Rules by Process" collapsible panel below the filter list; groups all active rules by process, shows compact one-liners (action + helper::command/pattern + description); refreshes on every renderFilters(); note: default verdict is ALLOW when no rule matches
 
 ### 🔌 Dynamic Helper API Discovery (CRITICAL ARCHITECTURE) ✅ COMPLETED
 **Goal:** MCP Server is just a thin wrapper - .exe helpers define their own API

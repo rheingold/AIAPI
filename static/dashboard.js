@@ -966,6 +966,9 @@ function renderFilters(filterTerm = '') {
 
   if (!container) return;
 
+  // Always refresh summary from the full unfiltered set
+  renderPermissionsSummary();
+
   const filtered = filterTerm
     ? advancedFilters.filter(f =>
         `${f.process} ${f.helper} ${f.command} ${f.pattern} ${f.description}`
@@ -1008,6 +1011,52 @@ function renderFilters(filterTerm = '') {
 
 let _filterSearchTerm = '';
 let filterTableMode = false;
+
+/**
+ * Render the "Rules by Process" summary panel.
+ * Groups all filter rules by their process field and shows compact one-liners.
+ * Default verdict is ALLOW (first-match wins), so order matters — shown here as-listed.
+ */
+function renderPermissionsSummary() {
+  const body = document.getElementById('filter-summary-body');
+  if (!body) return;
+  if (advancedFilters.length === 0) {
+    body.innerHTML = '<p style="color:var(--text-secondary);margin:0.25rem 0;">No filters configured — default: ALLOW everything.</p>';
+    return;
+  }
+  const esc = escapeHtml;
+  // Group by process (preserve insertion order)
+  const groups = new Map();
+  advancedFilters.forEach(f => {
+    const proc = f.process || '*';
+    if (!groups.has(proc)) groups.set(proc, []);
+    groups.get(proc).push(f);
+  });
+  let html = '';
+  groups.forEach((rules, proc) => {
+    html += `<div style="margin-bottom:0.6rem;">
+      <div style="font-weight:600;font-size:0.8rem;margin-bottom:3px;color:var(--text-primary);">
+        \ud83d\udce6 <code>${esc(proc)}</code>
+        <span style="font-weight:normal;opacity:0.65;margin-left:6px;">${rules.length} rule${rules.length!==1?'s':''}</span>
+      </div>
+      <div style="padding-left:1rem;">`;
+    rules.forEach((f, idx) => {
+      const icon = f.action === 'allow' ? '\u2705' : '\ud83d\udeab';
+      const cls  = f.action === 'allow' ? 'color:var(--success)' : 'color:var(--error)';
+      html += `<div style="display:flex;align-items:baseline;gap:6px;line-height:1.6;">
+          <span style="font-size:0.7rem;opacity:0.5;flex-shrink:0;">${idx+1}.</span>
+          <span style="${cls};font-weight:700;flex-shrink:0;">${icon} ${f.action.toUpperCase()}</span>
+          <code style="font-size:0.8rem;">${esc(f.helper)}::${esc(f.command)}/${esc(f.pattern)}</code>
+          ${f.description ? `<span style="opacity:0.55;font-size:0.75rem;">${esc(f.description)}</span>` : ''}
+        </div>`;
+    });
+    html += `</div></div>`;
+  });
+  html += `<p style="margin:0.5rem 0 0;font-size:0.75rem;color:var(--text-secondary);">
+    \u2139\ufe0f Rules apply first-match within each request. Default verdict is <strong>ALLOW</strong> when no rule matches.
+  </p>`;
+  body.innerHTML = html;
+}
 
 function filterSearch(term) {
   _filterSearchTerm = term;

@@ -476,9 +476,12 @@ All transports handle these before routing to the helper's own command dispatch:
   - `mcpServer.stop()` calls `shutdownAll()` first, then closes HTTP server
   - ⚠️ Daemons lock `.exe` files — server must be stopped before rebuilding (see START_HERE.md)
   - **117/0 tests passing** with persistent daemons ✅
-- [ ] **Step 3 (future)**: Named-pipe transport for multi-client access
-  - Allows external scripts / other processes to call helpers directly
-  - Still goes through same security filter + `_auth` flow
+- [x] **Step 3** ✅ DONE: Named-pipe transport for multi-client access (`1ad13af`)
+  - `RunNamedPipeListener(string pipeName, dispatch, getSchema)` in `HelperCommon.cs`
+  - `--listen-pipe=Name` flag wired in `KeyWin.cs` and `BrowserWin.cs`
+  - Re-accepts clients after disconnect (sequential multi-caller)
+  - External scripts, test harnesses, and other processes connect via `NamedPipeClientStream`
+  - Auth: inherits `SKIP_SESSION_AUTH` env var (full `_auth` flow pending SecurityLib)
 
 ---
 

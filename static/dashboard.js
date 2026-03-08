@@ -977,27 +977,30 @@ function renderFilters(filterTerm = '') {
 
   if (filtered.length === 0) {
     container.innerHTML = advancedFilters.length === 0
-      ? '<div class="filter-rule-example" style="text-align: center; padding: 2rem; color: var(--text-secondary);"><h3>No filters configured</h3><p>Click "➕ Add Filter Rule" to create your first security filter</p></div>'
-      : '<div class="filter-rule-example" style="text-align: center; padding: 2rem; color: var(--text-secondary);">No filters match your search</div>';
+      ? '<div style="text-align:center;padding:2rem;color:var(--text-secondary);"><h3>No filters configured</h3><p>Click "➕ Add Filter Rule" to create your first security filter</p></div>'
+      : '<div style="text-align:center;padding:2rem;color:var(--text-secondary);">No filters match your search</div>';
     return;
   }
   
   container.innerHTML = filtered.map(filter => {
     const process = filter.process || '*';
-    const filterPath = `${process} → ${filter.helper}::${filter.command}/${filter.pattern}`;
+    const ruleFormula = `${process} → ${filter.helper}::${filter.command}/${filter.pattern}`;
     const actionIcon = filter.action === 'allow' ? '✅' : '🚫';
+    const desc = filter.description ? escapeHtml(filter.description) : '<em style="opacity:0.5;">No description</em>';
 
     return `
-      <div class="filter-rule-example">
-        <div class="filter-rule-header">
-          <span class="filter-type ${filter.action}">${actionIcon} ${filter.action.toUpperCase()}</span>
-          <span class="filter-pattern">${escapeHtml(filterPath)}</span>
-          <div class="filter-actions">
-            <button class="btn-icon" title="Edit" onclick="openFilterEditor(${filter.id})">✏️</button>
-            <button class="btn-icon" title="Delete" onclick="deleteFilter(${filter.id})">🗑️</button>
+      <div class="filter-rule">
+        <div class="filter-rule-body">
+          <div class="rule-title">
+            <span class="filter-type ${filter.action}">${actionIcon} ${filter.action.toUpperCase()}</span>
+            <span>${escapeHtml(ruleFormula)}</span>
           </div>
+          <div class="rule-description">${desc}</div>
         </div>
-        <div class="filter-description">${escapeHtml(filter.description || 'No description')}</div>
+        <div class="filter-actions" style="flex-shrink:0;">
+          <button class="btn-icon" title="Edit" onclick="openFilterEditor(${filter.id})">✏️</button>
+          <button class="btn-icon" title="Delete" onclick="deleteFilter(${filter.id})">🗑️</button>
+        </div>
       </div>
     `;
   }).join('');
@@ -1042,7 +1045,7 @@ function renderFiltersTableView(filters) {
   const n = filters.length;
 
   if (n === 0) {
-    container.innerHTML = '<div class="filter-rule-example" style="text-align:center;padding:2rem;color:var(--text-secondary);">No filters \u2014 click \u2795 Add Filter Rule to create one.</div>';
+    container.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-secondary);">No filters \u2014 click \u2795 Add Filter Rule to create one.</div>';
     return;
   }
 

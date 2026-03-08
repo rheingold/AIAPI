@@ -1989,6 +1989,29 @@ namespace KeyWin
                 return HelperCommon.RunStdinListener(persistent, kwDispatch, kwSchema);
             }
 
+            // ── HTTP listener mode (--listen-port=N) ─────────────────────────────
+            // Spawns an HTTP/1.1 loopback listener; same JSON protocol as stdin.
+            // Example: KeyWin.exe --listen-port=3460
+            {
+                string listenPort = HelperCommon.GetFlagValue(args, "--listen-port");
+                if (listenPort != null)
+                {
+                    int port = 0;
+                    if (listenPort.Length == 0 ||
+                        !int.TryParse(listenPort, out port) || port <= 0 || port > 65535)
+                    {
+                        Console.Error.WriteLine("AIAPI: --listen-port requires a valid port number (1-65535)");
+                        return 1;
+                    }
+                    Action<string, string> kwDispatch = (tgt, act) =>
+                    {
+                        Main(new string[] { tgt, act });
+                    };
+                    Func<string> kwSchema = GetApiSchema;
+                    return HelperCommon.RunHttpListener(port, kwDispatch, kwSchema);
+                }
+            }
+
             try
             {
                 // Verify session token from MCP server

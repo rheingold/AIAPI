@@ -449,6 +449,161 @@ public static class HelperCommon
         return state;
     }
 
+    // ── RunHttpListener ───────────────────────────────────────────────────────
+    /// <summary>
+    /// HTTP/1.1 JSON command listener on loopback (127.0.0.1 / localhost).
+    ///
+    /// Binds to http://localhost:{port}/ and accepts POST / requests whose body
+    /// is a flat JSON object:  {"id":"1","action":"...","target":"..."}
+    ///
+    /// Same built-in actions as the stdin protocol:
+    ///   _schema — returns the helper's schema JSON
+    ///   _ping   — returns {"success":true,"pong":true}
+    ///   _exit   — returns {"success":true,"message":"bye"} and stops the listener
+    ///
+    /// GET requests to any path return {"success":true,"pong":true} (health check).
+    ///
+    /// Blocks (single-threaded, one call at a time) until _exit or listener error.
+    /// </summary>
+    public static int RunHttpListener(
+        int port,
+        Action<string, string> dispatch,
+        Func<string> getSchema)
+    {
+        string prefix      = "http://localhost:" + port + "/";
+        var    httpListener = new System.Net.HttpListener();
+        httpListener.Prefixes.Add(prefix);
+        try { httpListener.Start(); }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("AIAPI: RunHttpListener: cannot bind " +
+                prefix + " — " + ex.Message);
+            return 1;
+        }
+        Console.Error.WriteLine("AIAPI: HTTP listener ready on " + prefix);
+
+        var utf8 = new System.Text.UTF8Encoding(false);  // no BOM
+
+        while (true)
+        {
+            System.Net.HttpListenerContext ctx;
+            try { ctx = httpListener.GetContext(); }
+            catch { break; }   // listener stopped externally
+
+            string responseJson;
+            try
+            {
+                // ── GET → simple pong (health check / browser probing) ───────
+                if (!string.Equals(ctx.Request.HttpMethod, "POST", StringComparison.OrdinalIgnoreCase))
+                {
+                    responseJson = "{\"success\":true,\"pong\":true}";
+                }
+                else
+                {
+                    // ── Read POST body ──────────────────────────────────────────
+                    string body = "";
+                    try
+                    {
+                        var ms = new System.IO.MemoryStream();
+                        ctx.Request.InputStream.CopyTo(ms);
+                        body = utf8.GetString(ms.ToArray());
+                    }
+                    catch { /* treat as empty */ }
+
+                    string id     = HcJson.GetString(body, "id")     ?? "";
+                    string action = HcJson.GetString(body, "action") ?? "";
+                    string target = HcJson.GetString(body, "target") ?? "";
+
+                    // ── Built-in actions ────────────────────────────────────────
+                    if (action == "_schema")
+                    {
+                        responseJson = getSchema();
+                    }
+                    else if (action == "_ping")
+                    {
+                        responseJson = "{\"success\":true,\"pong\":true}";
+                    }
+                    else if (action == "_exit")
+                    {
+                        // Send response BEFORE stopping the listener.
+                        byte[] exitBuf = utf8.GetBytes("{\"success\":true,\"message\":\"bye\"}");
+                        ctx.Response.StatusCode      = 200;
+                        ctx.Response.ContentType     = "application/json";
+                        ctx.Response.ContentLength64 = exitBuf.Length;
+                        ctx.Response.OutputStream.Write(exitBuf, 0, exitBuf.Length);
+                        ctx.Response.Close();
+                        httpListener.Stop();
+                        return 0;
+                    }
+                    else if (action.Length == 0)
+                    {
+                        responseJson = HcJson.Err(id, "missing_action");
+                    }
+                    else
+                    {
+                        // ── Dispatch: redirect Console.Out to capture output ────
+                        // dispatch() writes its JSON result to Console.Out (same
+                        // contract as RunStdinListener).  We capture it via a
+                        // temporary redirect and IdInjectingWriter so the "id"
+                        // field is injected automatically.
+                        var origOut    = Console.Out;
+                        var captureSw  = new System.IO.StringWriter();
+                        var injectWr   = new IdInjectingWriter(captureSw);
+                        injectWr.CurrentId = id;
+                        Console.SetOut(injectWr);
+                        try
+                        {
+                            dispatch(target, action);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine(HcJson.Err(id, ex.Message));
+                        }
+                        finally
+                        {
+                            Console.SetOut(origOut);
+                        }
+                        responseJson = captureSw.ToString().Trim();
+                        if (responseJson.Length == 0)
+                            responseJson = HcJson.Err(id, "dispatch_no_response");
+                    }
+
+                    // ── Manual id inject (covers _schema/_ping/error paths) ────
+                    if (id.Length > 0
+                        && responseJson.Length > 0 && responseJson[0] == '{'
+                        && responseJson.IndexOf("\"id\"", StringComparison.Ordinal) < 0)
+                    {
+                        responseJson = "{\"id\":\"" + HcJson.EscapeStr(id) +
+                            "\"," + responseJson.Substring(1);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                responseJson = "{\"success\":false,\"error\":\"internal:" +
+                    HcJson.EscapeStr(ex.Message) + "\"}";
+            }
+
+            // ── Write HTTP response ─────────────────────────────────────────
+            try
+            {
+                byte[] respBuf           = utf8.GetBytes(responseJson);
+                ctx.Response.StatusCode      = 200;
+                ctx.Response.ContentType     = "application/json";
+                ctx.Response.ContentLength64 = respBuf.Length;
+                ctx.Response.OutputStream.Write(respBuf, 0, respBuf.Length);
+            }
+            catch { /* best-effort */ }
+            finally
+            {
+                try { ctx.Response.Close(); } catch { }
+            }
+        }
+
+        httpListener.Stop();
+        return 0;
+    }
+
     // ── RunStdinListener ──────────────────────────────────────────────────────
     /// <summary>
     /// Newline-delimited JSON stdin listener.

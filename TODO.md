@@ -402,7 +402,7 @@ Each helper supports one or more via CLI flags (combinable):
 | `--listen-stdin` | Read JSON lines from stdin, write JSON lines to stdout. **Exit on EOF** (caller controls lifetime). |
 | `--listen-stdin --persistent` | Same but **ignore EOF** — only exit on `{"action":"_exit"}` or OS signal (SIGTERM / Ctrl-C). |
 | `--listen-pipe=\\.\pipe\Name` | Named pipe server — Windows, multi-caller, survives caller disconnects. |
-| `--listen-port=N` | HTTP JSON-RPC on `127.0.0.1:N` (loopback only). |
+| `--listen-port=N` | HTTP JSON-RPC on `127.0.0.1:N` (loopback only). ✅ **IMPLEMENTED** — `RunHttpListener` in HelperCommon.cs; wired in both helpers. |
 | *(combined)* | `--listen-pipe=... --listen-port=N` runs both on two threads, one process. |
 | *(none / current)* | One-shot: `--inject-mode=direct tmpFile` or `--target=... --action=...` |
 
@@ -515,7 +515,10 @@ tools/
 - [x] `HelperCommon.HasFlag(args, flag)` — case-insensitive flag lookup
 - [x] `HelperCommon.RunStdinListener(persistent, dispatch, getSchema)` — full stdin loop
   with `_schema`, `_exit` built-ins; one-shot (persistent=false) and loop (persistent=true)
-- [ ] `RunHttpListener(int port)` — HTTP/1.1 minimal server (System.Net.HttpListener)
+- [x] `RunHttpListener(int port)` — HTTP/1.1 minimal server (System.Net.HttpListener); added
+  to `HelperCommon.cs`; `--listen-port=N` flag wired in `KeyWin.cs` and `BrowserWin.cs`.
+  Dispatches via same `Console.Out`-capture pattern as stdin; built-in `_schema`, `_ping`,
+  `_exit`, id-injection all work over HTTP. Smoke-tested live (`pong=True id=1`). ✅
 - [ ] `RunNamedPipeListener(string pipeName)` — Windows named pipe server thread
 - [x] `AuthState` class — tracks `_auth` state, securityConfig path, sessionKey; added to
   `HelperCommon.cs` with fields `Authenticated`, `SkippedAuth`, `HelperNonce`, `ServerNonce`,

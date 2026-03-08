@@ -85,6 +85,29 @@ namespace BrowserWin
                     return HelperCommon.RunStdinListener(persistent, browserDispatch, browserSchema);
                 }
 
+                // ── HTTP listener mode (--listen-port=N) ──────────────────────
+                // Spawns an HTTP/1.1 loopback listener; same JSON protocol as stdin.
+                // Example: BrowserWin.exe --listen-port=3461
+                {
+                    string listenPort = HelperCommon.GetFlagValue(args, "--listen-port");
+                    if (listenPort != null)
+                    {
+                        int port = 0;
+                        if (listenPort.Length == 0 ||
+                            !int.TryParse(listenPort, out port) || port <= 0 || port > 65535)
+                        {
+                            Console.Error.WriteLine("AIAPI: --listen-port requires a valid port number (1-65535)");
+                            return 1;
+                        }
+                        Action<string, string> browserDispatch = (tgt, act) =>
+                        {
+                            Main(new string[] { tgt, act });
+                        };
+                        Func<string> browserSchema = GetApiSchema;
+                        return HelperCommon.RunHttpListener(port, browserDispatch, browserSchema);
+                    }
+                }
+
                 // ── HelperRegistry inject-mode (same contract as KeyWin.exe) ──
                 // HelperRegistry.callCommand() writes a temp file:
                 //   line 1: target  (e.g. "brave", "msedge", "brave:9223")

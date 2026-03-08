@@ -858,22 +858,24 @@ function openFilterEditor(filterId = null) {
   if (filterId) {
     const filter = advancedFilters.find(f => f.id === filterId);
     if (!filter) return;
-    
+
     title.textContent = 'Edit Security Filter';
-    document.getElementById('filter-action').value = filter.action;
-    document.getElementById('filter-process').value = filter.process || '*';
-    document.getElementById('filter-helper').value = filter.helper;
-    document.getElementById('filter-command').value = filter.command;
-    document.getElementById('filter-pattern').value = filter.pattern;
-    document.getElementById('filter-description').value = filter.description;
+    document.getElementById('filter-action').value      = filter.action;
+    document.getElementById('filter-process').value     = filter.process || '*';
+    document.getElementById('filter-helper').value      = filter.helper;
+    document.getElementById('filter-command').value     = filter.command;
+    document.getElementById('filter-pattern').value     = filter.pattern;
+    document.getElementById('filter-description').value = filter.description || '';
+    _filterSetCriteria(filter);
   } else {
     title.textContent = 'Add Security Filter';
-    document.getElementById('filter-action').value = 'allow';
-    document.getElementById('filter-process').value = '*';
-    document.getElementById('filter-helper').value = 'KeyWin.exe';
-    document.getElementById('filter-command').value = '';
-    document.getElementById('filter-pattern').value = '';
+    document.getElementById('filter-action').value      = 'allow';
+    document.getElementById('filter-process').value     = '*';
+    document.getElementById('filter-helper').value      = 'KeyWin.exe';
+    document.getElementById('filter-command').value     = '';
+    document.getElementById('filter-pattern').value     = '';
     document.getElementById('filter-description').value = '';
+    _filterSetCriteria({});   // clear all criteria fields
   }
   
   updateFilterPreview();
@@ -904,6 +906,32 @@ function updateFilterPreview() {
   `;
 }
 
+function _filterReadCriteria() {
+  const wtCkd = document.getElementById('criteria-window-title')?.checked;
+  const ppCkd = document.getElementById('criteria-process-path')?.checked;
+  const bhCkd = document.getElementById('criteria-binary-hash')?.checked;
+  return {
+    windowTitle:   wtCkd ? (document.getElementById('filter-window-title')?.value.trim()  || '') : '',
+    processPath:   ppCkd ? (document.getElementById('filter-process-path')?.value.trim()  || '') : '',
+    binaryHash:    bhCkd ? (document.getElementById('filter-binary-hash')?.value.trim()    || '') : '',
+    hashAlgorithm: document.getElementById('hash-algorithm')?.value || 'SHA256',
+  };
+}
+
+function _filterSetCriteria(filter) {
+  const wt = filter.windowTitle || '';
+  const pp = filter.processPath || '';
+  const bh = filter.binaryHash  || '';
+  const ha = filter.hashAlgorithm || 'SHA256';
+  const show = (id, flag) => { const el = document.getElementById(id); if (el) el.style.display = flag ? 'block' : 'none'; };
+  const val  = (id, v)    => { const el = document.getElementById(id); if (el) el.value = v; };
+  const chk  = (id, v)    => { const el = document.getElementById(id); if (el) el.checked = v; };
+  chk('criteria-window-title',  !!wt); show('field-window-title',  !!wt); val('filter-window-title', wt);
+  chk('criteria-process-path',  !!pp); show('field-process-path',  !!pp); val('filter-process-path', pp);
+  chk('criteria-binary-hash',   !!bh); show('field-binary-hash',   !!bh); val('filter-binary-hash',  bh);
+  val('hash-algorithm', ha);
+}
+
 function saveFilter() {
   const action = document.getElementById('filter-action').value;
   const process = document.getElementById('filter-process').value.trim() || '*';
@@ -911,42 +939,24 @@ function saveFilter() {
   const command = document.getElementById('filter-command').value.trim();
   const pattern = document.getElementById('filter-pattern').value.trim();
   const description = document.getElementById('filter-description').value.trim();
-  
-  if (!process) {
-    alert('Target process is required (use * for all)');
-    return;
-  }
-  
-  if (!command) {
-    alert('Command is required');
-    return;
-  }
-  
-  if (!pattern) {
-    alert('Parameter pattern is required');
-    return;
-  }
-  
+  const { windowTitle, processPath, binaryHash, hashAlgorithm } = _filterReadCriteria();
+
+  if (!process) { alert('Target process is required (use * for all)'); return; }
+  if (!command)  { alert('Command is required'); return; }
+  if (!pattern)  { alert('Parameter pattern is required'); return; }
+
   if (editingFilterId) {
     const filter = advancedFilters.find(f => f.id === editingFilterId);
     if (filter) {
-      filter.action = action;
-      filter.process = process;
-      filter.helper = helper;
-      filter.command = command;
-      filter.pattern = pattern;
-      filter.description = description;
+      Object.assign(filter, { action, process, helper, command, pattern, description,
+        windowTitle, processPath, binaryHash, hashAlgorithm });
       addLogEntry('info', 'settings', `Filter updated: ${action.toUpperCase()} ${process} → ${helper}::${command}/${pattern}`);
     }
   } else {
     advancedFilters.push({
       id: nextFilterId++,
-      action,
-      process,
-      helper,
-      command,
-      pattern,
-      description
+      action, process, helper, command, pattern, description,
+      windowTitle, processPath, binaryHash, hashAlgorithm,
     });
     addLogEntry('info', 'settings', `Filter added: ${action.toUpperCase()} ${process} → ${helper}::${command}/${pattern}`);
   }
@@ -978,7 +988,8 @@ function renderFilters(filterTerm = '') {
 
   const filtered = filterTerm
     ? advancedFilters.filter(f =>
-        `${f.process} ${f.helper} ${f.command} ${f.pattern} ${f.description}`.toLowerCase().includes(filterTerm.toLowerCase()))
+        `${f.process} ${f.helper} ${f.command} ${f.pattern} ${f.description} ${f.windowTitle||''} ${f.processPath||''} ${f.binaryHash||''}`
+          .toLowerCase().includes(filterTerm.toLowerCase()))
     : advancedFilters;
 
   // Delegate to inline table editor when Quick-Edit mode is active
@@ -995,7 +1006,13 @@ function renderFilters(filterTerm = '') {
     const process = filter.process || '*';
     const filterPath = `${process} → ${filter.helper}::${filter.command}/${filter.pattern}`;
     const actionIcon = filter.action === 'allow' ? '✅' : '🚫';
-    
+    // Build criteria badges
+    const badges = [];
+    if (filter.binaryHash)  badges.push(`<span title="Binary hash (${filter.hashAlgorithm||'SHA256'})" style="font-size:0.72rem;background:var(--surface2,#1e1e2e);padding:1px 5px;border-radius:3px;font-family:monospace;opacity:0.85;">#${escapeHtml(filter.binaryHash.substring(0,12))}…</span>`);
+    if (filter.processPath) badges.push(`<span title="Process path" style="font-size:0.72rem;background:var(--surface2,#1e1e2e);padding:1px 5px;border-radius:3px;opacity:0.85;">📂 ${escapeHtml(filter.processPath)}</span>`);
+    if (filter.windowTitle) badges.push(`<span title="Window title" style="font-size:0.72rem;background:var(--surface2,#1e1e2e);padding:1px 5px;border-radius:3px;opacity:0.85;">🪟 ${escapeHtml(filter.windowTitle)}</span>`);
+    const badgeRow = badges.length ? `<div style="margin-top:3px;display:flex;gap:4px;flex-wrap:wrap;">${badges.join('')}</div>` : '';
+
     return `
       <div class="filter-rule-example">
         <div class="filter-rule-header">
@@ -1007,6 +1024,7 @@ function renderFilters(filterTerm = '') {
           </div>
         </div>
         <div class="filter-description">${escapeHtml(filter.description || 'No description')}</div>
+        ${badgeRow}
       </div>
     `;
   }).join('');
@@ -1065,6 +1083,7 @@ function renderFiltersTableView(filters) {
       <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Helper</th>
       <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Command</th>
       <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Pattern</th>
+      <th style="padding:4px 6px;text-align:left;white-space:nowrap;" title="Binary hash / Process path / Window title — click ✏️ to edit">Criteria ✏️</th>
       <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Description</th>
       <th style="padding:4px 6px;text-align:center;white-space:nowrap;">\u21d5 \ud83d\uddd1</th>
     </tr>
@@ -1091,6 +1110,12 @@ function renderFiltersTableView(filters) {
       </td>
       <td style="padding:2px 4px;"><input type="text" value="${esc(f.command||'')}" onchange="_ftUpdate(${f.id},'command',this.value)" style="width:100%;min-width:90px;padding:2px;box-sizing:border-box;" placeholder="{CMD}"></td>
       <td style="padding:2px 4px;"><input type="text" value="${esc(f.pattern||'')}" onchange="_ftUpdate(${f.id},'pattern',this.value)" style="width:100%;min-width:80px;padding:2px;box-sizing:border-box;" placeholder="*"></td>
+      <td style="padding:2px 4px;white-space:nowrap;">
+        ${f.binaryHash  ? `<span title="${esc(f.hashAlgorithm||'SHA256')}:${esc(f.binaryHash)}" style="cursor:default;">#${esc(f.binaryHash.substring(0,8))}\u2026</span>` : ''}
+        ${f.processPath ? `<span title="Path: ${esc(f.processPath)}" style="cursor:default;">\ud83d\udcc2</span>` : ''}
+        ${f.windowTitle ? `<span title="Title: ${esc(f.windowTitle)}" style="cursor:default;">\ud83e\ude9f</span>` : ''}
+        <button onclick="openFilterEditor(${f.id})" style="padding:1px 4px;cursor:pointer;font-size:0.75rem;" title="Edit all criteria">\u270f\ufe0f</button>
+      </td>
       <td style="padding:2px 4px;"><input type="text" value="${esc(f.description||'')}" onchange="_ftUpdate(${f.id},'description',this.value)" style="width:100%;min-width:120px;padding:2px;box-sizing:border-box;"></td>
       <td style="padding:2px 4px;text-align:center;white-space:nowrap;">
         <button onclick="_ftMove(${f.id},-1)" ${i===0?'disabled':''} style="padding:1px 5px;cursor:pointer;" title="Move up">\u2191</button>

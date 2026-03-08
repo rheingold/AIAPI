@@ -67,8 +67,10 @@ export class MCPServer {
       this.loadAdvancedFilters();
     });
 
-    // Initialise helper registry and discover helpers asynchronously
-    this.helperRegistry = new HelperRegistry(token, secret);
+    // Initialise helper registry and discover helpers asynchronously.
+    // Credentials are no longer passed as constructor args — env-var approach
+    // removed; _auth handshake (TODO PRIORITY 1.5) will supply them over stdin.
+    this.helperRegistry = new HelperRegistry();
     const helperSearchPaths = [
       path.join(__dirname, '..', '..', 'dist', 'helpers'),
     ];

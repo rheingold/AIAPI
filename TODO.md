@@ -433,11 +433,13 @@ All transports handle these before routing to the helper's own command dispatch:
 
 ### Things to Remove / Replace
 
-- [ ] **`MCP_SESSION_TOKEN` env var** — credential lives in process environment, inherited by
-  all child processes, visible to same-user debuggers. Replace with `_auth` first message.
-- [ ] **`MCP_SESSION_SECRET` env var** — same problem as above.
-- [ ] **`--token=` / `--secret=` CLI args** — visible in process listing (`tasklist /v`, Process
-  Explorer). Replace with `_auth` message.
+- [x] **`MCP_SESSION_TOKEN` env var** — REMOVED from `HelperRegistry.buildEnv()` and class fields;
+  `sessionToken` / `sessionSecret` constructor args dropped; helpers never consumed this env var.
+  Final removal of the credential path happens via `_auth` handshake (see Helper Auth section).
+- [x] **`MCP_SESSION_SECRET` env var** — same as above; removed in the same commit.
+- [ ] **`--token=` / `--secret=` CLI args** — these were never prototyped in code (no helper or
+  registry code passes or reads them); item kept as a guard: do NOT add them.
+  Replace credential passage permanently with `_auth` message (see Helper Auth section).
 - [x] **`--inject-mode=direct tmpFile`** — ✅ DONE: replaced by `--listen-stdin` pipe in
   `HelperRegistry.callCommand()`. Temp file, `fs.writeFileSync`, and `os.tmpdir()` removed.
 - [x] **`--api-schema` CLI flag** — `HelperRegistry.ts` `querySchema()` now uses `--listen-stdin` +
@@ -516,7 +518,8 @@ tools/
 - [ ] `RunHttpListener(int port)` — HTTP/1.1 minimal server (System.Net.HttpListener)
 - [ ] `RunNamedPipeListener(string pipeName)` — Windows named pipe server thread
 - [ ] `AuthState` class — tracks `_auth` state, securityConfig path, sessionKey
-- [ ] `ParseArgs(string[] args)` → unified flag parser for `--listen-*`, `--target=`, `--action=`
+- [x] `ParseArgs(string[] args)` → unified flag parser — `ParseArgs` + `GetFlagValue` added to
+  `HelperCommon.cs`; also `HcJson.GetBool()` and `HcJson.GetInt()` (needed by `_auth` parser).
 
 ### Each Helper's Responsibilities (current state)
 

@@ -129,6 +129,55 @@ public static class HcJson
         return sb.ToString();
     }
 
+    // ── GetBool ───────────────────────────────────────────────────────────────
+    /// <summary>
+    /// Extract a boolean value from a flat JSON object.
+    /// Returns true/false for JSON true/false literals; returns null if the key
+    /// is absent or its value is not a bare boolean token.
+    /// </summary>
+    public static bool? GetBool(string json, string key)
+    {
+        if (json == null || key == null) return null;
+        string needle = "\"" + key + "\"";
+        int ki = json.IndexOf(needle, StringComparison.Ordinal);
+        if (ki < 0) return null;
+        int colon = json.IndexOf(':', ki + needle.Length);
+        if (colon < 0) return null;
+        int pos = colon + 1;
+        while (pos < json.Length &&
+               (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\r' || json[pos] == '\n'))
+            pos++;
+        if (pos + 4 <= json.Length && json.Substring(pos, 4) == "true")  return true;
+        if (pos + 5 <= json.Length && json.Substring(pos, 5) == "false") return false;
+        return null;
+    }
+
+    // ── GetInt ────────────────────────────────────────────────────────────────
+    /// <summary>
+    /// Extract an integer value from a flat JSON object.
+    /// Returns null if the key is absent or its value is not a JSON integer token.
+    /// </summary>
+    public static int? GetInt(string json, string key)
+    {
+        if (json == null || key == null) return null;
+        string needle = "\"" + key + "\"";
+        int ki = json.IndexOf(needle, StringComparison.Ordinal);
+        if (ki < 0) return null;
+        int colon = json.IndexOf(':', ki + needle.Length);
+        if (colon < 0) return null;
+        int pos = colon + 1;
+        while (pos < json.Length &&
+               (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\r' || json[pos] == '\n'))
+            pos++;
+        int start = pos;
+        if (pos < json.Length && (json[pos] == '-' || json[pos] == '+')) pos++;
+        while (pos < json.Length && json[pos] >= '0' && json[pos] <= '9') pos++;
+        if (pos == start) return null;
+        int result;
+        if (int.TryParse(json.Substring(start, pos - start), out result)) return result;
+        return null;
+    }
+
     // ── Err ───────────────────────────────────────────────────────────────────
     /// <summary>Build a {"success":false,"error":"msg"} JSON line.</summary>
     public static string Err(string id, string msg)
@@ -230,6 +279,58 @@ public static class HelperCommon
             if (string.Equals(a, flag, StringComparison.OrdinalIgnoreCase))
                 return true;
         return false;
+    }
+
+    // ── GetFlagValue ──────────────────────────────────────────────────────────
+    /// <summary>
+    /// Returns the value part of a "--key=value" flag from args[], or null if
+    /// the flag is not present.  Lookup is case-insensitive.
+    /// Example: GetFlagValue(args, "--listen-port") returns "3460" for an arg
+    /// "--listen-port=3460".  Returns "" (empty string) for a bare "--listen-port".
+    /// </summary>
+    public static string GetFlagValue(string[] args, string flag)
+    {
+        if (args == null || flag == null) return null;
+        string prefix = flag.TrimEnd('=') + "=";
+        foreach (string a in args)
+        {
+            if (string.Equals(a, flag, StringComparison.OrdinalIgnoreCase))
+                return "";           // bare flag present, no value
+            if (a != null && a.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return a.Substring(prefix.Length);
+        }
+        return null;
+    }
+
+    // ── ParseArgs ─────────────────────────────────────────────────────────────
+    /// <summary>
+    /// Parse all "--key[=value]" flags from args[] into a dictionary.
+    /// Keys are lower-cased and stripped of leading "--".
+    /// Bare flags ("--persistent") map to the value "true".
+    /// Non-flag arguments (not starting with "--") are ignored.
+    /// </summary>
+    public static System.Collections.Generic.Dictionary<string, string>
+        ParseArgs(string[] args)
+    {
+        var result = new System.Collections.Generic.Dictionary<string, string>(
+            StringComparer.OrdinalIgnoreCase);
+        if (args == null) return result;
+        foreach (string a in args)
+        {
+            if (a == null || !a.StartsWith("--")) continue;
+            int eq = a.IndexOf('=');
+            if (eq < 0)
+            {
+                string k = a.Substring(2).ToLowerInvariant();
+                result[k] = "true";
+            }
+            else
+            {
+                string k = a.Substring(2, eq - 2).ToLowerInvariant();
+                result[k] = a.Substring(eq + 1);
+            }
+        }
+        return result;
     }
 
     // ── RunStdinListener ──────────────────────────────────────────────────────

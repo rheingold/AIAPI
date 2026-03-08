@@ -265,18 +265,13 @@ interface ActiveSession {
 export class HelperRegistry {
   private schemas: Map<string, HelperSchema> = new Map();
   private daemons: Map<string, HelperDaemon> = new Map();
-  private sessionToken: string | undefined;
-  private sessionSecret: string | undefined;
   private searchPaths: string[] = [];
   /** Active test-session recording state; null when no session is open. */
   private activeSession: ActiveSession | null = null;
   /** Base directory where session folders are created. */
   private sessionBaseDir: string = './test-sessions';
 
-  constructor(sessionToken?: string, sessionSecret?: string) {
-    this.sessionToken = sessionToken;
-    this.sessionSecret = sessionSecret;
-  }
+  constructor() {}
 
   // ---------------------------------------------------------------------------
   // Discovery
@@ -561,11 +556,9 @@ export class HelperRegistry {
   // ---------------------------------------------------------------------------
 
   private buildEnv(): NodeJS.ProcessEnv {
-    return {
-      ...process.env,
-      ...(this.sessionToken  ? { MCP_SESSION_TOKEN:  this.sessionToken  } : {}),
-      ...(this.sessionSecret ? { MCP_SESSION_SECRET: this.sessionSecret } : {}),
-      SKIP_SESSION_AUTH: 'true',
-    };
+    // Credentials are no longer passed via env vars — the _auth handshake over
+    // the stdin pipe will replace this once implemented (see TODO.md PRIORITY 1.5).
+    // SKIP_SESSION_AUTH is kept as a dev/test bypass flag (not a credential).
+    return { ...process.env, SKIP_SESSION_AUTH: 'true' };
   }
 }

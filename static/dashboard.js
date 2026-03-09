@@ -1058,6 +1058,51 @@ function renderPermissionsSummary() {
   body.innerHTML = html;
 }
 
+// ── Security Audit Log ─────────────────────────────────────────────
+let _securityLogTimer = null;
+
+async function loadSecurityLog() {
+  const list  = document.getElementById('security-log-list');
+  const count = document.getElementById('security-log-count');
+  if (!list) return;
+  try {
+    const r = await fetch('/api/security/log');
+    const d = await r.json();
+    const entries = d.entries || [];
+    if (count) count.textContent = `${entries.length} event${entries.length !== 1 ? 's' : ''}`;
+    if (entries.length === 0) {
+      list.innerHTML = '<em style="opacity:0.6;">No security events recorded yet. Events appear here when filter rules evaluate incoming requests.</em>';
+      return;
+    }
+    list.innerHTML = entries.map(e => {
+      const isBlock = /DENY|blocked|Invalid admin|ADMIN MODE/i.test(e.message);
+      const isAllow = /ALLOW/i.test(e.message);
+      const icon  = isBlock ? '🚫' : isAllow ? '✅' : e.level === 'error' ? '❌' : 'ℹ️';
+      const color = isBlock ? 'var(--error)' : isAllow ? 'var(--success)' : e.level === 'warn' ? 'var(--warning,#f5a623)' : 'inherit';
+      return `<div style="display:flex;gap:0.5rem;padding:2px 0;border-bottom:1px solid var(--border);line-height:1.5;">
+        <span style="opacity:0.55;flex-shrink:0;">${escapeHtml(e.timestamp)}</span>
+        <span style="flex-shrink:0;">${icon}</span>
+        <span style="color:${color};">${escapeHtml(e.message)}</span>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    if (list) list.innerHTML = `<em style="color:var(--error);">Failed to load: ${escapeHtml(String(e))}</em>`;
+  }
+}
+
+function toggleSecurityLogAutoRefresh() {
+  const cb = document.getElementById('security-log-autorefresh');
+  if (_securityLogTimer) { clearInterval(_securityLogTimer); _securityLogTimer = null; }
+  if (cb && cb.checked) {
+    _securityLogTimer = setInterval(loadSecurityLog, 5000);
+  }
+}
+
+// Load security log when the panel is opened
+document.addEventListener('toggle', e => {
+  if (e.target?.id === 'security-log-panel' && e.target.open) loadSecurityLog();
+}, true);
+
 function filterSearch(term) {
   _filterSearchTerm = term;
   renderFilters(term);

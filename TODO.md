@@ -311,7 +311,7 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
   - [x] View current security config — shown via `validateConfiguration()` / `GET /api/config/security`
   - [x] Edit security filters — filter wizard + Quick-Edit table + inline 🛡️ links from scenario steps
   - [x] Test security rules — "Test Rule" dry-run button + "Validate All" button
-  - [ ] View security logs/violations — audit log viewer in Security tab (not yet implemented)
+  - [x] View security logs/violations — '🔍 Security Audit Log' collapsible panel at bottom of Security tab; fetches from `GET /api/security/log` (newest-first, up to 200 entries from the in-memory log buffer filtered to source=Security); auto-refresh toggle (5 s); DENY/ALLOW colour-coded with icons
 - [x] Add "Status" indicators:
   - [x] Security status (enabled/disabled, valid keys) — in header status bar
   - [x] Key expiry warnings — ⚠️ indicator when keys missing

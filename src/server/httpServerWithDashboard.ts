@@ -555,6 +555,9 @@ export class HttpServerWithDashboard {
       if (pathname === '/api/filters/test' && req.method === 'POST') {
         return this.handleTestFilter(req, res);
       }
+      if (pathname === '/api/security/log' && req.method === 'GET') {
+        return this.handleGetSecurityLog(req, res);
+      }
       if (pathname === '/api/helpers/toggle' && req.method === 'POST') {
         return this.handleToggleHelper(req, res);
       }
@@ -1824,6 +1827,20 @@ export class HttpServerWithDashboard {
       success: true,
       filters: this.config.advancedFilters || [],
     }));
+  }
+
+  /**
+   * GET /api/security/log
+   * Returns recent security-category log entries, newest-first, capped at 200.
+   * Includes ALLOW, DENY, block, and admin-mode events from the Security source.
+   */
+  private handleGetSecurityLog(req: http.IncomingMessage, res: http.ServerResponse): void {
+    const entries = this.logs
+      .filter(e => (e.source ?? '').toLowerCase() === 'security')
+      .slice(-200)
+      .reverse();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, entries }));
   }
 
   /**

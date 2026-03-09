@@ -369,6 +369,23 @@
             </div>
             <div id="filter-test-result" class="filter-test-result" style="display:none"></div>
           </div>
+
+          <!-- Security Audit Log -->
+          <details id="security-log-panel" style="margin-top:1rem;">
+            <summary style="cursor:pointer;padding:0.5rem 0;font-size:0.9rem;user-select:none;font-weight:600;">🔍 Security Audit Log</summary>
+            <div style="margin-top:0.5rem;">
+              <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;">
+                <button onclick="loadSecurityLog()" class="btn-secondary" style="padding:0.25rem 0.75rem;font-size:0.8rem;">🔄 Refresh</button>
+                <label style="font-size:0.8rem;display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
+                  <input type="checkbox" id="security-log-autorefresh" onchange="toggleSecurityLogAutoRefresh()"> Auto-refresh (5s)
+                </label>
+                <span id="security-log-count" style="font-size:0.8rem;opacity:0.6;margin-left:auto;"></span>
+              </div>
+              <div id="security-log-list" style="max-height:280px;overflow-y:auto;font-family:monospace;font-size:0.78rem;border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.5rem;background:var(--bg-secondary);">
+                <em style="opacity:0.6;">Open to load events…</em>
+              </div>
+            </div>
+          </details>
         </section>
 
         <!-- Tools Section -->

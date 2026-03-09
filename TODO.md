@@ -130,7 +130,8 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
 ### Testing Strategy
 - [ ] **Unit Tests** (in progress — see below): All backend services and utilities
   - [x] `wildcardMatch` (glob + /regex/ syntax, 19 tests) — `src/utils/wildcardMatch.test.ts`
-  - [ ] `xmlScenarioLoader` — load/parse/execute scenario XML
+  - [x] `xmlScenarioLoader` (substitute, executeXmlScenario, load, listScenarios, circular ref, 27 tests) — `src/scenario/xmlScenarioLoader.test.ts`
+        _note: jsdom v28 has ESM-only deps incompatible with Jest CJS mode; solved via `src/__mocks__/jsdom-mock.js` + `moduleNameMapper` in `jest.config.json`_
   - [ ] `Logger` — onLog callbacks, buffer behavior
   - [ ] MCP server and dashboard server security filter evaluation
 - [ ] **Integration Tests**: MCP server endpoints, security checks

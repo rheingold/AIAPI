@@ -4,6 +4,9 @@
   "roots": ["<rootDir>/src"],
   "testMatch": ["**/__tests__/**/*.ts", "**/?(*.)+(spec|test).ts"],
   "moduleFileExtensions": ["ts", "tsx", "js", "jsx", "json", "node"],
+  "moduleNameMapper": {
+    "^jsdom$": "<rootDir>/src/__mocks__/jsdom-mock.js"
+  },
   "collectCoverageFrom": [
     "src/**/*.ts",
     "!src/**/*.d.ts",

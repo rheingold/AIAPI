@@ -7,6 +7,7 @@ import { ScenarioReplayer } from '../scenario/replayer';
 import { XmlScenarioLoader, executeXmlScenario as runXmlScenario } from '../scenario/xmlScenarioLoader';
 import { SessionTokenManager } from '../security/SessionTokenManager';
 import { globalLogger } from '../utils/Logger';
+import { wildcardMatch } from '../utils/wildcardMatch';
 import { HelperRegistry } from '../helpers/HelperRegistry';
 
 /**
@@ -111,29 +112,6 @@ export class MCPServer {
   }
 
   /**
-   * Wildcard glob match — supports * (zero-or-more) and ? (single char).
-   * Case-insensitive.
-   */
-  private wildcardMatch(pattern: string, text: string): boolean {
-    if (pattern === '*') return true;
-    // Regex syntax: /pattern/ or /pattern/i
-    const reMatch = pattern.match(/^\/(.+)\/(i?)$/);
-    if (reMatch) {
-      try {
-        return new RegExp(reMatch[1], reMatch[2] || 'i').test(text);
-      } catch {
-        return false; // invalid regex → no match
-      }
-    }
-    // Glob syntax: * = any sequence, ? = any char
-    const regexStr = pattern
-      .replace(/[.+^${}()|\[\]\\]/g, '\\$&')
-      .replace(/\*/g, '.*')
-      .replace(/\?/g, '.');
-    return new RegExp(`^${regexStr}$`, 'i').test(text);
-  }
-
-  /**
    * Setup security filter configuration
    */
   private async setupSecurityFilter(): Promise<void> {
@@ -196,14 +174,14 @@ export class MCPServer {
 
       for (const filter of this.advancedFilters) {
         // Match process name
-        if (!this.wildcardMatch(filter.process || '*', processName)) continue;
+        if (!wildcardMatch(filter.process || '*', processName)) continue;
 
         // Match command — stored as {CLICKID}, commandType is CLICKID
         const filterCmd = filter.command.replace(/^\{|\}$/g, '');
-        if (!this.wildcardMatch(filterCmd, commandType) && filter.command !== '*') continue;
+        if (!wildcardMatch(filterCmd, commandType) && filter.command !== '*') continue;
 
         // Match parameter pattern
-        if (!this.wildcardMatch(filter.pattern || '*', parameter || '')) continue;
+        if (!wildcardMatch(filter.pattern || '*', parameter || '')) continue;
 
         if (filter.action === 'deny') {
           matchedDeny = true;

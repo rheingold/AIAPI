@@ -128,7 +128,11 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
 **Goal:** User-friendly configuration and security management
 
 ### Testing Strategy
-- [ ] **Unit Tests**: All backend services and utilities
+- [ ] **Unit Tests** (in progress — see below): All backend services and utilities
+  - [x] `wildcardMatch` (glob + /regex/ syntax, 19 tests) — `src/utils/wildcardMatch.test.ts`
+  - [ ] `xmlScenarioLoader` — load/parse/execute scenario XML
+  - [ ] `Logger` — onLog callbacks, buffer behavior
+  - [ ] MCP server and dashboard server security filter evaluation
 - [ ] **Integration Tests**: MCP server endpoints, security checks
 - [ ] **UI Tests**: Dashboard using AIAPI itself (dogfooding!)
   - [ ] Test configuration UI by automating browser interactions
@@ -312,6 +316,7 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
   - [x] Edit security filters — filter wizard + Quick-Edit table + inline 🛡️ links from scenario steps
   - [x] Test security rules — "Test Rule" dry-run button + "Validate All" button
   - [x] View security logs/violations — '🔍 Security Audit Log' collapsible panel at bottom of Security tab; fetches from `GET /api/security/log` (newest-first, up to 200 entries from the in-memory log buffer filtered to source=Security); auto-refresh toggle (5 s); DENY/ALLOW colour-coded with icons
+  - [ ] **[LOW PRIORITY]** Security audit log: add pagination / `?limit=N&offset=N` to `/api/security/log`; persist security events to a rolling file log (separate from the in-memory buffer) so the log survives server restarts and doesn't grow impractically large in long-running deployments
 - [x] Add "Status" indicators:
   - [x] Security status (enabled/disabled, valid keys) — in header status bar
   - [x] Key expiry warnings — ⚠️ indicator when keys missing
@@ -1218,11 +1223,11 @@ A Windows installer (or VS Code extension install hook) deploys a default set.
   - [x] Added `📚 App Templates` nav section + `loadAppTemplates()` in dashboard.html/js
 - [x] Scenario editor: visual step builder (drag-drop reorder, ScenarioRef picker)
   - [x] **Fix**: chrome `scenarios.xml` uses lowercase `<steps>/<step action=...>` + top-level `<ScenarioRef>` — made parser case-insensitive & iterates all Scenario children in document order
-- [ ] Scenario editor enhancements:
+- [x] Scenario editor enhancements (all implemented):
   - [x] **Metadata panel**: collapsible panel in scenario editor — helper, process, window title hint, linked assistant, binary checksum; round-trips through `loadRaw()` → `save()` via PUT body `meta` field; `RawXmlScenario` type extended; `scenarios.xsd` updated with `assistant` + `checksum` attributes
   - [x] **Auto-refresh App Templates list** after saving a scenario (call `loadAppTemplates()` on successful PUT)
   - [x] **Scenario label not synced**: `listScenarios` returns `id` as `label` for chrome (chrome XML lacks `label=` attr) — placeholder=id, value='' when label==id so input always shows the id hint
-- [ ] Dashboard Filter Rules enhancements:
+- [x] Dashboard Filter Rules enhancements (all implemented):
   - [x] **Auto-refresh after save**: reload filter list in dashboard when rules are saved (calls `loadFilters()` after successful save ✅)
   - [x] **Table-based quick-edit** for filter rules — toggle with "🗃️ Quick-Edit" button; inline `<select>`/`<input>` per cell, move-up/down, delete; "💾 Save All Filters" persists; toggle back for card view
   - [x] **Binary hash / process path / window title criteria wired up** — `saveFilter()` now reads all three fields; `openFilterEditor()` restores them; card view shows hash prefix badge + path/title icons; Quick-Edit table shows Criteria column with ✏️ link back to modal; search includes these fields

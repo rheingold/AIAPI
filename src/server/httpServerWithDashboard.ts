@@ -11,6 +11,7 @@ import { UIObject, ActionResult, QueryOptions } from '../types';
 import { SessionTokenManager } from '../security/SessionTokenManager';
 import { SecurityPolicy } from '../security/types';
 import { globalLogger } from '../utils/Logger';
+import { wildcardMatch } from '../utils/wildcardMatch';
 import { HelperRegistry } from '../helpers/HelperRegistry';
 import { XmlScenarioLoader, RawXmlStep, executeXmlScenario as runXmlScenario } from '../scenario/xmlScenarioLoader';
 
@@ -1849,25 +1850,6 @@ export class HttpServerWithDashboard {
    * Body: { filters: FilterRule[] }
    */
   /**
-   * Match a glob pattern (supports * and ?) against text — case-insensitive
-   */
-  private wildcardMatch(pattern: string, text: string): boolean {
-    if (!pattern || pattern === '*') return true;
-    // Regex syntax: /pattern/ or /pattern/i
-    const reMatch = pattern.match(/^\/(.+)\/(i?)$/);
-    if (reMatch) {
-      try {
-        return new RegExp(reMatch[1], reMatch[2] || 'i').test(text);
-      } catch {
-        return false; // invalid regex → no match
-      }
-    }
-    // Glob syntax: * = any sequence, ? = any char
-    const safe = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
-    return new RegExp(`^${safe}$`, 'i').test(text);
-  }
-
-  /**
    * POST /api/filters/test  — dry-run: which filter would fire for given inputs?
    */
   private async handleTestFilter(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -1884,12 +1866,12 @@ export class HttpServerWithDashboard {
       let reason = 'No rule matched — default ALLOW';
 
       for (const f of filters) {
-        if (!this.wildcardMatch(f.process || '*', proc || '')) continue;
+        if (!wildcardMatch(f.process || '*', proc || '')) continue;
         const filterCmd = (f.command || '*').replace(/^\{|\}$/g, '');
-        if (filterCmd !== '*' && !this.wildcardMatch(filterCmd, cmdType)) continue;
-        if (!this.wildcardMatch(f.pattern || '*', parameter || '')) continue;
+        if (filterCmd !== '*' && !wildcardMatch(filterCmd, cmdType)) continue;
+        if (!wildcardMatch(f.pattern || '*', parameter || '')) continue;
         // Also check helper if set
-        if (f.helper && f.helper !== '*' && !this.wildcardMatch(f.helper, helper || '')) continue;
+        if (f.helper && f.helper !== '*' && !wildcardMatch(f.helper, helper || '')) continue;
 
         matchedFilter = f;
         if (f.action === 'deny') {

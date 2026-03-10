@@ -7,8 +7,7 @@ import { ScenarioReplayer } from '../scenario/replayer';
 import { XmlScenarioLoader, executeXmlScenario as runXmlScenario } from '../scenario/xmlScenarioLoader';
 import { SessionTokenManager } from '../security/SessionTokenManager';
 import { globalLogger } from '../utils/Logger';
-import { wildcardMatch } from '../utils/wildcardMatch';
-import { evaluateFilterRules } from '../utils/filterEval';
+import { runSecurityFilter } from './securityFilter';
 import { HelperRegistry } from '../helpers/HelperRegistry';
 
 /**
@@ -152,53 +151,14 @@ export class MCPServer {
     parameter: string,
     context?: { adminToken?: string }
   ): Promise<'ALLOW' | 'DENY'> {
-    // 1. Check for admin token first
-    if (context?.adminToken) {
-      const validation = this.sessionTokenManager.validateAdminToken(context.adminToken);
-      if (validation.valid && !validation.expired) {
-        globalLogger.warn('Security', `Admin token bypass: ${commandType} on ${processName}`);
-        return 'ALLOW'; // Admin token bypasses all filters
-      } else if (validation.expired) {
-        globalLogger.warn('Security', 'Expired admin token attempted');
-        // Continue to normal security validation
-      } else {
-        globalLogger.warn('Security', 'Invalid admin token attempted');
-        // Continue to normal security validation  
-      }
-    }
-
-    // 2. Apply dashboard-managed advanced filters (DENY wins over ALLOW)
-    if (this.advancedFilters.length > 0) {
-      // helperName is not available at this call-site; passing '' causes
-      // evaluateFilterRules to skip helper-field matching (backward-compat).
-      const { verdict } = evaluateFilterRules(
-        this.advancedFilters, processName, '', commandType, parameter || ''
-      );
-      if (verdict === 'DENY') {
-        globalLogger.warn('Security', `Advanced filter DENY: ${commandType} on ${processName} (param: ${parameter})`);
-        return 'DENY';
-      }
-      if (verdict === 'ALLOW') {
-        globalLogger.info('Security', `Advanced filter ALLOW: ${commandType} on ${processName}`);
-        // Continue to built-in rules for additional checks
-      }
-    }
-    
-    // 3. Read-only commands are always permitted
-    const readOnlyCommands = ['QUERYTREE', 'READ', 'LISTWINDOWS', 'GETPROVIDERS'];
-    if (readOnlyCommands.includes(commandType)) {
-      return 'ALLOW';
-    }
-
-    // 4. Deny destructive operations on protected system processes
-    const systemProcesses = ['explorer', 'winlogon', 'csrss', 'lsass', 'services', 'svchost'];
-    if (systemProcesses.some(proc => processName.toLowerCase().includes(proc.toLowerCase()))) {
-      globalLogger.warn('Security', `Security filter blocked ${commandType} on system process ${processName}`);
-      return 'DENY';
-    }
-
-    // 5. Permissive default during development — replace with config-driven deny-list in production
-    return 'ALLOW';
+    return runSecurityFilter(
+      this.advancedFilters,
+      this.sessionTokenManager,
+      processName,
+      commandType,
+      parameter || '',
+      context,
+    );
   }
 
   /**

@@ -135,7 +135,8 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
   - [x] `Logger` (onLog callbacks, multiple callbacks, convenience wrappers, logJSON verbose mode, 18 tests) — `src/utils/Logger.test.ts`
   - [x] `filterEval` (DENY wins, process/command/helper/pattern matching, real-world scenarios; 33 tests) — `src/utils/filterEval.test.ts`
         _refactor: extracted `evaluateFilterRules()` from duplicate private loops in `mcpServer.ts` and `httpServerWithDashboard.ts`; helper field now unified in both_
-  - [ ] MCP server and dashboard server security filter evaluation
+  - [x] MCP server and dashboard server security filter evaluation (40 tests) — `src/server/securityFilter.ts` + `src/server/securityFilter.test.ts`
+        _refactor: extracted `runSecurityFilter()` from private `validateSecurityFilter()` in `MCPServer`; exposes `IAdminTokenValidator` interface for clean mocking; covers admin-token bypass, advanced filter eval, read-only exemption, system-process protection, permissive default_
 - [ ] **Integration Tests**: MCP server endpoints, security checks
 - [ ] **UI Tests**: Dashboard using AIAPI itself (dogfooding!)
   - [ ] Test configuration UI by automating browser interactions

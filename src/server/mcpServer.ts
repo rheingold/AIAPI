@@ -703,7 +703,7 @@ export class MCPServer {
           break;
 
         case 'getProviders':
-          result = this.automationEngine.getAvailableProviders();
+          result = await this.automationEngine.getAvailableProviders();
           break;
 
         case 'listWindows':

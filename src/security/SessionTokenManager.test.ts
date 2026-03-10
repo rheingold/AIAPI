@@ -397,4 +397,179 @@ describe('SessionTokenManager', () => {
             expect(result.error).toBe('Invalid HMAC signature');
         });
     });
+
+    // ─── Admin token ──────────────────────────────────────────────────────────
+
+    describe('generateAdminToken', () => {
+        const ADMIN_PASSWORD = 'admin-test-pw-xyz';
+        let manager: SessionTokenManager;
+
+        beforeEach(() => {
+            // Use a fixed secret and a known password so tests are deterministic.
+            manager = new SessionTokenManager(crypto.randomBytes(32));
+            process.env.ADMIN_PASSWORD = ADMIN_PASSWORD;
+        });
+
+        afterEach(() => {
+            delete process.env.ADMIN_PASSWORD;
+        });
+
+        it('returns null for wrong password', () => {
+            expect(manager.generateAdminToken('wrongpassword')).toBeNull();
+        });
+
+        it('returns null for empty string password', () => {
+            expect(manager.generateAdminToken('')).toBeNull();
+        });
+
+        it('returns a non-empty base64 string for the correct password', () => {
+            const token = manager.generateAdminToken(ADMIN_PASSWORD);
+            expect(typeof token).toBe('string');
+            expect((token as string).length).toBeGreaterThan(20);
+        });
+
+        it('tokens are unique (different nonces each call)', () => {
+            const token1 = manager.generateAdminToken(ADMIN_PASSWORD);
+            const token2 = manager.generateAdminToken(ADMIN_PASSWORD);
+            expect(token1).not.toBe(token2);
+        });
+
+        it('default duration is 15 minutes', () => {
+            const before = Math.floor(Date.now() / 1000);
+            const token = manager.generateAdminToken(ADMIN_PASSWORD) as string;
+            const after  = Math.floor(Date.now() / 1000);
+
+            const decoded = Buffer.from(token, 'base64').toString();
+            const msg = decoded.substring(0, decoded.lastIndexOf(':'));
+            const data = JSON.parse(msg);
+
+            const expectedExpiry = before + 15 * 60;
+            expect(data.expiry).toBeGreaterThanOrEqual(expectedExpiry);
+            expect(data.expiry).toBeLessThanOrEqual(after + 15 * 60);
+        });
+
+        it('custom duration is respected', () => {
+            const before = Math.floor(Date.now() / 1000);
+            const token  = manager.generateAdminToken(ADMIN_PASSWORD, 5) as string;
+            const after  = Math.floor(Date.now() / 1000);
+
+            const decoded = Buffer.from(token, 'base64').toString();
+            const msg  = decoded.substring(0, decoded.lastIndexOf(':'));
+            const data = JSON.parse(msg);
+
+            const expectedExpiry = before + 5 * 60;
+            expect(data.expiry).toBeGreaterThanOrEqual(expectedExpiry);
+            expect(data.expiry).toBeLessThanOrEqual(after + 5 * 60);
+        });
+
+        it('token payload contains type=admin and required fields', () => {
+            const token = manager.generateAdminToken(ADMIN_PASSWORD) as string;
+            const decoded = Buffer.from(token, 'base64').toString();
+            const msg  = decoded.substring(0, decoded.lastIndexOf(':'));
+            const data = JSON.parse(msg);
+
+            expect(data.type).toBe('admin');
+            expect(typeof data.timestamp).toBe('number');
+            expect(typeof data.expiry).toBe('number');
+            expect(Array.isArray(data.privileges)).toBe(true);
+            expect(data.privileges).toContain('BYPASS_FILTERS');
+            expect(data.privileges).toContain('MODIFY_CONFIG');
+        });
+    });
+
+    describe('validateAdminToken', () => {
+        const ADMIN_PASSWORD = 'admin-validate-pw-xyz';
+        let manager: SessionTokenManager;
+
+        beforeEach(() => {
+            manager = new SessionTokenManager(crypto.randomBytes(32));
+            process.env.ADMIN_PASSWORD = ADMIN_PASSWORD;
+        });
+
+        afterEach(() => {
+            delete process.env.ADMIN_PASSWORD;
+        });
+
+        it('valid freshly-generated token → { valid:true, expired:false }', () => {
+            const token  = manager.generateAdminToken(ADMIN_PASSWORD) as string;
+            const result = manager.validateAdminToken(token);
+            expect(result.valid).toBe(true);
+            expect(result.expired).toBe(false);
+        });
+
+        it('valid token includes decoded data', () => {
+            const token  = manager.generateAdminToken(ADMIN_PASSWORD) as string;
+            const result = manager.validateAdminToken(token);
+            expect(result.data).toBeDefined();
+            expect(result.data.type).toBe('admin');
+            expect(Array.isArray(result.data.privileges)).toBe(true);
+        });
+
+        it('tampered token (altered base64) → { valid:false, expired:false }', () => {
+            const token   = manager.generateAdminToken(ADMIN_PASSWORD) as string;
+            const tampered = token.slice(0, -4) + 'ZZZZ';
+            const result  = manager.validateAdminToken(tampered);
+            expect(result.valid).toBe(false);
+        });
+
+        it('garbage string → { valid:false, expired:false }', () => {
+            const result = manager.validateAdminToken('not-a-token-at-all');
+            expect(result.valid).toBe(false);
+            expect(result.expired).toBe(false);
+        });
+
+        it('empty string → { valid:false, expired:false }', () => {
+            const result = manager.validateAdminToken('');
+            expect(result.valid).toBe(false);
+            expect(result.expired).toBe(false);
+        });
+
+        it('expired token → { valid:false, expired:true }', () => {
+            const secret = manager.getSecret();
+            // Build token with expiry = 1 second ago
+            const timestamp = Math.floor(Date.now() / 1000) - 120;   // 2 min ago
+            const expiry    = timestamp + 60;                          // expired 1 min ago
+            const nonce = crypto.randomBytes(16).toString('hex');
+            const tokenData = { type: 'admin', timestamp, expiry, privileges: [], nonce };
+            const message  = JSON.stringify(tokenData);
+            const signature = crypto.createHmac('sha256', secret).update(message).digest('hex');
+            const raw       = Buffer.from(`${message}:${signature}`).toString('base64');
+
+            const result = manager.validateAdminToken(raw);
+            expect(result.valid).toBe(false);
+            expect(result.expired).toBe(true);
+        });
+
+        it('token from a different manager instance (different secret) → invalid', () => {
+            const otherManager = new SessionTokenManager(crypto.randomBytes(32));
+            process.env.ADMIN_PASSWORD = ADMIN_PASSWORD;   // ensure same password  
+            const token = otherManager.generateAdminToken(ADMIN_PASSWORD) as string;
+
+            const result = manager.validateAdminToken(token);
+            expect(result.valid).toBe(false);
+        });
+
+        it('non-admin token type → invalid', () => {
+            const secret = manager.getSecret();
+            const now     = Math.floor(Date.now() / 1000);
+            const tokenData = { type: 'session', timestamp: now, expiry: now + 3600, nonce: 'abc' };
+            const message   = JSON.stringify(tokenData);
+            const signature = crypto.createHmac('sha256', secret).update(message).digest('hex');
+            const raw       = Buffer.from(`${message}:${signature}`).toString('base64');
+
+            const result = manager.validateAdminToken(raw);
+            expect(result.valid).toBe(false);
+            expect(result.expired).toBe(false);
+        });
+
+        it('uses default password "admin123" when ADMIN_PASSWORD env var unset', () => {
+            delete process.env.ADMIN_PASSWORD;
+            const freshSecret = crypto.randomBytes(32);
+            const freshManager = new SessionTokenManager(freshSecret);
+            const token = freshManager.generateAdminToken('admin123');
+            expect(token).not.toBeNull();
+            const result = freshManager.validateAdminToken(token as string);
+            expect(result.valid).toBe(true);
+        });
+    });
 });

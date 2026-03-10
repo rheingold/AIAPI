@@ -146,8 +146,10 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
   - [ ] Test security filters by modifying settings
   - [ ] Validate forms using DOM queries
 - [ ] **End-to-End Tests**: Full workflows from UI to execution
-- [ ] **Security Tests**: Penetration testing, token validation
-- [ ] **Performance Tests**: Load testing, memory leaks
+- [x] **Security Tests**: Penetration testing, token validation
+      _16 tests: generateAdminToken (7) + validateAdminToken (9) — wrong/empty/correct passwords, uniqueness, duration, payload fields, expiry, tamper, garbage, cross-instance rejection — `src/security/SessionTokenManager.test.ts`_
+- [x] **Performance Tests**: Load testing, memory leaks
+      _7 tests: 50 serial requests (p95<200ms, total<5s), 20/50/100 concurrent calls (0 errors, p99<500ms), id-preservation under load, error-path throughput, memory growth <20 MB over 200 requests — `src/server/mcpServer.perf.test.ts`_
 
 ### Configuration UI
 - [x] Create web-based configuration interface

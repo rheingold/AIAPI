@@ -132,7 +132,9 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
   - [x] `wildcardMatch` (glob + /regex/ syntax, 19 tests) — `src/utils/wildcardMatch.test.ts`
   - [x] `xmlScenarioLoader` (substitute, executeXmlScenario, load, listScenarios, circular ref, 27 tests) — `src/scenario/xmlScenarioLoader.test.ts`
         _note: jsdom v28 has ESM-only deps incompatible with Jest CJS mode; solved via `src/__mocks__/jsdom-mock.js` + `moduleNameMapper` in `jest.config.json`_
-  - [ ] `Logger` — onLog callbacks, buffer behavior
+  - [x] `Logger` (onLog callbacks, multiple callbacks, convenience wrappers, logJSON verbose mode, 18 tests) — `src/utils/Logger.test.ts`
+  - [x] `filterEval` (DENY wins, process/command/helper/pattern matching, real-world scenarios; 33 tests) — `src/utils/filterEval.test.ts`
+        _refactor: extracted `evaluateFilterRules()` from duplicate private loops in `mcpServer.ts` and `httpServerWithDashboard.ts`; helper field now unified in both_
   - [ ] MCP server and dashboard server security filter evaluation
 - [ ] **Integration Tests**: MCP server endpoints, security checks
 - [ ] **UI Tests**: Dashboard using AIAPI itself (dogfooding!)

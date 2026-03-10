@@ -12,6 +12,7 @@ import { SessionTokenManager } from '../security/SessionTokenManager';
 import { SecurityPolicy } from '../security/types';
 import { globalLogger } from '../utils/Logger';
 import { wildcardMatch } from '../utils/wildcardMatch';
+import { evaluateFilterRules } from '../utils/filterEval';
 import { HelperRegistry } from '../helpers/HelperRegistry';
 import { XmlScenarioLoader, RawXmlStep, executeXmlScenario as runXmlScenario } from '../scenario/xmlScenarioLoader';
 
@@ -1859,34 +1860,15 @@ export class HttpServerWithDashboard {
       const filters: any[] = this.config.advancedFilters || [];
 
       // Strip {BRACES} from command if present, matching same logic as mcpServer
-      const cmdType = (command || '').replace(/^\{|\}$/g, '');
-
-      let verdict: 'ALLOW' | 'DENY' = 'ALLOW'; // permissive default
-      let matchedFilter: any = null;
-      let reason = 'No rule matched — default ALLOW';
-
-      for (const f of filters) {
-        if (!wildcardMatch(f.process || '*', proc || '')) continue;
-        const filterCmd = (f.command || '*').replace(/^\{|\}$/g, '');
-        if (filterCmd !== '*' && !wildcardMatch(filterCmd, cmdType)) continue;
-        if (!wildcardMatch(f.pattern || '*', parameter || '')) continue;
-        // Also check helper if set
-        if (f.helper && f.helper !== '*' && !wildcardMatch(f.helper, helper || '')) continue;
-
-        matchedFilter = f;
-        if (f.action === 'deny') {
-          verdict = 'DENY';
-          reason = `Matched DENY rule #${f.id}: ${f.description || f.action + ' ' + f.process + ' → ' + f.helper + '::' + f.command + '/' + f.pattern}`;
-          break; // DENY wins
-        } else {
-          verdict = 'ALLOW';
-          reason = `Matched ALLOW rule #${f.id}: ${f.description || f.action + ' ' + f.process + ' → ' + f.helper + '::' + f.command + '/' + f.pattern}`;
-          // Don't break — a later DENY could override
-        }
-      }
+      const { verdict: rawVerdict, matchedRule, reason: rawReason } = evaluateFilterRules(
+        filters, proc || '', helper || '', command || '', parameter || ''
+      );
+      // Default to ALLOW when no rule matched (permissive dashboard default)
+      const verdict: 'ALLOW' | 'DENY' = rawVerdict ?? 'ALLOW';
+      const reason = rawVerdict === null ? 'No rule matched — default ALLOW' : rawReason;
 
       res.writeHead(200);
-      res.end(JSON.stringify({ success: true, verdict, reason, matchedFilter }));
+      res.end(JSON.stringify({ success: true, verdict, reason, matchedFilter: matchedRule }));
     } catch (error) {
       res.writeHead(500);
       res.end(JSON.stringify({ success: false, error: String(error) }));

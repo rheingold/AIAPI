@@ -8,6 +8,7 @@ import { XmlScenarioLoader, executeXmlScenario as runXmlScenario } from '../scen
 import { SessionTokenManager } from '../security/SessionTokenManager';
 import { globalLogger } from '../utils/Logger';
 import { wildcardMatch } from '../utils/wildcardMatch';
+import { evaluateFilterRules } from '../utils/filterEval';
 import { HelperRegistry } from '../helpers/HelperRegistry';
 
 /**
@@ -167,33 +168,17 @@ export class MCPServer {
     }
 
     // 2. Apply dashboard-managed advanced filters (DENY wins over ALLOW)
-    //    filter.command is stored as "{CLICKNAME}" — strip braces to compare with commandType
     if (this.advancedFilters.length > 0) {
-      let matchedDeny = false;
-      let matchedAllow = false;
-
-      for (const filter of this.advancedFilters) {
-        // Match process name
-        if (!wildcardMatch(filter.process || '*', processName)) continue;
-
-        // Match command — stored as {CLICKID}, commandType is CLICKID
-        const filterCmd = filter.command.replace(/^\{|\}$/g, '');
-        if (!wildcardMatch(filterCmd, commandType) && filter.command !== '*') continue;
-
-        // Match parameter pattern
-        if (!wildcardMatch(filter.pattern || '*', parameter || '')) continue;
-
-        if (filter.action === 'deny') {
-          matchedDeny = true;
-          globalLogger.warn('Security', `Advanced filter DENY: ${commandType} on ${processName} (param: ${parameter})`);
-          break; // DENY wins immediately
-        } else {
-          matchedAllow = true;
-        }
+      // helperName is not available at this call-site; passing '' causes
+      // evaluateFilterRules to skip helper-field matching (backward-compat).
+      const { verdict } = evaluateFilterRules(
+        this.advancedFilters, processName, '', commandType, parameter || ''
+      );
+      if (verdict === 'DENY') {
+        globalLogger.warn('Security', `Advanced filter DENY: ${commandType} on ${processName} (param: ${parameter})`);
+        return 'DENY';
       }
-
-      if (matchedDeny) return 'DENY';
-      if (matchedAllow) {
+      if (verdict === 'ALLOW') {
         globalLogger.info('Security', `Advanced filter ALLOW: ${commandType} on ${processName}`);
         // Continue to built-in rules for additional checks
       }

@@ -34,8 +34,9 @@ tsconfig.json
 .vscode/**
 .venv/**
 
-# Node source (vsce bundles production node_modules automatically)
-node_modules/**
+# node_modules: vsce automatically bundles only production deps (package.json[dependencies])
+# Do NOT add node_modules/** here — that would prevent bundling entirely.
+node_modules/.bin/**
 
 # Package manager lockfile
 package-lock.json

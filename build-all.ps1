@@ -141,7 +141,7 @@ $vsce = "$root\node_modules\.bin\vsce.cmd"
 if (-not (Test-Path $vsce)) { $vsce = "$root\node_modules\.bin\vsce" }
 
 if (Test-Path $vsce) {
-    & $vsce package --out "$releaseDir" --no-dependencies 2>&1
+    & $vsce package --out "$releaseDir" 2>&1
     Write-Host "vsce package exit: $LASTEXITCODE"
     $vsix = Get-ChildItem $releaseDir -Filter '*.vsix' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($vsix) {

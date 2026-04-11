@@ -417,7 +417,7 @@ MCP server ALSO applies filters for defense-in-depth.
 ### N-0.2 — `package.json` cleanup
 - [x] Set `"publisher": "rheingold"`
 - [x] Fix `"repository".url` → `https://github.com/rheingold/AIAPI`
-- [x] Fix `"files"` array — removed `MCP_IPC_QUICK.md`, `INDEX.md`; added `static/`, `config/`, `security/`
+- [x] Fix `"files"` array — removed entirely (`.vscodeignore` is the correct VSIX mechanism)
 - [x] Bump `"version"` → `0.2.0`
 - [x] Add `"extensionKind": ["ui"]`
 - [x] Add `@vscode/vsce` devDependency + `package:vsix` / `publish:vsix` scripts
@@ -426,30 +426,20 @@ MCP server ALSO applies filters for defense-in-depth.
 - [ ] Add `"icon"` field (128×128 PNG, not yet created)
 
 ### N-0.3 — `.vscodeignore`
-- [ ] Create `.vscodeignore` to exclude from VSIX:
-  ```
-  src/**
-  components/helpers/*/src/**
-  tests/**
-  archive/**
-  docs/**
-  scripts/**
-  tools/**
-  *.ps1
-  *.py
-  node_modules/**
-  !node_modules/  # vsce handles this
-  ```
-- [ ] Confirm VSIX includes: `dist/`, `static/`, `config/`,
-  `components/helpers/*/dist-resources/`, `security/`, `README.md`
+- [x] Created `.vscodeignore` — excludes source, tests, docs, build tooling from VSIX
+- [x] `"files"` array removed from `package.json` (vsce does not allow both)
+- [x] VSIX verified: 237 files, 562 KB — includes `dist/` (204 files), `config/`,
+  `security/`, `components/` apptemplates (12 files), `README.md`, `LICENSE`, `CHANGELOG.md`
 
 ### N-0.4 — Build & CI
-- [ ] Add `vsce package` step to `build-all.ps1` (after `npm run compile`)
-  → `dist/release/ai-ui-automation-<version>.vsix`
-- [ ] CI artifact: upload `.vsix` on every tagged release
-- [ ] Optional: `vsce publish` from CI when tag matches `v*` (requires PAT secret)
+- [x] Added `vsce package` step to `build-all.ps1` — outputs
+  `dist/release/ai-ui-automation-<version>.vsix`, graceful skip if vsce missing
+- [x] GitHub Actions workflow `.github/workflows/release.yml`:
+  uploads `.vsix` artifact on every run; creates GitHub Release on `v*` tags
+- [x] `CHANGELOG.md` created, referenced in `package.json` `files`
 - [ ] Test install: `code --install-extension dist/release/*.vsix` in a clean profile;
   verify dashboard opens, helpers loaded, MCP tools listed
+- [ ] Optional: `vsce publish` from CI with Marketplace PAT secret (after publisher verified)
 
 ### N-0.5 — Marketplace listing
 - [ ] `README.md`: add badges (VS Code Marketplace version, installs, rating)

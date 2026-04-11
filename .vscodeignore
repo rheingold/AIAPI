@@ -1,0 +1,46 @@
+# Source files — compiled output in dist/ is included instead
+components/server/src/**
+components/helpers/shared/src/**
+components/helpers/windows/src/**
+components/helpers/shims/**
+
+# Test files
+tests/**
+test/**
+**/*.test.ts
+**/*.test.js
+**/*.spec.ts
+**/*.spec.js
+jest.config.json
+build/
+
+# Documentation & planning (not needed at runtime)
+docs/**
+archive/**
+.github/**
+ai.txt
+CONVENTIONS.md
+TODO.md
+START_HERE.md
+
+# Build & dev tooling
+scripts/**
+tools/**
+build-all.ps1
+*.ps1
+*.py
+tsconfig.json
+.eslintrc.json
+.vscode/**
+.venv/**
+
+# Node source (vsce bundles production node_modules automatically)
+node_modules/**
+
+# Package manager lockfile
+package-lock.json
+
+# Git metadata
+.gitignore
+.gitattributes
+.git/**

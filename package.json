@@ -13,7 +13,9 @@
     "vscode": "^1.75.0",
     "node": ">=18"
   },
-  "extensionKind": ["ui"],
+  "extensionKind": [
+    "ui"
+  ],
   "categories": [
     "Other"
   ],
@@ -21,15 +23,6 @@
     "onStartupFinished"
   ],
   "main": "./dist/extension.js",
-  "files": [
-    "dist/**",
-    "static/**",
-    "config/**",
-    "security/**",
-    "LICENSE",
-    "README.md",
-    "START_HERE.md"
-  ],
   "contributes": {
     "configuration": {
       "title": "AI UI Automation",
@@ -94,11 +87,11 @@
     "@types/vscode": "^1.75.0",
     "@typescript-eslint/eslint-plugin": "^5.0.0",
     "@typescript-eslint/parser": "^5.0.0",
+    "@vscode/vsce": "^3.7.1",
     "eslint": "^8.0.0",
     "jest": "^29.0.0",
     "ts-jest": "^29.0.0",
-    "typescript": "^5.0.0",
-    "@vscode/vsce": "^3.0.0"
+    "typescript": "^5.0.0"
   },
   "dependencies": {
     "@types/ws": "^8.18.1",

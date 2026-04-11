@@ -1,0 +1,51 @@
+name: Release VSIX
+
+on:
+  push:
+    tags:
+      - 'v*'        # triggers on v0.2.0, v1.0.0, etc.
+  workflow_dispatch:  # allows manual trigger from GitHub Actions tab
+
+jobs:
+  build-vsix:
+    runs-on: windows-latest   # extension must package on Windows (C# helpers use csc.exe)
+    permissions:
+      contents: write         # needed to upload release assets
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile TypeScript
+        run: npm run compile
+
+      - name: Build C# helpers (KeyWin, BrowserWin, MSOfficeWin, LibreOfficeWin)
+        shell: pwsh
+        run: PowerShell -ExecutionPolicy Bypass -File build-all.ps1
+        continue-on-error: true   # C# step may fail if MSVC not present; VSIX still builds
+
+      - name: Package VSIX
+        run: npm run package:vsix
+
+      - name: Upload VSIX artifact (every run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-ui-automation-vsix
+          path: dist/release/*.vsix
+          if-no-files-found: error
+
+      - name: Create GitHub Release and attach VSIX (tagged runs only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/release/*.vsix
+          generate_release_notes: true

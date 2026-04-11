@@ -35,7 +35,7 @@ export class MCPServer {
     description?: string;
   }> = [];
   private disabledHelpers: string[] = [];
-  private appTemplatesDir: string;
+  private appTemplateRoots: string[];
   private readonly settingsPath = path.resolve(process.cwd(), 'config', 'dashboard-settings.json');
 
   constructor(automationEngine?: AutomationEngine, port: number = 3457, pkBytes?: Buffer) {
@@ -57,7 +57,10 @@ export class MCPServer {
       this.sessionTokenManager
     );
     this.docsPath = process.cwd();
-    this.appTemplatesDir = path.join(this.docsPath, 'components/server/dist-resources/apptemplates');
+    this.appTemplateRoots = [
+      path.join(this.docsPath, 'components/helpers/shared/dist-resources/apptemplates'),
+      path.join(this.docsPath, 'components/helpers/windows/dist-resources/apptemplates'),
+    ];
 
     // Setup security filter validator if config exists
     this.setupSecurityFilter();
@@ -96,11 +99,16 @@ export class MCPServer {
         if (saved.testSessionDir && typeof saved.testSessionDir === 'string') {
           this.helperRegistry.setSessionBaseDir(saved.testSessionDir);
         }
-        if (typeof saved.appTemplatesDir === 'string' && saved.appTemplatesDir) {
+        if (Array.isArray(saved.appTemplateRoots) && saved.appTemplateRoots.length > 0) {
+          this.appTemplateRoots = saved.appTemplateRoots.map((r: string) =>
+            path.isAbsolute(r) ? r : path.resolve(process.cwd(), r)
+          );
+        } else if (typeof saved.appTemplatesDir === 'string' && saved.appTemplatesDir) {
+          // legacy single-path compat
           const resolved = path.isAbsolute(saved.appTemplatesDir)
             ? saved.appTemplatesDir
             : path.resolve(process.cwd(), saved.appTemplatesDir);
-          this.appTemplatesDir = resolved;
+          this.appTemplateRoots = [resolved];
         }
         globalLogger.info('Security', `Loaded ${this.advancedFilters.length} advanced filter rule(s) from dashboard-settings.json`);
         if (this.disabledHelpers.length > 0) {
@@ -934,13 +942,20 @@ export class MCPServer {
    * Execute a named scenario from the XML app template library.
    * Delegates to the shared executor in xmlScenarioLoader.ts.
    */
+  private findAppRoot(appName: string): string {
+    for (const root of this.appTemplateRoots) {
+      if (fs.existsSync(path.join(root, appName))) return root;
+    }
+    return this.appTemplateRoots[0];
+  }
+
   private async executeXmlScenario(
     app: string,
     scenarioId: string,
     userParams: Record<string, string>,
     verbose: boolean,
   ): Promise<any> {
-    const loader   = new XmlScenarioLoader(this.appTemplatesDir);
+    const loader   = new XmlScenarioLoader(this.findAppRoot(app));
     const scenario = loader.load(app, scenarioId);
     return runXmlScenario({
       scenario,

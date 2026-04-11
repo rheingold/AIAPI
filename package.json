@@ -79,7 +79,8 @@
     "scripts": "dist/**/*.js",
     "assets": [
       "components/server/dist-resources/dashboard/**",
-      "components/server/dist-resources/apptemplates/**",
+      "components/helpers/shared/dist-resources/apptemplates/**",
+      "components/helpers/windows/dist-resources/apptemplates/**",
       "config/dashboard-settings.json",
       "dist/helpers/**"
     ],

@@ -13,11 +13,11 @@ $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 if (-not (Test-Path $csc)) { $csc = "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe" }
 Write-Host "Using csc: $csc"
 
-$helperCommonSrc = "$root\components\tools\shared\src\HelperCommon.cs"
-$winCommonSrc    = "$root\components\tools\shared\src\WinCommon.cs"
-$keySrc          = "$root\components\tools\windows\src\KeyWin.cs"
-$browserSrc      = "$root\components\tools\windows\src\BrowserWin.cs"
-$officeSrc       = "$root\components\tools\windows\src\MSOfficeWin.cs"
+$helperCommonSrc = "$root\components\helpers\shared\src\HelperCommon.cs"
+$winCommonSrc    = "$root\components\helpers\shared\src\WinCommon.cs"
+$keySrc          = "$root\components\helpers\windows\src\KeyWin.cs"
+$browserSrc      = "$root\components\helpers\windows\src\BrowserWin.cs"
+$officeSrc       = "$root\components\helpers\windows\src\MSOfficeWin.cs"
 $helpersDestDir  = "$root\dist\helpers"
 
 New-Item -ItemType Directory -Force -Path $helpersDestDir | Out-Null
@@ -59,7 +59,7 @@ Write-Host "=== Building MSOfficeWin.exe ==="
 Write-Host "MSOfficeWin exit: $LASTEXITCODE"
 
 # Build LibreOfficeWin.exe  (LibreOffice/OpenOffice via UNO COM bridge; no UNO type libs needed)
-$lofficeSrc = "$root\components\tools\windows\src\LibreOfficeWin.cs"
+$lofficeSrc = "$root\components\helpers\windows\src\LibreOfficeWin.cs"
 Write-Host "=== Building LibreOfficeWin.exe ==="
 & $csc /nologo /target:exe "/out:$helpersDestDir\LibreOfficeWin.exe" "/r:$mcsharp" `
     $helperCommonSrc $lofficeSrc
@@ -68,7 +68,7 @@ Write-Host "LibreOfficeWin exit: $LASTEXITCODE"
 # ── SecurityLib.dll  (native C++ — requires MSVC cl.exe) ─────────────────────
 Write-Host "=== Building SecurityLib.dll ==="
 
-$secLibSrc  = "$root\components\tools\shared\src\security\SecurityLib.cpp"
+$secLibSrc  = "$root\components\helpers\shared\src\security\SecurityLib.cpp"
 $secLibDest = "$helpersDestDir\SecurityLib.dll"
 
 # Locate cl.exe from any installed VS / Build Tools

@@ -8,7 +8,7 @@ If something already exists here, extend or reuse it — do NOT create a paralle
 
 ## 1. Command taxonomy (UI primitives)
 
-These are the ONLY commands that belong in `<action>` elements in `components/server/dist-resources/apptemplates/*/tree.xml`.  
+These are the ONLY commands that belong in `<action>` elements in `components/helpers/*/dist-resources/apptemplates/*/tree.xml`.  
 They are technology-level primitives, not application scenarios.
 
 | Command      | Helper(s)        | What it does |
@@ -223,7 +223,7 @@ body/table[2]/row[1]/cell[1]       → doc.Tables(2).Rows(1).Cells(1).Range.Text
 sheet[@name='Q1']/chart[1]/title   → Sheets("Q1").ChartObjects(1).Chart.ChartTitle.Text
 ```
 An AI that knows the Office COM OM can construct any valid path. The `<PathEnumeration>` sections
-in `components/server/dist-resources/apptemplates/*/tree.xml` list well-known paths as documentation and as the whitelist for
+in `components/helpers/*/dist-resources/apptemplates/*/tree.xml` list well-known paths as documentation and as the whitelist for
 strict mode (setting `strictPathEnumeration: true` — see TODO.md §E and CONVENTIONS.md §5).
 
 **Office suite transparency**: `body/para[N]` and `sheet/cell` are intentionally suite-neutral —
@@ -409,7 +409,12 @@ Once the target format is live:
 
 ---
 
-## 3. App template structure (`components/server/dist-resources/apptemplates/<app>/`)
+## 3. App template structure
+
+Templates live **inside the helper component** that implements them, split by OS scope:
+
+- **OS-neutral** (CDP-based, shared across platforms): `components/helpers/shared/dist-resources/apptemplates/<app>/`
+- **Windows-specific** (UIA-based): `components/helpers/windows/dist-resources/apptemplates/<app>/`
 
 | File             | Purpose |
 |------------------|---------|
@@ -419,7 +424,7 @@ Once the target format is live:
 
 > **Planned (deferred — see TODO.md "App Template Namespacing"):** `<app>` will become a
 > slash-separated reverse-domain path, e.g. `com.microsoft/windows.v11/calculator`.
-> Current layout (`components/server/dist-resources/apptemplates/calculator/`) is the flat interim form.
+> Current layout (`components/helpers/windows/dist-resources/apptemplates/calculator/`) is the flat interim form.
 > Do NOT create new parallel app folder conventions — wait for the namespace migration.
 
 ### `<Group>` element rules
@@ -449,15 +454,16 @@ Example:
 components/server/src/helpers/HelperRegistry.ts   ← helper process management
 components/server/src/server/mcpServer.ts         ← MCP JSON-RPC server
 components/server/src/server/httpServerWithDashboard.ts ← REST + WebSocket dashboard server
-components/tools/shared/src/HelperCommon.cs       ← shared C# helper base (HelperCommon.cs, WinCommon.cs)
-components/tools/windows/src/KeyWin.cs            ← Windows keystroke helper
-components/tools/windows/src/BrowserWin.cs        ← Windows browser CDP helper
-components/tools/shared/src/security/SecurityLib.cpp ← SecurityLib native C++ DLL
+components/helpers/shared/src/HelperCommon.cs       ← shared C# helper base (HelperCommon.cs, WinCommon.cs)
+components/helpers/windows/src/KeyWin.cs            ← Windows keystroke helper
+components/helpers/windows/src/BrowserWin.cs        ← Windows browser CDP helper
+components/helpers/shared/src/security/SecurityLib.cpp ← SecurityLib native C++ DLL
 dist/helpers/                   ← compiled EXEs (KeyWin.exe, BrowserWin.exe) + SecurityLib.dll
 config/dashboard-settings.json  ← runtime settings (was root dashboard-settings.json)
 config/security/config.json     ← security policy: binaryHashes, filterRules, defaultPolicy
 config/users.json               ← user/role store when auth.users.storeSource = "json" (signed)
-components/server/dist-resources/apptemplates/    ← app template library (tree.xml + scenarios.xml per app)
+components/helpers/shared/dist-resources/apptemplates/  ← OS-neutral app templates (chrome/, schemas)
+components/helpers/windows/dist-resources/apptemplates/ ← Windows-specific app templates (calculator/, notepad/)
 test/src/integration/           ← full-stack integration tests
 
 components/server/src/auth/types.ts               ← IAuthProvider, IUserStore, User, Role, AuthResult, all auth interfaces
@@ -487,7 +493,7 @@ Documented keys — do NOT add new ones without updating this list:
 
 | Key | Type | Default | Purpose |
 |-----|------|---------|---------|
-| `appTemplatesDir` | string | `./components/server/dist-resources/apptemplates` | Root for app template library |
+| `appTemplateRoots` | string[] | `['./components/helpers/shared/dist-resources/apptemplates', './components/helpers/windows/dist-resources/apptemplates']` | Ordered list of helper apptemplates roots; legacy single-path `appTemplatesDir` still accepted |
 | `scenariosPath` | string | `./scenarios` | Legacy scenario JSON files |
 | `mcpPort` | number | `3457` | MCP JSON-RPC listen port |
 | `helperPaths` | string[] | `["./dist/win/*.exe"]` | Helper EXE discovery paths |
@@ -663,7 +669,7 @@ DENY   _internal  (anyandall)   *             *          ← default-deny everyt
 
 - [ ] Does a command with this intent already exist in §1?
 - [ ] Does a target addressing scheme for this already exist in §2?
-- [ ] Does an app template file already exist in `components/server/dist-resources/apptemplates/`?
+- [ ] Does an app template file already exist in `components/helpers/shared/dist-resources/apptemplates/` or `components/helpers/windows/dist-resources/apptemplates/`?
 - [ ] Does a REST endpoint already exist in §6?
 - [ ] Does a settings key already exist in §5?
 - [ ] Is the source file I'm about to create already in §4?

@@ -63,21 +63,31 @@ AIAPI/
 │   │   │   └── __mocks__/          jsdom-mock.js  encoding-stub.js
 │   │   └── dist-resources/         Shipped assets copied to dist/ on build
 │   │       ├── dashboard/          Dashboard SPA (dashboard.html/css/js, favicon.svg)
-│   │       ├── apptemplates/       Per-app XML knowledge base (calculator/ notepad/ chrome/)
 │   │       └── config-defaults/    Starter config templates — setup wizard copies these to runtime/
 │   │
-│   └── tools/                      C# helper executables
-│       ├── shared/src/             Compiled into every helper .exe (see ADR-001)
-│       │   ├── HelperCommon.cs     Cross-platform shared boilerplate
-│       │   ├── WinCommon.cs        Windows-specific UIA helpers (KeyWin + BrowserWin)
-│       │   └── security/
-│       │       ├── SecurityLib.cpp Native C++ security library (see ADR-003)
-│       │       └── SecurityLib.h
-│       ├── windows/src/            Windows-only helpers
-│       │   ├── KeyWin.cs           Win32 + UIA helper (all UI automation)
-│       │   ├── BrowserWin.cs       CDP + UIA browser helper (Chrome/Edge/Brave/Firefox)
-│       │   ├── MSOfficeWin.cs      Microsoft Office COM helper (Word/Excel/PowerPoint)
-│       │   └── LibreOfficeWin.cs   LibreOffice UNO socket helper
+│   └── helpers/                    C# helper executables
+│       ├── shared/
+│       │   ├── src/                Compiled into every helper .exe (see ADR-001)
+│       │   │   ├── HelperCommon.cs     Cross-platform shared boilerplate
+│       │   │   ├── WinCommon.cs        Windows-specific UIA helpers (KeyWin + BrowserWin)
+│       │   │   └── security/
+│       │   │       ├── SecurityLib.cpp Native C++ security library (see ADR-003)
+│       │   │       └── SecurityLib.h
+│       │   └── dist-resources/
+│       │       └── apptemplates/   OS-neutral app templates (CDP-based; present on all platforms)
+│       │           ├── chrome/
+│       │           ├── scenarios.xsd
+│       │           └── tree.xsd
+│       ├── windows/
+│       │   ├── src/                Windows-only helpers
+│       │   │   ├── KeyWin.cs           Win32 + UIA helper (all UI automation)
+│       │   │   ├── BrowserWin.cs       CDP + UIA browser helper (Chrome/Edge/Brave/Firefox)
+│       │   │   ├── MSOfficeWin.cs      Microsoft Office COM helper (Word/Excel/PowerPoint)
+│       │   │   └── LibreOfficeWin.cs   LibreOffice UNO socket helper
+│       │   └── dist-resources/
+│       │       └── apptemplates/   Windows-specific app templates (UIA-based)
+│       │           ├── calculator/
+│       │           └── notepad/
 │       ├── linux/                  (future: KeyLin, BrowserLin)
 │       ├── macos/                  (future: KeyMac)
 │       └── shims/                  dotnet.cmd — .NET shim for build toolchain

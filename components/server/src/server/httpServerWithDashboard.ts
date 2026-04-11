@@ -92,7 +92,10 @@ export class HttpServerWithDashboard {
       blockedPaths: [],
       advancedFilters: [],
       disabledHelpers: [] as string[],
-      appTemplatesDir: './components/server/dist-resources/apptemplates',
+      appTemplateRoots: [
+        './components/helpers/shared/dist-resources/apptemplates',
+        './components/helpers/windows/dist-resources/apptemplates',
+      ],
       testSessionDir: './test/sessionlogs',
     };
     
@@ -1098,25 +1101,44 @@ export class HttpServerWithDashboard {
   /**
    * GET /api/scenarios
    */
+  /** Returns the ordered list of resolved app template root directories.
+   *  Priority: `appTemplateRoots[]` setting > legacy `appTemplatesDir` string > built-in defaults.
+   */
+  private resolveAppTemplateRoots(): string[] {
+    const raw = (this.config as any).appTemplateRoots;
+    if (Array.isArray(raw) && raw.length > 0) {
+      return raw.map((r: string) => path.isAbsolute(r) ? r : path.resolve(process.cwd(), r));
+    }
+    const single = (this.config as any).appTemplatesDir;
+    if (typeof single === 'string' && single) {
+      return [path.resolve(process.cwd(), single)];
+    }
+    return [
+      path.resolve(process.cwd(), 'components/helpers/shared/dist-resources/apptemplates'),
+      path.resolve(process.cwd(), 'components/helpers/windows/dist-resources/apptemplates'),
+    ];
+  }
+
+  /** Returns the first root containing a subdirectory named `appName`, or null. */
+  private findAppRoot(appName: string): string | null {
+    for (const root of this.resolveAppTemplateRoots()) {
+      if (fs.existsSync(path.join(root, appName))) return root;
+    }
+    return null;
+  }
+
   /**
    * GET /api/appTemplates
    * Lists all available app templates (subdirectories of appTemplatesDir).
    */
   private handleListAppTemplates(_req: http.IncomingMessage, res: http.ServerResponse): void {
     try {
-      const templatesDir = path.resolve(
-        process.cwd(),
-        this.config.appTemplatesDir || './apptemplates'
-      );
-      if (!fs.existsSync(templatesDir)) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, apps: [] }));
-        return;
-      }
-      const entries = fs.readdirSync(templatesDir, { withFileTypes: true });
-      const apps = entries
-        .filter(e => e.isDirectory())
-        .map(e => {
+      const roots = this.resolveAppTemplateRoots();
+      const appsMap = new Map<string, { name: string; hasTree: boolean; hasScenarios: boolean; scenarioCount: number | null }>();
+      for (const templatesDir of roots) {
+        if (!fs.existsSync(templatesDir)) continue;
+        for (const e of fs.readdirSync(templatesDir, { withFileTypes: true }).filter(e => e.isDirectory())) {
+          if (appsMap.has(e.name)) continue; // first root wins
           const hasTree      = fs.existsSync(path.join(templatesDir, e.name, 'tree.xml'));
           const hasScenarios = fs.existsSync(path.join(templatesDir, e.name, 'scenarios.xml'));
           let scenarioCount: number | null = null;
@@ -1126,10 +1148,11 @@ export class HttpServerWithDashboard {
               scenarioCount = (xml.match(/<Scenario\s/g) ?? []).length;
             } catch { /* ignore */ }
           }
-          return { name: e.name, hasTree, hasScenarios, scenarioCount };
-        });
+          appsMap.set(e.name, { name: e.name, hasTree, hasScenarios, scenarioCount });
+        }
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, apps }));
+      res.end(JSON.stringify({ success: true, apps: [...appsMap.values()] }));
     } catch (error) {
       this.log('error', 'appTemplates', `Failed to list app templates: ${error}`);
       res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -1165,10 +1188,7 @@ export class HttpServerWithDashboard {
       res.end(JSON.stringify({ success: false, error: 'Invalid app name' }));
       return;
     }
-    const templatesDir = path.resolve(
-      process.cwd(),
-      this.config.appTemplatesDir || './apptemplates'
-    );
+    const templatesDir = this.findAppRoot(appName) ?? this.resolveAppTemplateRoots()[0];
     const xmlFile = path.join(templatesDir, appName, `${fileKey}.xml`);
     if (!fs.existsSync(xmlFile)) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -1203,7 +1223,7 @@ export class HttpServerWithDashboard {
       return;
     }
     const [, appName] = m;
-    const templatesDir = path.resolve(process.cwd(), this.config.appTemplatesDir || './apptemplates');
+    const templatesDir = this.findAppRoot(appName) ?? this.resolveAppTemplateRoots()[0];
     const loader = new XmlScenarioLoader(templatesDir);
     try {
       const info = loader.listScenarios(appName);
@@ -1235,7 +1255,7 @@ export class HttpServerWithDashboard {
       return;
     }
     const [, appName, scenarioId] = m;
-    const templatesDir = path.resolve(process.cwd(), this.config.appTemplatesDir || './apptemplates');
+    const templatesDir = this.findAppRoot(appName) ?? this.resolveAppTemplateRoots()[0];
     const loader = new XmlScenarioLoader(templatesDir);
     try {
       const raw = loader.loadRaw(appName, scenarioId);
@@ -1280,7 +1300,7 @@ export class HttpServerWithDashboard {
       res.end(JSON.stringify({ success: false, error: 'Body must have a steps array' }));
       return;
     }
-    const templatesDir = path.resolve(process.cwd(), this.config.appTemplatesDir || './apptemplates');
+    const templatesDir = this.findAppRoot(appName) ?? this.resolveAppTemplateRoots()[0];
     const loader = new XmlScenarioLoader(templatesDir);
     try {
       loader.save(appName, scenarioId, payload.label ?? scenarioId, payload.steps, payload.meta);
@@ -1337,10 +1357,7 @@ export class HttpServerWithDashboard {
       try { if (body) parsed = JSON.parse(body); } catch { /* use defaults */ }
 
       try {
-        const templatesDir = path.resolve(
-          process.cwd(),
-          this.config.appTemplatesDir || './apptemplates',
-        );
+        const templatesDir = this.findAppRoot(appName) ?? this.resolveAppTemplateRoots()[0];
         const loader   = new XmlScenarioLoader(templatesDir);
         const scenario = loader.load(appName, scenarioId);
         const registry = this.helperRegistry!;

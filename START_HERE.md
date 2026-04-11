@@ -51,7 +51,7 @@ Get-Process node -EA SilentlyContinue | Stop-Process -Force
 Get-Process KeyWin, BrowserWin -EA SilentlyContinue | Stop-Process -Force
 
 # 2. Rebuild TypeScript + C# helpers
-PowerShell -ExecutionPolicy Bypass -File build-all.ps1
+PowerShell -ExecutionPolicy Bypass -File build/windows/build.ps1
 
 # 3. Restart server (daemons start automatically on first tool call)
 node dist/start-mcp-server.js
@@ -125,7 +125,7 @@ This creates `ai-ui-automation-0.1.1.vsix` which can be installed in VS Code.
 - Check if Calculator is running: `Get-Process ApplicationFrameHost`
 
 ### Helper .exe not found (KeyWin.exe / BrowserWin.exe)
-- Rebuild: `PowerShell -ExecutionPolicy Bypass -File build-all.ps1`
+- Rebuild: `PowerShell -ExecutionPolicy Bypass -File build/windows/build.ps1`
 - Check: `Test-Path dist\win\KeyWin.exe` and `Test-Path dist\browser\BrowserWin.exe`
 - If build fails with "file in use": server is still running — see **Rebuild Workflow** above
 
@@ -137,7 +137,7 @@ npm run watch
 
 # Rebuild everything (TypeScript + KeyWin.exe + BrowserWin.exe)
 # ⚠️ Stop server first! See Rebuild Workflow above.
-PowerShell -ExecutionPolicy Bypass -File build-all.ps1
+PowerShell -ExecutionPolicy Bypass -File build/windows/build.ps1
 
 # TypeScript only
 npm run compile
@@ -149,18 +149,24 @@ npm run compile
 AIAPI/
 ├── dist/                      # Compiled output
 │   ├── start-mcp-server.js   # Server entry point
-│   ├── win/KeyWin.exe         # Windows UI automation helper
-│   └── browser/BrowserWin.exe # Browser (CDP + UIA) helper
-├── src/                       # TypeScript source
-│   ├── extension.ts           # VS Code extension
-│   ├── server/                # MCP server + HelperRegistry
-│   ├── engine/                # Automation engine
-│   └── providers/             # Platform providers
-├── tools/helpers/win/KeyWin.cs        # KeyWin source
-├── tools/helpers/browser/BrowserWin.cs # BrowserWin source
-├── tools/helpers/common/HelperCommon.cs # Shared helper transport code
-├── scripts/                   # Build scripts
+│   └── helpers/               # KeyWin.exe  BrowserWin.exe  MSOfficeWin.exe  LibreOfficeWin.exe
+├── components/
+│   ├── server/src/            # TypeScript source
+│   │   ├── extension.ts       # VS Code extension
+│   │   ├── server/            # MCP server + HelperRegistry
+│   │   ├── engine/            # Automation engine
+│   │   └── providers/         # Platform providers
+│   ├── server/dist-resources/ # dashboard/  apptemplates/  config-defaults/
+│   └── tools/
+│       ├── shared/src/        # HelperCommon.cs  WinCommon.cs  security/SecurityLib.cpp
+│       └── windows/src/       # KeyWin.cs  BrowserWin.cs  MSOfficeWin.cs  LibreOfficeWin.cs
+├── build/windows/build.ps1    # Master build script (tsc + csc + SecurityLib)
+├── build/                     # package-win.ps1  install-win.ps1  …
+├── config/                    # Runtime config (→ runtime/config/ after setup wizard)
+├── security/                  # Encrypted RSA keys (→ runtime/keys/ after setup wizard)
+├── test/src/                  # Integration + unit tests
+├── docs/                      # All documentation (INDEX.md, api/, architecture/, guides/, specs/)
 ├── package.json               # Dependencies
 ├── tsconfig.json              # TypeScript config
-└── *.md                       # Documentation
+└── CONVENTIONS.md             # Authoritative vocabulary
 ```

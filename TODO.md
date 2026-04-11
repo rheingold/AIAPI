@@ -1,4 +1,4 @@
-# TODO — AIAPI
+﻿# TODO — AIAPI
 
 > **Legend:** 🔴 blocking · 🟡 parallel-ready · ⚪ backlog · ✅ done
 > Architecture: [`docs/architecture/CODEBASE_MAP.md`](docs/architecture/CODEBASE_MAP.md)
@@ -17,6 +17,7 @@
 | S-1 | 🔐 Security & Configuration UI                | 🟡 active   | file-dialog, installer, auth UI panel, log pagination  |
 | S-2 | 🐕 Dogfooding — Self-Test Suite               | 🟡 active   | D1 dashboard test, D2 schema round-trip, D3 filter test|
 | S-3 | 🌐 Web Scraping & Network Tools               | 🟡 active   | fetch_webpage ✅; advanced network protocols pending   |
+| N-0 | 📦 VS Code Extension — VSIX & Marketplace     | ⚪ next     | activate() rewrite, vsce package, .vscodeignore, publisher |
 | N-1 | 📚 App Knowledge Base Extensions              | ⚪ next     | usr layer live, namespacing, embedding vectors         |
 | N-2 | 🎯 Unified Addressing & Input Model           | ⚪ next     | parser, filter engine update, remaining input verbs    |
 | N-3 | 🖥️ Browser Automation — Remaining            | ⚪ next     | alert handling, session auth, CDP/UIA DOM fallbacks    |
@@ -389,6 +390,81 @@ MCP server ALSO applies filters for defense-in-depth.
 
 ---
 
+## N-0 — 📦 VS Code Extension — VSIX & Marketplace
+
+> The extension is the **primary and simplest distribution channel** — any Windows user
+> with VS Code can install a `.vsix` drop-in without Node, build tools, or a service.
+> This chapter tracks the work needed to make that possible.
+
+### Current State
+- [x] Extension scaffolding exists: `src/extension.ts` + `package.json` with
+  `"engines": {"vscode":"^1.75.0"}`, `activationEvents`, `contributes`
+- [x] MCP@IPC command pair (`extension.mcp.callTool`, `extension.mcp.listTools`) registered
+- [ ] **`src/extension.ts` `activate()` is stale** — still starts the old `AutomationEngine`
+  + `HttpServer` stack. Must be updated to start `MCPServer` + `HttpServerWithDashboard`
+  (same as `src/start-mcp-server.ts`) using `context.extensionPath` as working directory.
+  Until this is done the extension does not work with the current server code.
+
+### N-0.1 — Fix `activate()` to start the real server stack
+- [ ] Replace `AutomationEngine`/`HttpServer` in `activate()` with:
+  ```typescript
+  const server = new MCPServer(context.extensionPath);
+  await server.start();
+  context.subscriptions.push({ dispose: () => server.stop() });
+  ```
+- [ ] Pass `context.extensionPath` as root so relative paths (`dist/helpers/`,
+  `config/`) resolve correctly inside the VSIX bundle
+- [ ] Keep `extension.mcp.callTool` / `extension.mcp.listTools` IPC commands —
+  they are the MCP@IPC interface for other extensions
+- [ ] Show status bar item: `$(robot) AIAPI: running on :3457` with click → open dashboard
+- [ ] Output channel `AIAPI` for server logs (replaces console.log)
+- [ ] `deactivate()`: call `server.stop()` + `helperRegistry.shutdownAll()`
+
+### N-0.2 — `package.json` cleanup
+- [ ] Set `"publisher"` field (required for Marketplace; use `rheingold` or register)
+- [ ] Fix `"repository".url` (currently placeholder `yourusername`)
+- [ ] Fix `"files"` array — remove non-existent `MCP_IPC_QUICK.md` and `INDEX.md`;
+  add `components/helpers/*/dist-resources/apptemplates/**`
+- [ ] Add `"icon"` field (128×128 PNG)
+- [ ] Bump `"version"` from `0.1.1` to `0.2.0` (server stack completely changed)
+- [ ] Add `"extensionKind": ["ui"]` — extension must run on the local machine
+  (not in a remote container) because it drives local Windows helpers
+
+### N-0.3 — `.vscodeignore`
+- [ ] Create `.vscodeignore` to exclude from VSIX:
+  ```
+  src/**
+  components/helpers/*/src/**
+  tests/**
+  archive/**
+  docs/**
+  scripts/**
+  tools/**
+  *.ps1
+  *.py
+  node_modules/**
+  !node_modules/  # vsce handles this
+  ```
+- [ ] Confirm VSIX includes: `dist/`, `static/`, `config/`,
+  `components/helpers/*/dist-resources/`, `security/`, `README.md`
+
+### N-0.4 — Build & CI
+- [ ] Add `vsce package` step to `build-all.ps1` (after `npm run compile`)
+  → `dist/release/ai-ui-automation-<version>.vsix`
+- [ ] CI artifact: upload `.vsix` on every tagged release
+- [ ] Optional: `vsce publish` from CI when tag matches `v*` (requires PAT secret)
+- [ ] Test install: `code --install-extension dist/release/*.vsix` in a clean profile;
+  verify dashboard opens, helpers loaded, MCP tools listed
+
+### N-0.5 — Marketplace listing
+- [ ] `README.md`: add badges (VS Code Marketplace version, installs, rating)
+- [ ] Screenshot or GIF showing dashboard + scenario run in the Marketplace description
+- [ ] `CHANGELOG.md`: document all changes since v0.1.1
+- [ ] Category: `"Other"` → consider `"Programming Languages"` + `"Debuggers"` or
+  `"Machine Learning"` for discoverability
+
+---
+
 ## N-1 — 📚 App Knowledge Base — Extensions
 
 **Goal:** Usr override layer, reverse-domain namespace hierarchy, embedding vectors.
@@ -756,6 +832,7 @@ Older (2005-2015): AX API  →  AppleScript  →  CGEventPost
 | **Test infra (self-hosted)** | `tests/integration/test-full-stack-stdin.js` | --self-hosted, --rebuild-first, reloadHelpers(), testSession helpers; 122 tests passing |
 | **Security Filter System** | `src/utils/filterEval.ts`, `src/server/securityFilter.ts` | DENY-wins evaluation; admin bypass; wildcard + /regex/ patterns; wizard + Quick-Edit UI; binary-hash + process-path criteria; 73 unit tests |
 | **Session Token Auth** | `src/security/SessionTokenManager.ts` | 16 unit tests; admin token generate/validate; 15-min expiry; audit logging |
+| **VS Code Extension scaffold** | `src/extension.ts`, `package.json` | Extension activates; MCP@IPC commands (`extension.mcp.callTool`, `extension.mcp.listTools`) registered and working; `"engines":{"vscode":"^1.75.0"}` + `contributes` defined. **`activate()` rewrite pending** — currently starts stale `AutomationEngine`+`HttpServer`; N-0.1 tracks the fix. |
 | **App Knowledge Base (core)** | `components/helpers/*/dist-resources/apptemplates/` | `tree.xsd`, `scenarios.xsd` defined; calculator, notepad, chrome templates authored; ScenarioRef recursion; XmlScenarioLoader + 27 tests; `executeScenario` MCP tool; REST endpoints; dashboard App Templates card; metadata panel; scenario↔filter sidebar |
 | **Project Folder Reconciliation** | commits `cb37bd0`, `be66ceb`, `63624e2` | `components/tools/` → `components/helpers/`; apptemplates split to shared/windows; multi-root `resolveAppTemplateRoots()`; CONVENTIONS.md, CODEBASE_MAP.md updated; legacy JSON scenarios removed |
 | **MCP Server Integration Tests** | `src/server/mcpServer.integration.test.ts` | 39 tests: HTTP transport, JSON-RPC compliance, MCP core, tools/call, admin token API, security filter wire |

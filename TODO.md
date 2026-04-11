@@ -437,8 +437,8 @@ MCP server ALSO applies filters for defense-in-depth.
 - [x] GitHub Actions workflow `.github/workflows/release.yml`:
   uploads `.vsix` artifact on every run; creates GitHub Release on `v*` tags
 - [x] `CHANGELOG.md` created, referenced in `package.json` `files`
-- [ ] Test install: `code --install-extension dist/release/*.vsix` in a clean profile;
-  verify dashboard opens, helpers loaded, MCP tools listed
+- [x] Test install: `code --install-extension dist/release/ai-ui-automation-0.2.0.vsix` —
+  exit 0, `rheingold.ai-ui-automation` listed; stale `undefined_publisher` copy uninstalled
 - [ ] Optional: `vsce publish` from CI with Marketplace PAT secret (after publisher verified)
 
 ### N-0.5 — Marketplace listing

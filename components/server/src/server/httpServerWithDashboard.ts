@@ -61,10 +61,12 @@ export class HttpServerWithDashboard {
   private verboseLogging: boolean = true; // Enabled by default
   private config: any = {}; // Configuration storage
   private processHashCache: Map<string, { hash: string; mtimeMs: number }> = new Map();
-  private readonly settingsFilePath: string = path.resolve(process.cwd(), 'config', 'dashboard-settings.json');
+  private readonly settingsFilePath: string = path.resolve(path.resolve(__dirname, '..', '..'), 'config', 'dashboard-settings.json');
   /** Authentication service — null when auth.mode = "none" (default) */
   private authService: AuthService | null = null;
   private authMiddleware: AuthMiddleware | null = null;
+  /** Resolved once at construction time from __dirname; immune to process.chdir(). */
+  private readonly extensionRoot: string = path.resolve(__dirname, '..', '..');
 
   constructor(automationEngine: AutomationEngine, sessionTokenManager?: SessionTokenManager, port?: number, helperRegistry?: HelperRegistry) {
     this.automationEngine = automationEngine;
@@ -740,7 +742,8 @@ export class HttpServerWithDashboard {
    * Serve static files from the dashboard dist-resources directory
    */
   private serveStaticFile(filename: string, res: http.ServerResponse): void {
-    const staticDir = path.join(process.cwd(), 'components/server/dist-resources/dashboard');
+    // __dirname = {extensionRoot}/dist/server  →  ../../components/server/dist-resources/dashboard
+    const staticDir = path.join(this.extensionRoot, 'components', 'server', 'dist-resources', 'dashboard');
     const filePath = path.join(staticDir, filename);
 
     fs.readFile(filePath, (err, data) => {
@@ -1107,15 +1110,15 @@ export class HttpServerWithDashboard {
   private resolveAppTemplateRoots(): string[] {
     const raw = (this.config as any).appTemplateRoots;
     if (Array.isArray(raw) && raw.length > 0) {
-      return raw.map((r: string) => path.isAbsolute(r) ? r : path.resolve(process.cwd(), r));
+      return raw.map((r: string) => path.isAbsolute(r) ? r : path.resolve(this.extensionRoot, r));
     }
     const single = (this.config as any).appTemplatesDir;
     if (typeof single === 'string' && single) {
-      return [path.resolve(process.cwd(), single)];
+      return [path.resolve(this.extensionRoot, single)];
     }
     return [
-      path.resolve(process.cwd(), 'components/helpers/shared/dist-resources/apptemplates'),
-      path.resolve(process.cwd(), 'components/helpers/windows/dist-resources/apptemplates'),
+      path.resolve(this.extensionRoot, 'components/helpers/shared/dist-resources/apptemplates'),
+      path.resolve(this.extensionRoot, 'components/helpers/windows/dist-resources/apptemplates'),
     ];
   }
 

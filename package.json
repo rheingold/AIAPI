@@ -16,6 +16,7 @@
   "extensionKind": [
     "ui"
   ],
+  "icon": "images/icon.png",
   "categories": [
     "Other"
   ],
@@ -48,7 +49,8 @@
       {
         "command": "aiAutomation.openDashboard",
         "title": "Open Dashboard",
-        "category": "AIAPI"
+        "category": "AIAPI",
+        "icon": "$(browser)"
       }
     ]
   },

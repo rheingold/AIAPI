@@ -13,11 +13,11 @@ $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 if (-not (Test-Path $csc)) { $csc = "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe" }
 Write-Host "Using csc: $csc"
 
-$helperCommonSrc = "$root\tools\helpers\common\HelperCommon.cs"
-$winCommonSrc    = "$root\tools\helpers\common\WinCommon.cs"
-$keySrc          = "$root\tools\helpers\win\KeyWin.cs"
-$browserSrc      = "$root\tools\helpers\browser\BrowserWin.cs"
-$officeSrc       = "$root\tools\helpers\office\MSOfficeWin.cs"
+$helperCommonSrc = "$root\components\helpers\shared\src\HelperCommon.cs"
+$winCommonSrc    = "$root\components\helpers\shared\src\WinCommon.cs"
+$keySrc          = "$root\components\helpers\windows\src\KeyWin.cs"
+$browserSrc      = "$root\components\helpers\windows\src\BrowserWin.cs"
+$officeSrc       = "$root\components\helpers\windows\src\MSOfficeWin.cs"
 $helpersDestDir  = "$root\dist\helpers"
 
 New-Item -ItemType Directory -Force -Path $helpersDestDir | Out-Null
@@ -40,7 +40,7 @@ Write-Host "=== Stopping helper daemons ==="
 Stop-Process -Name "KeyWin","BrowserWin","MSOfficeWin","LibreOfficeWin" -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 300
 
-# Build KeyWin.exe  (WinCommon.cs merged in — shared UIA helpers, FILL/READELEM support)
+# Build KeyWin.exe  (WinCommon.cs merged in  -  shared UIA helpers, FILL/READELEM support)
 Write-Host "=== Building KeyWin.exe ==="
 & $csc /nologo /target:winexe "/out:$helpersDestDir\KeyWin.exe" "/r:$uiac" "/r:$uiat" "/r:$wbase" "/r:$wforms" "/r:$mcsharp" $helperCommonSrc $winCommonSrc $keySrc
 Write-Host "KeyWin exit: $LASTEXITCODE"
@@ -59,16 +59,16 @@ Write-Host "=== Building MSOfficeWin.exe ==="
 Write-Host "MSOfficeWin exit: $LASTEXITCODE"
 
 # Build LibreOfficeWin.exe  (LibreOffice/OpenOffice via UNO COM bridge; no UNO type libs needed)
-$lofficeSrc = "$root\tools\helpers\office\LibreOfficeWin.cs"
+$lofficeSrc = "$root\components\helpers\windows\src\LibreOfficeWin.cs"
 Write-Host "=== Building LibreOfficeWin.exe ==="
 & $csc /nologo /target:exe "/out:$helpersDestDir\LibreOfficeWin.exe" "/r:$mcsharp" `
     $helperCommonSrc $lofficeSrc
 Write-Host "LibreOfficeWin exit: $LASTEXITCODE"
 
-# ── SecurityLib.dll  (native C++ — requires MSVC cl.exe) ─────────────────────
+# -- SecurityLib.dll  (native C++  -  requires MSVC cl.exe) ---------------------
 Write-Host "=== Building SecurityLib.dll ==="
 
-$secLibSrc  = "$root\tools\common\security\SecurityLib.cpp"
+$secLibSrc  = "$root\components\helpers\shared\src\security\SecurityLib.cpp"
 $secLibDest = "$helpersDestDir\SecurityLib.dll"
 
 # Locate cl.exe from any installed VS / Build Tools
@@ -132,7 +132,7 @@ if (-not $clExe) {
 }
 
 
-# ── VSIX packaging (optional — requires @vscode/vsce installed) ──────────────
+# -- VSIX packaging (optional  -  requires @vscode/vsce installed) --------------
 Write-Host "=== Packaging VSIX ==="
 $releaseDir = "$root\dist\release"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
@@ -141,16 +141,16 @@ $vsce = "$root\node_modules\.bin\vsce.cmd"
 if (-not (Test-Path $vsce)) { $vsce = "$root\node_modules\.bin\vsce" }
 
 if (Test-Path $vsce) {
-    & $vsce package --out "$releaseDir\" --no-dependencies 2>&1
+    & $vsce package --out "$releaseDir" --no-dependencies 2>&1
     Write-Host "vsce package exit: $LASTEXITCODE"
     $vsix = Get-ChildItem $releaseDir -Filter '*.vsix' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($vsix) {
         Write-Host "VSIX: $($vsix.FullName)  ($([math]::Round($vsix.Length/1MB,2)) MB)"
     } else {
-        Write-Warning "No .vsix produced — check vsce output"
+        Write-Warning "No .vsix produced  -  check vsce output"
     }
 } else {
-    Write-Warning "vsce not found — run 'npm install' to install @vscode/vsce, then re-run build."
+    Write-Warning "vsce not found  -  run 'npm install' to install @vscode/vsce, then re-run build."
 }
 
 Write-Host "=== Build complete ==="

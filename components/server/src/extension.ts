@@ -88,9 +88,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     () => listMcpToolsLocal(mcpPort),
   );
 
+  let dashboardPanel: vscode.WebviewPanel | undefined;
+
   const openDashboard = vscode.commands.registerCommand(
     'aiAutomation.openDashboard',
-    () => vscode.env.openExternal(vscode.Uri.parse('http://127.0.0.1:' + dashboardPort)),
+    () => {
+      if (dashboardPanel) {
+        dashboardPanel.reveal(vscode.ViewColumn.One);
+        return;
+      }
+      dashboardPanel = vscode.window.createWebviewPanel(
+        'aiapiDashboard',
+        'AIAPI Dashboard',
+        vscode.ViewColumn.One,
+        {
+          enableScripts: true,
+          retainContextWhenHidden: true,
+        },
+      );
+      dashboardPanel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'images', 'icon.png');
+      dashboardPanel.webview.html = buildDashboardWebview(dashboardPort);
+      dashboardPanel.onDidDispose(() => { dashboardPanel = undefined; }, null, context.subscriptions);
+    },
   );
 
   context.subscriptions.push(mcpCallTool, mcpListTools, openDashboard);
@@ -158,6 +177,35 @@ function callMcpToolLocal(
     req.write(body);
     req.end();
   });
+}
+
+function buildDashboardWebview(port: number): string {
+  const url = `http://127.0.0.1:${port}`;
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; frame-src http://127.0.0.1:${port}; style-src 'unsafe-inline';">
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #1e1e1e; }
+    iframe { width: 100%; height: 100%; border: none; display: block; }
+    #err { display: none; color: #ccc; font-family: sans-serif; text-align: center; padding-top: 20%; }
+  </style>
+</head>
+<body>
+  <iframe id="frame" src="${url}" title="AIAPI Dashboard"></iframe>
+  <div id="err">
+    <p>Dashboard not reachable at <a href="${url}" style="color:#4fc3f7">${url}</a>.</p>
+    <p style="font-size:0.85em">Make sure the AIAPI server started correctly (check the Output panel).</p>
+  </div>
+  <script>
+    const frame = document.getElementById('frame');
+    const err   = document.getElementById('err');
+    frame.onerror = () => { frame.style.display = 'none'; err.style.display = 'block'; };
+  </script>
+</body>
+</html>`;
 }
 
 function listMcpToolsLocal(port: number): Promise<unknown> {

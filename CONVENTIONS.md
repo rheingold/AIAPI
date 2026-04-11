@@ -8,7 +8,7 @@ If something already exists here, extend or reuse it — do NOT create a paralle
 
 ## 1. Command taxonomy (UI primitives)
 
-These are the ONLY commands that belong in `<action>` elements in `apptemplates/*/tree.xml`.  
+These are the ONLY commands that belong in `<action>` elements in `components/server/dist-resources/apptemplates/*/tree.xml`.  
 They are technology-level primitives, not application scenarios.
 
 | Command      | Helper(s)        | What it does |
@@ -223,7 +223,7 @@ body/table[2]/row[1]/cell[1]       → doc.Tables(2).Rows(1).Cells(1).Range.Text
 sheet[@name='Q1']/chart[1]/title   → Sheets("Q1").ChartObjects(1).Chart.ChartTitle.Text
 ```
 An AI that knows the Office COM OM can construct any valid path. The `<PathEnumeration>` sections
-in `apptemplates/*/tree.xml` list well-known paths as documentation and as the whitelist for
+in `components/server/dist-resources/apptemplates/*/tree.xml` list well-known paths as documentation and as the whitelist for
 strict mode (setting `strictPathEnumeration: true` — see TODO.md §E and CONVENTIONS.md §5).
 
 **Office suite transparency**: `body/para[N]` and `sheet/cell` are intentionally suite-neutral —
@@ -409,7 +409,7 @@ Once the target format is live:
 
 ---
 
-## 3. App template structure (`apptemplates/<app>/`)
+## 3. App template structure (`components/server/dist-resources/apptemplates/<app>/`)
 
 | File             | Purpose |
 |------------------|---------|
@@ -419,7 +419,7 @@ Once the target format is live:
 
 > **Planned (deferred — see TODO.md "App Template Namespacing"):** `<app>` will become a
 > slash-separated reverse-domain path, e.g. `com.microsoft/windows.v11/calculator`.
-> Current layout (`apptemplates/calculator/`) is the flat interim form.
+> Current layout (`components/server/dist-resources/apptemplates/calculator/`) is the flat interim form.
 > Do NOT create new parallel app folder conventions — wait for the namespace migration.
 
 ### `<Group>` element rules
@@ -446,35 +446,35 @@ Example:
 ## 4. Source layout (post-2.8 refactor)
 
 ```
-src/helpers/HelperRegistry.ts   ← helper process management (was src/server/)
-src/server/mcpServer.ts         ← MCP JSON-RPC server
-src/server/httpServerWithDashboard.ts ← REST + WebSocket dashboard server
-tools/helpers/common/           ← shared C# (HelperCommon.cs, WinCommon.cs)
-tools/helpers/win/              ← KeyWin.cs
-tools/helpers/browser/          ← BrowserWin.cs
-tools/common/security/          ← SecurityLib.cpp + SecurityLib.h (native C++ DLL)
+components/server/src/helpers/HelperRegistry.ts   ← helper process management
+components/server/src/server/mcpServer.ts         ← MCP JSON-RPC server
+components/server/src/server/httpServerWithDashboard.ts ← REST + WebSocket dashboard server
+components/tools/shared/src/HelperCommon.cs       ← shared C# helper base (HelperCommon.cs, WinCommon.cs)
+components/tools/windows/src/KeyWin.cs            ← Windows keystroke helper
+components/tools/windows/src/BrowserWin.cs        ← Windows browser CDP helper
+components/tools/shared/src/security/SecurityLib.cpp ← SecurityLib native C++ DLL
 dist/helpers/                   ← compiled EXEs (KeyWin.exe, BrowserWin.exe) + SecurityLib.dll
 config/dashboard-settings.json  ← runtime settings (was root dashboard-settings.json)
 config/security/config.json     ← security policy: binaryHashes, filterRules, defaultPolicy
 config/users.json               ← user/role store when auth.users.storeSource = "json" (signed)
-apptemplates/                   ← app template library (tree.xml + scenarios.xml per app)
-tests/integration/              ← full-stack integration tests
+components/server/dist-resources/apptemplates/    ← app template library (tree.xml + scenarios.xml per app)
+test/src/integration/           ← full-stack integration tests
 
-src/auth/types.ts               ← IAuthProvider, IUserStore, User, Role, AuthResult, all auth interfaces
-src/auth/AuthMiddleware.ts      ← HTTP middleware: extracts credentials → IAuthProvider → populates req.authContext
-src/auth/providers/NoAuthProvider.ts        ← auth.mode = "none"
-src/auth/providers/PasswordAuthProvider.ts  ← auth.mode = "password" (bcrypt + JWT)
-src/auth/providers/ApiKeyAuthProvider.ts    ← auth.mode = "apikey" (hashed key lookup + JWT)
-src/auth/providers/CertificateAuthProvider.ts ← auth.mode = "certificate" (TLS client cert + JWT)
-src/auth/providers/OAuthProvider.ts         ← auth.mode = "oauth" (OAuth2/OIDC redirect + JWT)
-src/auth/providers/SamlProvider.ts          ← auth.mode = "saml" (SAML 2.0 redirect + JWT)
-src/auth/stores/JsonUserStore.ts            ← IUserStore on signed config/users.json
-src/auth/stores/DbUserStore.ts              ← IUserStore on remote DB (MSSQL/Oracle/MySQL/PostgreSQL)
+components/server/src/auth/types.ts               ← IAuthProvider, IUserStore, User, Role, AuthResult, all auth interfaces
+components/server/src/auth/AuthMiddleware.ts      ← HTTP middleware: extracts credentials → IAuthProvider → populates req.authContext
+components/server/src/auth/providers/NoAuthProvider.ts        ← auth.mode = "none"
+components/server/src/auth/providers/PasswordAuthProvider.ts  ← auth.mode = "password" (bcrypt + JWT)
+components/server/src/auth/providers/ApiKeyAuthProvider.ts    ← auth.mode = "apikey" (hashed key lookup + JWT)
+components/server/src/auth/providers/CertificateAuthProvider.ts ← auth.mode = "certificate" (TLS client cert + JWT)
+components/server/src/auth/providers/OAuthProvider.ts         ← auth.mode = "oauth" (OAuth2/OIDC redirect + JWT)
+components/server/src/auth/providers/SamlProvider.ts          ← auth.mode = "saml" (SAML 2.0 redirect + JWT)
+components/server/src/auth/stores/JsonUserStore.ts            ← IUserStore on signed config/users.json
+components/server/src/auth/stores/DbUserStore.ts              ← IUserStore on remote DB (MSSQL/Oracle/MySQL/PostgreSQL)
 
-src/settings/types.ts                       ← ISettingsAdapter, SettingsSourceConfig, DbAuthMethod
-src/settings/adapters/JsonSettingsAdapter.ts ← ISettingsAdapter on signed config/dashboard-settings.json
-src/settings/adapters/DbSettingsAdapter.ts   ← ISettingsAdapter on remote DB
-src/settings/SettingsManager.ts              ← factory: reads settingsSource, hydrates correct adapter
+components/server/src/settings/types.ts                       ← ISettingsAdapter, SettingsSourceConfig, DbAuthMethod
+components/server/src/settings/adapters/JsonSettingsAdapter.ts ← ISettingsAdapter on signed config/dashboard-settings.json
+components/server/src/settings/adapters/DbSettingsAdapter.ts   ← ISettingsAdapter on remote DB
+components/server/src/settings/SettingsManager.ts              ← factory: reads settingsSource, hydrates correct adapter
 ```
 
 ---
@@ -487,7 +487,7 @@ Documented keys — do NOT add new ones without updating this list:
 
 | Key | Type | Default | Purpose |
 |-----|------|---------|---------|
-| `appTemplatesDir` | string | `./apptemplates` | Root for app template library |
+| `appTemplatesDir` | string | `./components/server/dist-resources/apptemplates` | Root for app template library |
 | `scenariosPath` | string | `./scenarios` | Legacy scenario JSON files |
 | `mcpPort` | number | `3457` | MCP JSON-RPC listen port |
 | `helperPaths` | string[] | `["./dist/win/*.exe"]` | Helper EXE discovery paths |
@@ -663,7 +663,7 @@ DENY   _internal  (anyandall)   *             *          ← default-deny everyt
 
 - [ ] Does a command with this intent already exist in §1?
 - [ ] Does a target addressing scheme for this already exist in §2?
-- [ ] Does an app template file already exist in `apptemplates/`?
+- [ ] Does an app template file already exist in `components/server/dist-resources/apptemplates/`?
 - [ ] Does a REST endpoint already exist in §6?
 - [ ] Does a settings key already exist in §5?
 - [ ] Is the source file I'm about to create already in §4?

@@ -179,6 +179,17 @@ Example: `ALLOW calc* Ôćĺ KeyWin.exe::{CLICKID}/num*Button`
   - [x] Updated dashboard default paths
   - [x] Updated test file imports
 
+### Pending: Runtime Directory Migration (R1)
+> Tracked separately pending ADR-007 setup wizard implementation.
+
+- [ ] **R1 — Migrate `config/` to `runtime/config/` and `security/` to `runtime/keys/`**
+  - [ ] Update `mcpServer.ts` hardcoded path `config/scenarios` to `runtime/config/scenarios`
+  - [ ] Update `httpServerWithDashboard.ts` settings and apptemplates paths
+  - [ ] Update setup wizard (`POST /api/_internal/setup`) to write into `runtime/`
+  - [ ] Add `runtime/` to `.gitignore` (mutable user-created data, not committed)
+  - [ ] Add `test/dev-runtime/` tracked stub with dev-time config + keys for local testing
+  - **Prerequisite:** ADR-007 setup steps S4 (default settings bootstrap) and S5 (admin user bootstrap)
+
 ### Benefits Achieved
 - **Ôťů Improved Navigation**: Clear separation of concerns accomplished
 - **Ôťů Better Maintenance**: Much easier to find and update files

@@ -400,35 +400,30 @@ MCP server ALSO applies filters for defense-in-depth.
 - [x] Extension scaffolding exists: `src/extension.ts` + `package.json` with
   `"engines": {"vscode":"^1.75.0"}`, `activationEvents`, `contributes`
 - [x] MCP@IPC command pair (`extension.mcp.callTool`, `extension.mcp.listTools`) registered
-- [ ] **`src/extension.ts` `activate()` is stale** — still starts the old `AutomationEngine`
-  + `HttpServer` stack. Must be updated to start `MCPServer` + `HttpServerWithDashboard`
-  (same as `src/start-mcp-server.ts`) using `context.extensionPath` as working directory.
-  Until this is done the extension does not work with the current server code.
+- [x] **`activate()` rewritten** — starts `MCPServer` + `HttpServerWithDashboard` via
+  `process.chdir(context.extensionPath)`; status bar item; output channel; IPC
+  commands relay over loopback HTTP; `deactivate()` stops both servers gracefully.
 
 ### N-0.1 — Fix `activate()` to start the real server stack
-- [ ] Replace `AutomationEngine`/`HttpServer` in `activate()` with:
-  ```typescript
-  const server = new MCPServer(context.extensionPath);
-  await server.start();
-  context.subscriptions.push({ dispose: () => server.stop() });
-  ```
-- [ ] Pass `context.extensionPath` as root so relative paths (`dist/helpers/`,
-  `config/`) resolve correctly inside the VSIX bundle
-- [ ] Keep `extension.mcp.callTool` / `extension.mcp.listTools` IPC commands —
-  they are the MCP@IPC interface for other extensions
-- [ ] Show status bar item: `$(robot) AIAPI: running on :3457` with click → open dashboard
-- [ ] Output channel `AIAPI` for server logs (replaces console.log)
-- [ ] `deactivate()`: call `server.stop()` + `helperRegistry.shutdownAll()`
+- [x] Replace `AutomationEngine`/`HttpServer` in `activate()` with `MCPServer` +
+  `HttpServerWithDashboard` (mirrors `start-mcp-server.ts`)
+- [x] `process.chdir(context.extensionPath)` so all relative paths resolve inside VSIX
+- [x] `extension.mcp.callTool` / `extension.mcp.listTools` relay via loopback HTTP
+  (same tool dispatch, security filter, helper registry exercised)
+- [x] Status bar item: `$(rocket) AIAPI :<port>` with click → open dashboard
+- [x] Output channel `AIAPI` for server logs
+- [x] `deactivate()`: stops `HttpServerWithDashboard` then `MCPServer` gracefully
 
 ### N-0.2 — `package.json` cleanup
-- [ ] Set `"publisher"` field (required for Marketplace; use `rheingold` or register)
-- [ ] Fix `"repository".url` (currently placeholder `yourusername`)
-- [ ] Fix `"files"` array — remove non-existent `MCP_IPC_QUICK.md` and `INDEX.md`;
-  add `components/helpers/*/dist-resources/apptemplates/**`
-- [ ] Add `"icon"` field (128×128 PNG)
-- [ ] Bump `"version"` from `0.1.1` to `0.2.0` (server stack completely changed)
-- [ ] Add `"extensionKind": ["ui"]` — extension must run on the local machine
-  (not in a remote container) because it drives local Windows helpers
+- [x] Set `"publisher": "rheingold"`
+- [x] Fix `"repository".url` → `https://github.com/rheingold/AIAPI`
+- [x] Fix `"files"` array — removed `MCP_IPC_QUICK.md`, `INDEX.md`; added `static/`, `config/`, `security/`
+- [x] Bump `"version"` → `0.2.0`
+- [x] Add `"extensionKind": ["ui"]`
+- [x] Add `@vscode/vsce` devDependency + `package:vsix` / `publish:vsix` scripts
+- [x] Remove stale settings: `aiAutomation.enableLegacyHttp`, `aiAutomation.httpPort`
+- [x] Replace 4 old automation commands with `aiAutomation.openDashboard`
+- [ ] Add `"icon"` field (128×128 PNG, not yet created)
 
 ### N-0.3 — `.vscodeignore`
 - [ ] Create `.vscodeignore` to exclude from VSIX:

@@ -19,6 +19,40 @@
   "developmentMode": {
     "enabled": false
   },
+  "filterRules": [
+    {
+      "action": "ALLOW",
+      "process": "notepad.exe",
+      "helper": "*",
+      "command": "*",
+      "pattern": "*",
+      "description": "Allow all actions on Notepad"
+    },
+    {
+      "action": "ALLOW",
+      "process": "calc.exe",
+      "helper": "*",
+      "command": "*",
+      "pattern": "*",
+      "description": "Allow all actions on Calculator"
+    },
+    {
+      "action": "DENY",
+      "process": "*",
+      "helper": "*",
+      "command": "LAUNCH",
+      "pattern": "*",
+      "description": "Block LAUNCH for all unlisted processes"
+    },
+    {
+      "action": "DENY",
+      "process": "*",
+      "helper": "*",
+      "command": "KILL",
+      "pattern": "*",
+      "description": "Block KILL for all unlisted processes"
+    }
+  ],
   "binaryHashes": {
     "keywin": {
       "path": "dist\\win\\KeyWin.exe",

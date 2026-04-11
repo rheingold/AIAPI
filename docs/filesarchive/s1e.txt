@@ -1,0 +1,5 @@
+DEBUG: Session authentication bypassed (SKIP_SESSION_AUTH=true)
+DEBUG: Using inject-mode: direct
+DEBUG: Found 0 process(es) named 'Kalkulaèka'
+DEBUG: Title match: 'Kalkulaèka'
+DEBUG: Fallback title match handle: 8391812

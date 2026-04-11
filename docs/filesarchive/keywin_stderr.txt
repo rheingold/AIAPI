@@ -1,0 +1,5 @@
+DEBUG: Session authentication bypassed (SKIP_SESSION_AUTH=true)
+DEBUG: Using inject-mode: direct
+DEBUG: Looking for process: Kalkulacka
+DEBUG: Found 0 process(es) named 'Kalkulacka'
+Process window not found: Kalkulacka

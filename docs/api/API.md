@@ -6,6 +6,115 @@ The plugin exposes a unified API for querying and controlling UI elements across
 
 ---
 
+## Universal Address Grammar
+
+Every call in this system addresses a target through a **hierarchical container + element** address. The five MCP call fields (`helper`, `proc`, `action`, `path`, `value`) map to distinct layers of that hierarchy.
+
+### Conceptual full address
+
+```
+//[L0: helper]  //[L1: OS process]  //[L2: sub-window]  //[L3: document/tab]  //element-path
+    ↑ tool name    ↑────────────────── proc ────────────────────────────────↑    ↑── path ──↑
+```
+
+| MCP field | Layer | Role |
+|-----------|-------|------|
+| `helper` | **L0** | Automation domain — which C# binary (`MSOfficeWin` / `KeyWin` / `BrowserWin`). Implicit in the tool name. |
+| `proc` | **L1–L3** | Container chain: OS process → optional sub-window → optional document/tab. `//`-separated `[key:val]` brackets. |
+| `action` | — | Command verb (`FORMAT` `READ` `WRITE` `CLICKID` `SENDKEYS` …) |
+| `path` | **L4+** | Element address within the resolved container. Pure XPath-style — no container info here. |
+| `value` | — | Payload to write, apply, or send to the addressed element. |
+
+### `proc` — container hierarchy filter
+
+`proc` is a sequence of `//`-separated `[key:val;key:val]` bracket levels.  
+Levels are written from outermost (L1 OS) to innermost (L3 document). Absent levels default to the helper's active/foreground instance.
+
+**Formal grammar:**
+
+```
+proc          ::=  level ( '//' level )*   |  bare-process-name
+level         ::=  '[' filter-list ']'
+filter-list   ::=  filter ( ';' filter )*
+filter        ::=  key ':' raw-value       -- raw-value ends at first ']'
+                                           -- slashes inside raw-value are safe (no escaping needed)
+```
+
+**Level keys:**
+
+| Level | Keys | Examples |
+|-------|------|---------|
+| L1 — OS process | `pid` `handle` `hwnd` `procname` `sha256` `sha512` `title` | `[pid:1234]` `[procname:WINWORD*]` `[handle:0xABCD]` |
+| L2 — sub-window | `subwindowhandle` `frame` `pane` | `[subwindowhandle:0x2A4]` `[frame:main]` |
+| L3 — document/tab | `docname` `url` `tabid` `page` | `[docname:Budget.xlsx]` `[url:https://github.com/pulls]` `[tabid:3]` |
+
+**Examples:**
+
+```
+"[pid:1234]"                                            single level (L1 only)
+"[procname:WINWORD.EXE]//[docname:Budget.xlsx]"         L1 + L3 (skip L2)
+"[pid:8800]//[url:https://github.com/pulls]"            L1 + L3 (URL with slashes — safe inside [])
+"[pid:123]//[subwindowhandle:0x2A4]//[tabid:3]"         L1 + L2 + L3 (full chain)
+"[sha256:abc;procname:WINWORD.EXE]//[docname:Payroll*]" L1 multi-filter + L3
+```
+
+### `path` — element address (L4+)
+
+Pure XPath-style steps addressing an element **inside** the already-identified container.  
+`//` here has its normal XPath meaning (descendant-or-self axis), not a level separator.
+
+```
+"//body/para[20]"                           Word — 20th paragraph
+"//body/bookmark[@name='Summary']"          Word — named bookmark
+"//sheet[@name='Q1']/cell[@addr='B2:D5']"   Excel — range in named sheet
+"//slide[2]/shape[@name='Title']"           PowerPoint — shape on slide 2
+"//Button[@id='num1Button']"                UIA Win32 — AutomationId
+"//*[@id='compose']"                        Browser — CSS #id equivalent
+```
+
+### Escaping
+
+No escaping is needed for `/` or `//` inside bracket values. The `//` level separator only appears *between* a closing `]` and the next opening `[`. Everything between `[` and `]` is a raw value:
+
+```
+[url:https://office.google.com/spreadsheets/d/abc]   ← slashes inside [] are inert
+          ↑ safe: part of raw-value; parser closes at ]
+```
+
+### Complete call example
+
+```jsonc
+{
+  "jsonrpc": "2.0", "id": 42,
+  "method":  "tools/call",
+  "params": {
+    "name": "MSOfficeWin",
+    "arguments": {
+      "proc":   "[procname:WINWORD.EXE]//[docname:Budget.xlsx]",
+      "action": "FORMAT",
+      "path":   "//body/para[20]",
+      "value":  "Heading 2"
+    }
+  }
+}
+```
+
+### Firewall rule syntax
+
+Security filter rules use the same grammar. The `proc-filter` column is a `proc`-field value (with glob wildcards). The `path-glob` column is a `path`-field pattern.
+
+```
+ACTION  helper        proc-filter                                       command   path-glob
+──────  ──────────    ──────────────────────────────────────────────    ───────   ─────────────────────────────────
+ALLOW   MSOfficeWin   [procname:WINWORD.EXE]//[docname:Budget*]         FORMAT    //body/para[*]
+ALLOW   BrowserWin    [pid:8800]//[url:github.com/*]                    READ      //**
+DENY    MSOfficeWin   [procname:EXCEL.EXE]//[docname:Payroll*]          WRITE     //sheet[*]/cell[*]
+ALLOW   KeyWin        [procname:calc.exe]                               CLICKID   //Button[@id='*Button']
+DENY    KeyWin        [procname:explorer.exe]                           SENDKEYS  //**
+```
+
+---
+
 ## Common Types
 
 ### UIObject

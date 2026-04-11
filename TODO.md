@@ -1,16 +1,80 @@
-# TODO - Next Development Phase
+﻿# TODO — AIAPI
 
-## ⚡ CRITICAL: Command Alignment (PRIORITY 0)
-**Goal:** Ensure ALL commands are aligned across MCP ↔ KeyWin.exe ↔ Security Filters
+> **Legend:** 🔴 blocking · 🟡 parallel-ready · ⚪ backlog · ✅ done  
+> Architecture reference: [`docs/architecture/CODEBASE_MAP.md`](docs/architecture/CODEBASE_MAP.md)  
+> Vocabulary: [`CONVENTIONS.md`](CONVENTIONS.md)  
+> ADRs: [`docs/architecture/decisions/`](docs/architecture/decisions/)
+
+---
+
+## 🔴 GATE A — Security enforcement
+> Must complete before Windows 1.0 package is cut.
+
+### A1 — Remove `SKIP_SESSION_AUTH` default bypass 🔴
+- [ ] In `HelperCommon.cs` `RunAuthHandshake(skipAuth)`: change callers so `skipAuth = false`
+  unless `SKIP_SESSION_AUTH=true` env var is **explicitly set by the operator**.
+  - The handshake code is complete; the flag exists; the default just needs flipping.
+  - Production installers must **not** set this env var.
+  - Dev: set it in `.env` / `launch.json` as explicit opt-in.
+
+### A2 — SecurityLib.dll post-build hash 🟡
+- [ ] Add PowerShell step at end of `build-all.ps1` after SecurityLib.dll is built:
+  ```powershell
+  $hash = (Get-FileHash $secLibDest -Algorithm SHA256).Hash.ToLower()
+  # write to security/config.json under binaryHashes["SecurityLib.dll"]
+  ```
+  `sec_validate_signature_self()` already reads this value; needs population.
+
+### A3 — `_caller_user` / `_caller_roles` wire protocol 🟡
+- [ ] `HelperRegistry.ts`: append `_caller_user` + `_caller_roles` to every helper request JSON.
+  Values from `AuthMiddleware.getContext(req)`. Roles as comma-separated string.
+- [ ] `HelperCommon.cs` (all 3 listeners): extract these fields before dispatch; pass into
+  `SecurityLib.ValidateAction()` as `callerUser` / `callerRoles`.
+- [ ] `SecurityLib.cpp` `sec_validate_action()`: add `callerUser` / `callerRoles` params;
+  filter rules with `role` field skip when caller lacks that role.
+- [ ] Update P/Invoke wrapper in `HelperCommon.cs`.
+- [ ] Document reserved field names in `CONVENTIONS.md §4`.
+
+---
+
+## 🐕 Dogfooding — The platform must test itself
+
+> Key release criterion: AIAPI must be able to configure and validate itself end-to-end
+> using its own BrowserWin + MCP tools. Both a functional test and a showcase scenario.
+
+### D1 — Dashboard automation test suite
+- [ ] Write `tests/integration/test-dogfooding-dashboard.js`:
+  - Launch AIAPI server (`--self-hosted`)
+  - Open dashboard URL in browser via `BrowserWin LAUNCH:chrome`
+  - Navigate to Settings tab; verify helpers list loads
+  - Add a security filter rule via the wizard UI (CLICKID / FILL)
+  - Navigate to Security tab; verify rule appears in Quick-Edit table
+  - Navigate to Scenarios tab; create a minimal scenario, save
+  - Verify scenario appears in app templates picker
+  - Close browser; verify session log + summary JSON written
+
+### D2 — MCP schema round-trip test
+- [ ] Verify: AI issues `getHelperSchema(KeyWin)` → schema returned → AI calls `KeyWin.LISTWINDOWS` → response received.
+- [ ] Verify: `executeScenario(app="calculator", scenarioId="compute", params={expression:"3+4"})` → result "7"
+
+### D3 — Security filter enforcement test 🟡
+- [ ] Test: add DENY rule for `{SENDKEYS}` on notepad → MCP call blocked → `SECURITY_FILTER_DENY`
+- [ ] Test: admin token bypass → same call succeeds with `X-Admin-Token` header
+- [ ] Test: role-based rule → anonymous denied; user with role allowed
+
+---
+
+## ÔÜí CRITICAL: Command Alignment (PRIORITY 0)
+**Goal:** Ensure ALL commands are aligned across MCP Ôćö KeyWin.exe Ôćö Security Filters
 
 ### Complete Command Coverage
 - [x] Document all KeyWin.exe commands (see COMMAND_ALIGNMENT.md)
 - [x] Map MCP methods to KeyWin commands
 - [x] Update security filter UI with ALL commands organized by risk level:
-  - [x] 🟢 Read Operations: {QUERYTREE}, {READ}, {LISTWINDOWS}, {GETPROVIDERS}
-  - [x] 🟡 Modification: {SET}
-  - [x] 🔴 UI Interaction: {CLICKID}, {CLICKNAME}, {CLICK}, {SENDKEYS}
-  - [x] ⛔ Process Control: {LAUNCH}, {KILL}
+  - [x] ­ččó Read Operations: {QUERYTREE}, {READ}, {LISTWINDOWS}, {GETPROVIDERS}
+  - [x] ­ččí Modification: {SET}
+  - [x] ­čö┤ UI Interaction: {CLICKID}, {CLICKNAME}, {CLICK}, {SENDKEYS}
+  - [x] ÔŤö Process Control: {LAUNCH}, {KILL}
 - [x] Implement command detection in KeyWin.exe
   - [x] Add `DetermineCommandType()` function
   - [x] Add `ExtractParameter()` function
@@ -24,16 +88,16 @@
 
 ### Filter Rule Format
 ```
-ACTION PROCESS → HELPER::COMMAND/PATTERN
+ACTION PROCESS Ôćĺ HELPER::COMMAND/PATTERN
 ```
-Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
+Example: `ALLOW calc* Ôćĺ KeyWin.exe::{CLICKID}/num*Button`
 
-### Privileged Mode (Bootstrap Problem Solution) ✅ MOSTLY COMPLETED
+### Privileged Mode (Bootstrap Problem Solution) Ôťů MOSTLY COMPLETED
 - [x] **Admin Session Token** (Primary method - IMPLEMENTED)
   - [x] Generate time-limited admin tokens with private key
   - [x] Admin token bypasses all security filters
   - [x] 15-minute expiry (configurable)
-  - [x] Dashboard UI: "🔓 Enter Admin Mode" button
+  - [x] Dashboard UI: "­čöô Enter Admin Mode" button
   - [x] Red warning banner when admin mode active
   - [x] Auto-logout on expiry
   - [x] Audit logging of all privileged operations
@@ -50,10 +114,10 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
 
 ---
 
-## 🧹 Project Organization & Cleanup (PRIORITY 1.2) ✅ COMPLETED
+## ­čž╣ Project Organization & Cleanup (PRIORITY 1.2) Ôťů COMPLETED
 **Goal:** Refactor folder structure and clean up unused files for better maintainability
 
-### Folder Structure Refactoring ✅ COMPLETED
+### Folder Structure Refactoring Ôťů COMPLETED
 - [x] **Root Directory Cleanup**:
   - [x] Move development/testing files to appropriate subdirectories
   - [x] Consolidate documentation files into `docs/` folder
@@ -71,41 +135,41 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
 - [x] **Implemented New Structure**:
   ```
   /
-  ├── src/                    (Source code - kept as-is)
-  ├── docs/                   (All documentation - CREATED)
-  │   ├── api/               (API docs: API.md, KEYWIN_API.md, SERVER_API.md)
-  │   ├── architecture/      (ARCHITECTURE.md, SECURITY_ARCHITECTURE.md)
-  │   ├── guides/           (SERVER_GUIDE.md, AI_ASSISTANT_MANUAL.md, QUICK_REF.md)
-  │   ├── specs/            (SCENARIO_FORMAT.md, ELEMENT_IDENTIFICATION.md, etc.)
-  │   └── INDEX.md          (Documentation index)
-  ├── config/                 (Configuration files - CREATED)
-  │   ├── security/          (Moved from root security/)
-  │   ├── scenarios/         (Moved from root scenarios/)
-  │   └── templates/         (Configuration templates)
-  ├── tests/                  (New - consolidated test files)
-  │   ├── integration/       (test-*.js files moved here)
-  │   ├── scenarios/         (test scenario files)
-  │   └── security/          (security test files)
-  ├── tools/, static/, scripts/  (Kept as-is)
-  ├── archive/                (Expanded - added planning docs)
-  ├── dist/                   (Build output)
-  └── README.md, START_HERE.md, TODO.md (Essential root files only)
+  ÔöťÔöÇÔöÇ src/                    (Source code - kept as-is)
+  ÔöťÔöÇÔöÇ docs/                   (All documentation - CREATED)
+  Ôöé   ÔöťÔöÇÔöÇ api/               (API docs: API.md, KEYWIN_API.md, SERVER_API.md)
+  Ôöé   ÔöťÔöÇÔöÇ architecture/      (ARCHITECTURE.md, SECURITY_ARCHITECTURE.md)
+  Ôöé   ÔöťÔöÇÔöÇ guides/           (SERVER_GUIDE.md, AI_ASSISTANT_MANUAL.md, QUICK_REF.md)
+  Ôöé   ÔöťÔöÇÔöÇ specs/            (SCENARIO_FORMAT.md, ELEMENT_IDENTIFICATION.md, etc.)
+  Ôöé   ÔööÔöÇÔöÇ INDEX.md          (Documentation index)
+  ÔöťÔöÇÔöÇ config/                 (Configuration files - CREATED)
+  Ôöé   ÔöťÔöÇÔöÇ security/          (Moved from root security/)
+  Ôöé   ÔöťÔöÇÔöÇ scenarios/         (Moved from root scenarios/)
+  Ôöé   ÔööÔöÇÔöÇ templates/         (Configuration templates)
+  ÔöťÔöÇÔöÇ tests/                  (New - consolidated test files)
+  Ôöé   ÔöťÔöÇÔöÇ integration/       (test-*.js files moved here)
+  Ôöé   ÔöťÔöÇÔöÇ scenarios/         (test scenario files)
+  Ôöé   ÔööÔöÇÔöÇ security/          (security test files)
+  ÔöťÔöÇÔöÇ tools/, static/, scripts/  (Kept as-is)
+  ÔöťÔöÇÔöÇ archive/                (Expanded - added planning docs)
+  ÔöťÔöÇÔöÇ dist/                   (Build output)
+  ÔööÔöÇÔöÇ README.md, START_HERE.md, TODO.md (Essential root files only)
   ```
 
 - [x] **File Cleanup Completed**:
   - [x] **Documentation**: Moved to `docs/` with proper categorization
-    - [x] `API.md`, `KEYWIN_API.md`, `SERVER_API.md` → `docs/api/`
-    - [x] `ARCHITECTURE.md`, `SECURITY_ARCHITECTURE.md` → `docs/architecture/`
-    - [x] `SERVER_GUIDE.md`, `AI_ASSISTANT_MANUAL.md`, `QUICK_REF.md` → `docs/guides/`
-    - [x] `SCENARIO_FORMAT.md`, `ELEMENT_IDENTIFICATION.md`, etc. → `docs/specs/`
-    - [x] `README.md`, `START_HERE.md`, `TODO.md` → Kept in root
+    - [x] `API.md`, `KEYWIN_API.md`, `SERVER_API.md` Ôćĺ `docs/api/`
+    - [x] `ARCHITECTURE.md`, `SECURITY_ARCHITECTURE.md` Ôćĺ `docs/architecture/`
+    - [x] `SERVER_GUIDE.md`, `AI_ASSISTANT_MANUAL.md`, `QUICK_REF.md` Ôćĺ `docs/guides/`
+    - [x] `SCENARIO_FORMAT.md`, `ELEMENT_IDENTIFICATION.md`, etc. Ôćĺ `docs/specs/`
+    - [x] `README.md`, `START_HERE.md`, `TODO.md` Ôćĺ Kept in root
   - [x] **Configuration**: Moved to `config/`
-    - [x] `security/` → `config/security/`
-    - [x] `scenarios/` → `config/scenarios/`
+    - [x] `security/` Ôćĺ `config/security/`
+    - [x] `scenarios/` Ôćĺ `config/scenarios/`
   - [x] **Tests**: Consolidated into `tests/`
-    - [x] `test-*.js` files → `tests/integration/`
+    - [x] `test-*.js` files Ôćĺ `tests/integration/`
   - [x] **Archived Items**:
-    - [x] `DASHBOARD_PLAN.md`, `SETTINGS_UI_IMPLEMENTATION.md` → `archive/`
+    - [x] `DASHBOARD_PLAN.md`, `SETTINGS_UI_IMPLEMENTATION.md` Ôćĺ `archive/`
 
 - [x] **Updated References**:
   - [x] Updated all imports/requires in source code
@@ -116,40 +180,36 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
   - [x] Updated test file imports
 
 ### Benefits Achieved
-- **✅ Improved Navigation**: Clear separation of concerns accomplished
-- **✅ Better Maintenance**: Much easier to find and update files
-- **✅ Reduced Clutter**: Clean root directory with only essential files
-- **✅ Scalability**: Structure now supports future growth
-- **✅ Development Efficiency**: Logical organization speeds up development
+- **Ôťů Improved Navigation**: Clear separation of concerns accomplished
+- **Ôťů Better Maintenance**: Much easier to find and update files
+- **Ôťů Reduced Clutter**: Clean root directory with only essential files
+- **Ôťů Scalability**: Structure now supports future growth
+- **Ôťů Development Efficiency**: Logical organization speeds up development
 
 ---
 
-## 🌐 Web Scraping & Network Tools (PRIORITY 1.5)\n**Goal:** Add fetch_webpage MCP tool with security filters\n\n### fetch_webpage Tool Implementation\n- [x] **Core Web Scraping**\n  - [x] Add `fetch_webpage` MCP tool method\n  - [x] Support HTTP/HTTPS URL fetching\n  - [x] Extract text content, HTML, or specific elements\n  - [x] Handle basic authentication and headers\n  - [x] Timeout and retry configuration\n  - [x] User-agent customization\n\n- [x] **Security Filters for Web Scraping**\n  - [x] Domain whitelist/blacklist filtering\n  - [x] Protocol restrictions (HTTP/HTTPS only by default)\n  - [x] Content-type filtering (text/html, application/json, etc.)\n  - [x] Response size limits (prevent DoS via large files)\n  - [x] Rate limiting per domain\n  - [x] Header injection prevention\n  - [x] Redirect validation and limits\n\n- [ ] **Advanced Network Protocol Support**\n  - [ ] SSH client for secure remote access\n  - [ ] FTP/SFTP for file transfer operations\n  - [ ] Telnet for legacy system access\n  - [ ] Raw TCP/UDP socket connections\n  - [ ] WebSocket support for real-time communication\n  - [ ] SMTP for email automation\n  - [ ] LDAP for directory service queries\n\n- [ ] **Security Configurations**\n  - [ ] Network access policy configuration\n  - [ ] Trusted certificate management\n  - [ ] Proxy server support with authentication\n  - [ ] VPN integration for secure connections\n  - [ ] Network monitoring and logging\n  - [ ] Firewall rule validation\n\n- [ ] **Integration with Existing Security**\n  - [ ] Extend security filter UI to include network operations\n  - [ ] Network command logging and audit trails\n  - [ ] Admin mode for network configuration changes\n  - [ ] Emergency network lockdown capability\n\n---\n\n## 🔐 Security & Configuration UI (PRIORITY 1)
+## ­čîÉ Web Scraping & Network Tools (PRIORITY 1.5)\n**Goal:** Add fetch_webpage MCP tool with security filters\n\n### fetch_webpage Tool Implementation\n- [x] **Core Web Scraping**\n  - [x] Add `fetch_webpage` MCP tool method\n  - [x] Support HTTP/HTTPS URL fetching\n  - [x] Extract text content, HTML, or specific elements\n  - [x] Handle basic authentication and headers\n  - [x] Timeout and retry configuration\n  - [x] User-agent customization\n\n- [x] **Security Filters for Web Scraping**\n  - [x] Domain whitelist/blacklist filtering\n  - [x] Protocol restrictions (HTTP/HTTPS only by default)\n  - [x] Content-type filtering (text/html, application/json, etc.)\n  - [x] Response size limits (prevent DoS via large files)\n  - [x] Rate limiting per domain\n  - [x] Header injection prevention\n  - [x] Redirect validation and limits\n\n- [ ] **Advanced Network Protocol Support**\n  - [ ] SSH client for secure remote access\n  - [ ] FTP/SFTP for file transfer operations\n  - [ ] Telnet for legacy system access\n  - [ ] Raw TCP/UDP socket connections\n  - [ ] WebSocket support for real-time communication\n  - [ ] SMTP for email automation\n  - [ ] LDAP for directory service queries\n\n- [ ] **Security Configurations**\n  - [ ] Network access policy configuration\n  - [ ] Trusted certificate management\n  - [ ] Proxy server support with authentication\n  - [ ] VPN integration for secure connections\n  - [ ] Network monitoring and logging\n  - [ ] Firewall rule validation\n\n- [ ] **Integration with Existing Security**\n  - [ ] Extend security filter UI to include network operations\n  - [ ] Network command logging and audit trails\n  - [ ] Admin mode for network configuration changes\n  - [ ] Emergency network lockdown capability\n\n---\n\n## ­čöÉ Security & Configuration UI (PRIORITY 1)
 **Goal:** User-friendly configuration and security management
 
 ### Testing Strategy
 - [x] **Unit Tests**: All backend services and utilities
-  - [x] `wildcardMatch` (glob + /regex/ syntax, 19 tests) — `src/utils/wildcardMatch.test.ts`
-  - [x] `xmlScenarioLoader` (substitute, executeXmlScenario, load, listScenarios, circular ref, 27 tests) — `src/scenario/xmlScenarioLoader.test.ts`
+  - [x] `wildcardMatch` (glob + /regex/ syntax, 19 tests) ÔÇö `src/utils/wildcardMatch.test.ts`
+  - [x] `xmlScenarioLoader` (substitute, executeXmlScenario, load, listScenarios, circular ref, 27 tests) ÔÇö `src/scenario/xmlScenarioLoader.test.ts`
         _note: jsdom v28 has ESM-only deps incompatible with Jest CJS mode; solved via `src/__mocks__/jsdom-mock.js` + `moduleNameMapper` in `jest.config.json`_
-  - [x] `Logger` (onLog callbacks, multiple callbacks, convenience wrappers, logJSON verbose mode, 18 tests) — `src/utils/Logger.test.ts`
-  - [x] `filterEval` (DENY wins, process/command/helper/pattern matching, real-world scenarios; 33 tests) — `src/utils/filterEval.test.ts`
+  - [x] `Logger` (onLog callbacks, multiple callbacks, convenience wrappers, logJSON verbose mode, 18 tests) ÔÇö `src/utils/Logger.test.ts`
+  - [x] `filterEval` (DENY wins, process/command/helper/pattern matching, real-world scenarios; 33 tests) ÔÇö `src/utils/filterEval.test.ts`
         _refactor: extracted `evaluateFilterRules()` from duplicate private loops in `mcpServer.ts` and `httpServerWithDashboard.ts`; helper field now unified in both_
-  - [x] MCP server and dashboard server security filter evaluation (40 tests) — `src/server/securityFilter.ts` + `src/server/securityFilter.test.ts`
+  - [x] MCP server and dashboard server security filter evaluation (40 tests) ÔÇö `src/server/securityFilter.ts` + `src/server/securityFilter.test.ts`
         _refactor: extracted `runSecurityFilter()` from private `validateSecurityFilter()` in `MCPServer`; exposes `IAdminTokenValidator` interface for clean mocking; covers admin-token bypass, advanced filter eval, read-only exemption, system-process protection, permissive default_
 - [x] **Integration Tests**: MCP server endpoints, security checks
-      _39 tests: HTTP transport (10), JSON-RPC compliance (6), MCP core methods (8), tools/call without binaries (5), admin token API (5), security filter wire (6) — `src/server/mcpServer.integration.test.ts`_
+      _39 tests: HTTP transport (10), JSON-RPC compliance (6), MCP core methods (8), tools/call without binaries (5), admin token API (5), security filter wire (6) ÔÇö `src/server/mcpServer.integration.test.ts`_
       _also fixed: `getProviders` tool call was missing `await` (serialised Promise as `{}`)_
-- [ ] **UI Tests**: Dashboard using AIAPI itself (dogfooding!)
-  - [ ] Test configuration UI by automating browser interactions
-  - [ ] Test scenario editor by creating/editing scenarios
-  - [ ] Test security filters by modifying settings
-  - [ ] Validate forms using DOM queries
+- [ ] **UI Tests**: Dashboard using AIAPI itself (dogfooding!) → see **D1–D3** above
 - [ ] **End-to-End Tests**: Full workflows from UI to execution
 - [x] **Security Tests**: Penetration testing, token validation
-      _16 tests: generateAdminToken (7) + validateAdminToken (9) — wrong/empty/correct passwords, uniqueness, duration, payload fields, expiry, tamper, garbage, cross-instance rejection — `src/security/SessionTokenManager.test.ts`_
+      _16 tests: generateAdminToken (7) + validateAdminToken (9) ÔÇö wrong/empty/correct passwords, uniqueness, duration, payload fields, expiry, tamper, garbage, cross-instance rejection ÔÇö `src/security/SessionTokenManager.test.ts`_
 - [x] **Performance Tests**: Load testing, memory leaks
-      _7 tests: 50 serial requests (p95<200ms, total<5s), 20/50/100 concurrent calls (0 errors, p99<500ms), id-preservation under load, error-path throughput, memory growth <20 MB over 200 requests — `src/server/mcpServer.perf.test.ts`_
+      _7 tests: 50 serial requests (p95<200ms, total<5s), 20/50/100 concurrent calls (0 errors, p99<500ms), id-preservation under load, error-path throughput, memory growth <20 MB over 200 requests ÔÇö `src/server/mcpServer.perf.test.ts`_
 
 ### Configuration UI
 - [x] Create web-based configuration interface
@@ -168,16 +228,16 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
   - [x] Placeholder prompt for paths (basic - implemented)
   - [ ] Real native file/folder dialog integration (Windows API)
   - [x] Show current "." path prominently at top of settings
-  - [x] Remember last browsed locations per field — done (localStorage per field ID; Browse prompt pre-populates; onChange auto-saves)
+  - [x] Remember last browsed locations per field ÔÇö done (localStorage per field ID; Browse prompt pre-populates; onChange auto-saves)
 - [x] **Security Filters Configuration (TREE-BASED - INITIAL IMPLEMENTATION)**:
-  - [x] **Filter Format**: `ALLOW/DENY process → Helper.exe::{COMMAND}/pattern` (display)
+  - [x] **Filter Format**: `ALLOW/DENY process Ôćĺ Helper.exe::{COMMAND}/pattern` (display)
   - [x] **UI Components (initial)**:
     - [x] **+ Add Filter** button with multi-field wizard modal
     - [x] Edit/Delete toolbuttons per filter item
     - [x] Action dropdown (ALLOW/DENY)
     - [x] Process name field with window selector integration
     - [x] Helper dropdown (KeyWin.exe, BrowserWin.exe, OfficeWin.exe)
-    - [x] Command dropdown with risk grouping (🟢🟡🔴⛔)
+    - [x] Command dropdown with risk grouping (­ččó­ččí­čö┤ÔŤö)
     - [x] Parameter pattern field with UI Tree browser integration
     - [x] Live filter preview as you type
     - [x] Search/filter rules list
@@ -187,17 +247,17 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
     - [x] Auto-save on add/edit/delete
     - [x] Load filters from server on page load
   - [x] **Backend API**:
-    - [x] `GET /api/filters` — returns in-memory filter list
-    - [x] `POST /api/filters` — saves filter list to server memory + disk (`dashboard-settings.json`)
+    - [x] `GET /api/filters` ÔÇö returns in-memory filter list
+    - [x] `POST /api/filters` ÔÇö saves filter list to server memory + disk (`dashboard-settings.json`)
     - [x] Filters load from `dashboard-settings.json` on server startup (survive restarts)
   - [ ] **Pending / Future**:
-    - [x] Persist filters to disk (write to config JSON file) — done (POST /api/filters → `dashboard-settings.json`)
-    - [x] Pre-defined command templates dropdown — done (`FILTER_TEMPLATES` array + `applyFilterTemplate()`)
-    - [x] Parameter autocomplete from discovered helper schemas — done (`loadHelperCommandsForFilter()`)
-    - [x] Test filter button (dry-run simulation against known targets) — done (`handleTestFilter` + `btn-test-filter`)
-    - [x] Import filters from JSON file — done (`importFilters()` with replace/merge prompt)
-    - [x] Criteria: window title matching, binary hash, process path — redesigned: encoded directly in `process` field using spec format (`calc.exe[SHA256:abc…]` / `SHA256:abc…`) per COMMAND_ALIGNMENT.md; old invented checkbox fields removed
-    - [x] RegExp pattern support in pattern field — `/regex/` or `/regex/i` syntax supported in all pattern fields (process, command, pattern); wildcardMatch in mcpServer.ts + httpServerWithDashboard.ts updated; dashboard hint + help section updated
+    - [x] Persist filters to disk (write to config JSON file) ÔÇö done (POST /api/filters Ôćĺ `dashboard-settings.json`)
+    - [x] Pre-defined command templates dropdown ÔÇö done (`FILTER_TEMPLATES` array + `applyFilterTemplate()`)
+    - [x] Parameter autocomplete from discovered helper schemas ÔÇö done (`loadHelperCommandsForFilter()`)
+    - [x] Test filter button (dry-run simulation against known targets) ÔÇö done (`handleTestFilter` + `btn-test-filter`)
+    - [x] Import filters from JSON file ÔÇö done (`importFilters()` with replace/merge prompt)
+    - [x] Criteria: window title matching, binary hash, process path ÔÇö redesigned: encoded directly in `process` field using spec format (`calc.exe[SHA256:abcÔÇŽ]` / `SHA256:abcÔÇŽ`) per COMMAND_ALIGNMENT.md; old invented checkbox fields removed
+    - [x] RegExp pattern support in pattern field ÔÇö `/regex/` or `/regex/i` syntax supported in all pattern fields (process, command, pattern); wildcardMatch in mcpServer.ts + httpServerWithDashboard.ts updated; dashboard hint + help section updated
     - [ ] XPath-like UI tree path filtering
     - [ ] Office/Browser document structure filters
 - [x] Old Security Filters (basic lists - implemented):
@@ -208,10 +268,10 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
 - [ ] Validation:
   - [x] Check if paths exist (implemented)
   - [x] Validate key file integrity (implemented, now includes size check)
-  - [x] Test security configuration — done (config.json parse, config.json.sig hash comparison, helper .exe discovery)
-  - [x] Preview effective permissions — "📊 Rules by Process" collapsible panel below the filter list; groups all active rules by process, shows compact one-liners (action + helper::command/pattern + description); refreshes on every renderFilters(); note: default verdict is ALLOW when no rule matches
+  - [x] Test security configuration ÔÇö done (config.json parse, config.json.sig hash comparison, helper .exe discovery)
+  - [x] Preview effective permissions ÔÇö "­čôŐ Rules by Process" collapsible panel below the filter list; groups all active rules by process, shows compact one-liners (action + helper::command/pattern + description); refreshes on every renderFilters(); note: default verdict is ALLOW when no rule matches
 
-### 🔌 Dynamic Helper API Discovery (CRITICAL ARCHITECTURE) ✅ COMPLETED
+### ­čöî Dynamic Helper API Discovery (CRITICAL ARCHITECTURE) Ôťů COMPLETED
 **Goal:** MCP Server is just a thin wrapper - .exe helpers define their own API
 
 - [x] **Helper Schema Advertisement**:
@@ -220,17 +280,17 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
   - [x] Schema format includes helper info, version, command definitions, and usage examples
   - [x] Works independently of session authentication (for discovery purposes)
   
-- [x] **MCP Server Dynamic Loading** (Implemented — `src/server/HelperRegistry.ts`):
+- [x] **MCP Server Dynamic Loading** (Implemented ÔÇö `src/server/HelperRegistry.ts`):
   - [x] On startup, scan helper discovery paths (`dist/win/`, `dist/browser/`, `dist/office/`)
   - [x] Execute each helper with `--api-schema` flag
   - [x] Parse JSON schema and build internal command registry
   - [x] Generate MCP tools dynamically from schemas (one tool per helper)
   - [x] Map MCP tool calls to helper commands via `callCommand()`
   - [x] Validate incoming parameters against schemas (enum on command names)
-  - [x] Added `listHelpers` MCP tool — lists all discovered helpers
-  - [x] Added `getHelperSchema` MCP tool — returns full schema for a helper
+  - [x] Added `listHelpers` MCP tool ÔÇö lists all discovered helpers
+  - [x] Added `getHelperSchema` MCP tool ÔÇö returns full schema for a helper
   
-- [x] **Settings UI Integration** (partial — see Dashboard Enhancements):
+- [x] **Settings UI Integration** (partial ÔÇö see Dashboard Enhancements):
   - [x] Helper Discovery section added to Settings tab in dashboard
   - [x] Scan button + auto-scan on load (`/api/listHelpers` public endpoint)
   - [x] List discovered helpers with versions and command count
@@ -239,18 +299,18 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
   - [x] Commands tab showing inline command list (toggle per helper card)
   
 - [x] **Security Filter Integration**:
-  - [x] Use schemas to validate filter syntax — `validateAllFilters()` now cross-checks command names against cached helper schemas
-  - [x] Autocomplete command names from discovered schemas — `loadHelperCommandsForFilter()` uses `/api/getHelperSchema`
-  - [x] Parameter validation against schema types — `updateParameterSuggestions()` populates `<datalist>` from command examples
+  - [x] Use schemas to validate filter syntax ÔÇö `validateAllFilters()` now cross-checks command names against cached helper schemas
+  - [x] Autocomplete command names from discovered schemas ÔÇö `loadHelperCommandsForFilter()` uses `/api/getHelperSchema`
+  - [x] Parameter validation against schema types ÔÇö `updateParameterSuggestions()` populates `<datalist>` from command examples
   - [ ] Context-aware filter suggestions (full XPath/UI-tree aware, future)
   
 - [x] **Benefits Achieved**:
-  - [x] ✅ Foundation for pluggable helper architecture
-  - [x] ✅ Self-documenting helper capabilities
-  - [x] ✅ Automatic API discovery without code changes
+  - [x] Ôťů Foundation for pluggable helper architecture
+  - [x] Ôťů Self-documenting helper capabilities
+  - [x] Ôťů Automatic API discovery without code changes
 
 ### Interactive Scenario Editor
-- [x] Visual scenario builder — tabular step editor with command/target/parameter/conditional/note fields
+- [x] Visual scenario builder ÔÇö tabular step editor with command/target/parameter/conditional/note fields
 - [ ] Extended features (beyond current implementation):
   - [ ] Drag-and-drop step builder
   - [ ] IntelliSense-style autocomplete for:
@@ -276,17 +336,17 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
     - [ ] Debug mode with breakpoints
     - [ ] Variable inspection
 - [x] UI Components (implemented):
-  - [ ] Action palette (searchable list of all actions) — future
-  - [ ] Parameter forms (type-specific inputs) — future
-  - [x] Step reordering — ↑↓ buttons per row (`_seMoveStep`)
-  - [x] Duplicate steps — 📋 button per row (`_seDuplicateStep`)
-  - [x] Undo/redo support — `_seUndo()`/`_seRedo()` with history stack; triggered via Ctrl+Z/Ctrl+Y
-  - [ ] Drag-and-drop reorder — future enhancement
+  - [ ] Action palette (searchable list of all actions) ÔÇö future
+  - [ ] Parameter forms (type-specific inputs) ÔÇö future
+  - [x] Step reordering ÔÇö ÔćĹÔćô buttons per row (`_seMoveStep`)
+  - [x] Duplicate steps ÔÇö ­čôő button per row (`_seDuplicateStep`)
+  - [x] Undo/redo support ÔÇö `_seUndo()`/`_seRedo()` with history stack; triggered via Ctrl+Z/Ctrl+Y
+  - [ ] Drag-and-drop reorder ÔÇö future enhancement
 - [x] Integration:
-  - [x] Save/load from scenarios folder — `scenarioEditorPick()` + `scenarioEditorSave()` (PUT endpoint)
-  - [x] Import existing .json scenarios — load from server via picker
-  - [x] Export to .json format — Save writes canonical scenario JSON / XML
-  - [ ] Version control friendly output — future (pretty-print / deterministic field order)
+  - [x] Save/load from scenarios folder ÔÇö `scenarioEditorPick()` + `scenarioEditorSave()` (PUT endpoint)
+  - [x] Import existing .json scenarios ÔÇö load from server via picker
+  - [x] Export to .json format ÔÇö Save writes canonical scenario JSON / XML
+  - [ ] Version control friendly output ÔÇö future (pretty-print / deterministic field order)
 
 ### Installer & Deployment
 - [ ] Windows Installer:
@@ -317,74 +377,182 @@ Example: `ALLOW calc* → KeyWin.exe::{CLICKID}/num*Button`
   - [ ] Rollback on failure
 
 ### Dashboard Enhancements
-- [x] Add "Settings" tab with configuration UI — implemented (ports, paths, helpers, security toggle)
-- [x] Add "Scenario Editor" tab — implemented (tabular step editor, ↑↓ reorder, save/load, filter sync)
+- [x] Add "Settings" tab with configuration UI ÔÇö implemented (ports, paths, helpers, security toggle)
+- [x] Add "Scenario Editor" tab ÔÇö implemented (tabular step editor, ÔćĹÔćô reorder, save/load, filter sync)
 - [x] Add "Security" tab:
-  - [x] View current security config — shown via `validateConfiguration()` / `GET /api/config/security`
-  - [x] Edit security filters — filter wizard + Quick-Edit table + inline 🛡️ links from scenario steps
-  - [x] Test security rules — "Test Rule" dry-run button + "Validate All" button
-  - [x] View security logs/violations — '🔍 Security Audit Log' collapsible panel at bottom of Security tab; fetches from `GET /api/security/log` (newest-first, up to 200 entries from the in-memory log buffer filtered to source=Security); auto-refresh toggle (5 s); DENY/ALLOW colour-coded with icons
+  - [x] View current security config ÔÇö shown via `validateConfiguration()` / `GET /api/config/security`
+  - [x] Edit security filters ÔÇö filter wizard + Quick-Edit table + inline ­čŤí´ŞĆ links from scenario steps
+  - [x] Test security rules ÔÇö "Test Rule" dry-run button + "Validate All" button
+  - [x] View security logs/violations ÔÇö '­čöŹ Security Audit Log' collapsible panel at bottom of Security tab; fetches from `GET /api/security/log` (newest-first, up to 200 entries from the in-memory log buffer filtered to source=Security); auto-refresh toggle (5 s); DENY/ALLOW colour-coded with icons
   - [ ] **[LOW PRIORITY]** Security audit log: add pagination / `?limit=N&offset=N` to `/api/security/log`; persist security events to a rolling file log (separate from the in-memory buffer) so the log survives server restarts and doesn't grow impractically large in long-running deployments
 - [x] Add "Status" indicators:
-  - [x] Security status (enabled/disabled, valid keys) — in header status bar
-  - [x] Key expiry warnings — ⚠️ indicator when keys missing
-  - [x] Helper count indicator — shows N loaded helpers
+  - [x] Security status (enabled/disabled, valid keys) ÔÇö in header status bar
+  - [x] Key expiry warnings ÔÇö ÔÜá´ŞĆ indicator when keys missing
+  - [x] Helper count indicator ÔÇö shows N loaded helpers
   - [x] Configuration issues panel (errors/warnings listing) — done (`validateConfiguration()` auto-runs on load + `config-status` div in Settings)
+
+---
+
+## 🗄️ Auth subsystem — wiring & completion
+
+> Architecture is fully designed (`src/auth/`, `src/settings/`) — what follows is wiring,
+> config completeness, dashboard UI, and test coverage.
+> PostgreSQL will be installed on request for DB-backed tests.
+
+### U0 — `AuthConfig` type completeness
+- [ ] Add `users.db: DbConfig` sub-field to `AuthConfig` in `src/auth/types.ts`
+  so the user store can use a **different** DB connection than the settings adapter.
+  (Currently `AuthConfig.users` only has `storeSource` + `jsonPath`.)
+- [ ] Add `settings.source: 'json' | 'db'` + `settings.db: DbConfig` twin fields to
+  the top-level `DashboardSettings` shape so the settings backend is selectable
+  at install/setup time (not only at code level).
+- [ ] Ensure `SettingsManager` factory reads those fields and wires `DbSettingsAdapter`
+  or `JsonSettingsAdapter` accordingly — currently it always uses JSON.
+
+### U1 — Auth provider endpoint wiring
+> Both redirect-based providers are implemented but their HTTP routes are not registered.
+
+- [ ] Register routes in `httpServerWithDashboard.ts` (or `internalHandlers.ts`):
+  - `GET  /api/auth/oauth/redirect`  → `OAuthProvider.getRedirectUrl()`
+  - `GET  /api/auth/oauth/callback`  → `OAuthProvider.authenticate({ oauthCode, oauthState })`
+  - `GET  /api/auth/saml/redirect`   → `SamlProvider.getRedirectUrl()`
+  - `POST /api/auth/saml/callback`   → `SamlProvider.authenticate({ samlResponse, samlRelayState })`
+  - `POST /api/auth/login`           → `PasswordAuthProvider.authenticate({ username, password })`
+  - `POST /api/auth/apikey`          → `ApiKeyAuthProvider.authenticate({ apiKey })`
+  - `POST /api/auth/refresh`         → `JwtService.verify()` → issue new token
+  - `POST /api/auth/logout`          → invalidate JWT (add `jti` blocklist or short expiry)
+- [ ] `AuthMiddleware`: for every request extract and verify JWT if present;
+  fall back to per-request credential check if no JWT header.
+- [ ] Wire `AuthService.initAuth(cfg)` from `start-mcp-server.ts` so it selects the
+  correct `IAuthProvider` and `IUserStore` based on `auth.mode` and
+  `auth.users.storeSource` at startup.
+
+### U2 — `_internal` pseudo-helper filter enforcement
+> `Permission` type supports `helper: "_internal"` and `operation: "access" |
+> "settings_change" | "access_logs"` — but `securityFilter.ts` does not yet enforce these.
+
+- [ ] `securityFilter.ts`: before dispatching `_internal` REST endpoints, evaluate
+  filter rules where `helper === "_internal"`:
+  - `access` → any `GET /api/_internal/*` read operation
+  - `settings_change` → any `POST/PUT/DELETE /api/_internal/*` or `POST /api/settings/*`
+  - `access_logs` → `GET /api/security/log`, `GET /api/session/*`
+- [ ] Default policy for `_internal`: DENY unless the effective role has a matching
+  ALLOW rule (role `admin` gets full `*` by default at setup).
+- [ ] Expose `_internal` as a selectable "helper" in the Dashboard Security filter
+  wizard so operators can write fine-grained rules per role.
+
+### U3 — Role-aware filter evaluation (depends on A3)
+- [ ] Dashboard: assign filter rule a `role` field via the wizard
+- [ ] Test: user without role → rule skipped (default-deny takes over)
+- [ ] Test: user with role → rule applied
+
+### U4 — DbUserStore + DbSettingsAdapter integration tests
+> PostgreSQL will be installed first; others can follow as CI matrix jobs.
+
+- [ ] `npm install pg` (PostgreSQL driver)
+- [ ] Configure `config/dashboard-settings.json`: `"auth": {"users": {"storeSource":"db","db":{"type":"postgresql",...}}}`
+- [ ] Verify `DbUserStore` creates tables on first run (`aiapi_users`, `aiapi_roles`,
+  `aiapi_user_roles`, `aiapi_apikeys`)
+- [ ] Test: create user → assign role → login via password → receive JWT → call
+  `GET /api/_internal/users` with JWT → round-trip verified
+- [ ] `DbSettingsAdapter`: same DB connection; `aiapi_settings` table; test get/set round-trip
+- [ ] Repeat tests for MSSQL (method=`password`), MySQL, Oracle when machines available
+- [ ] Test all 5 DB auth methods for PostgreSQL:
+  - `password` (username + password in config)
+  - `certificate` (client TLS cert = settings-signing cert)
+  - `integrated` (Kerberos/SSPI on Windows domain)
+  - `impersonation` (Windows impersonation, MSSQL only)
+  - `constant` (raw connection string — documented as "abusable", warn in logs)
+
+### U5 — Auth provider tests
+- [ ] Unit tests: `PasswordAuthProvider` — correct password ✓, wrong ✗, locked user ✗
+- [ ] Unit tests: `ApiKeyAuthProvider` — valid key ✓, revoked key ✗
+- [ ] Unit tests: `JwtService` — issue / verify / expiry / tamper detection
+- [ ] Unit tests: `AuthService` — factory selects correct provider per `auth.mode`
+- [ ] Integration test: `OAuthProvider` — mock IdP returns code → token → userInfo →
+  user provisioned → JWT issued; `usernamePath` + `groupsPath` extraction verified
+- [ ] Integration test: `SamlProvider` — mock IdP POSTs SAMLResponse → signature
+  verified → user provisioned → JWT; `samlify` absent → fallback warning logged
+- [ ] Integration test: `CertificateAuthProvider` — mTLS handshake → CN extracted
+  → user looked up → JWT; invalid cert → 401
+- [ ] Verify `auth.debugExternalAuth = true` writes sanitised OAuth/SAML req/resp
+  bodies to the logger (credentials redacted)
+
+### U6 — Dashboard auth configuration UI
+- [ ] New **"Auth"** panel (or sub-tab of Settings) with:
+  - Auth mode selector: None / Password / API Key / Certificate / OAuth / SAML
+  - JWT settings: enabled toggle, expiry minutes, secret (masked)
+  - Password settings: bcrypt rounds
+  - OAuth form: clientId, clientSecret (masked), authorizationUrl, tokenUrl,
+    userInfoUrl, scope, callbackUrl, usernamePath, groupsPath, PKCE toggle
+  - SAML form: entryPoint, issuer, SP cert (upload), IdP cert (upload),
+    privateKey (masked), callbackUrl, usernamePath, groupsPath, signatureAlgorithm
+  - Debug external auth toggle (checkbox)
+  - User store source: JSON (path field) / DB (shows DbConfig form)
+  - DB form: engine selector, host, port, database, auth method + relevant fields
+- [ ] **"Users & Roles"** sub-panel (requires auth.mode ≠ "none"):
+  - User list table: username, enabled toggle, roles, API keys (count)
+  - Inline "Add user" form: username, password (masked), initial roles
+  - Role list table: name, description, permissions matrix
+  - Inline "Add role" form: name → permission rows (helper / operation / resource)
+  - API key management per user: generate new key (shown once), revoke
+- [ ] POST `/api/auth/config` — save auth section of dashboard settings (re-sign JSON)
+- [ ] Docs: add auth config example to `docs/guides/SERVER_GUIDE.md`
 
 ---
 
 ## 🎯 Browser Automation (PRIORITY 2)
 **Goal:** Control web browsers with DOM structure access.
 Continue in same priority after this section:
-↳ **🌐 Cross-Platform Browser DOM Access** — LAUNCH command, screen-reader trick, ISimpleDOMNode
-↳ **🎮 Unified Input/Output Control Model** — KEYDOWN/UP/PRESS, RIGHTCLICK, CHECK, unified tree schema
-↳ **🗺️ Unified Action Addressing** — XPath security filter path syntax
+Ôć│ **­čîÉ Cross-Platform Browser DOM Access** ÔÇö LAUNCH command, screen-reader trick, ISimpleDOMNode
+Ôć│ **­čÄ« Unified Input/Output Control Model** ÔÇö KEYDOWN/UP/PRESS, RIGHTCLICK, CHECK, unified tree schema
+Ôć│ **­čŚ║´ŞĆ Unified Action Addressing** ÔÇö XPath security filter path syntax
 
 ### BrowserWin.exe Helper
 - [x] Create `tools/browser/BrowserWin.cs` (CDP-based, pure .NET 4.5, no NuGet)
-- [x] **HelperRegistry protocol** — `--listen-stdin` pipe mode ✅
-- [x] **QUERYTREE node schema aligned with KeyWin** — `{id,type,name,position,properties,actions,value,children}` ✅
-- [x] **WebSocket masking** — RFC 6455; fixed ✅
-- [x] **`targetDescription`** in `--api-schema` ✅
+- [x] **HelperRegistry protocol** ÔÇö `--listen-stdin` pipe mode Ôťů
+- [x] **QUERYTREE node schema aligned with KeyWin** ÔÇö `{id,type,name,position,properties,actions,value,children}` Ôťů
+- [x] **WebSocket masking** ÔÇö RFC 6455; fixed Ôťů
+- [x] **`targetDescription`** in `--api-schema` Ôťů
 - [x] Support multiple browsers (target `browser` or `browser:port`):
-  - [x] Brave (`brave:9222`) ✅
-  - [x] Edge (`msedge:9223`) ✅
-  - [x] Chrome (`chrome:9224`) ✅
-  - [x] Firefox — UIA fallback (full ARIA tree, 11+ form nodes) ✅; CDP via `--remote-debugging-port` ✅
-  - [ ] Internet Explorer — dead; Win32/MSAA via KeyWin.exe only
+  - [x] Brave (`brave:9222`) Ôťů
+  - [x] Edge (`msedge:9223`) Ôťů
+  - [x] Chrome (`chrome:9224`) Ôťů
+  - [x] Firefox ÔÇö UIA fallback (full ARIA tree, 11+ form nodes) Ôťů; CDP via `--remote-debugging-port` Ôťů
+  - [ ] Internet Explorer ÔÇö dead; Win32/MSAA via KeyWin.exe only
 - [x] Core commands (CDP path + UIA fallback):
-  - [x] `{NAVIGATE:url}` — CDP + UIA (Ctrl+L) ✅
-  - [x] `{QUERYTREE}` / `{QUERYTREE:depth}` — CDP (full DOM) + UIA (accessibility tree) ✅
-  - [x] `{CLICKID:selector}` — CDP (`querySelector`) + UIA (`FocusOrClickElement`) ✅
-  - [x] `{CLICKNAME:text}` — CDP (text + label `for=` + aria-label) + UIA (Name / LabeledBy) ✅
-  - [x] `{FILL:selector:value}` — CDP (`el.value` + events) + UIA (`FillElement` / `ValuePattern` / `LabeledBy`) ✅
-  - [x] `{READELEM:selector}` — CDP (querySelector + label fallback) + UIA (ValuePattern / LabeledBy) ✅
-  - [x] `{EXEC:js}` — CDP only ✅
-  - [x] `{SENDKEYS:keys}` — UIA (SendInput to render widget) ✅
-  - [x] `{COOKIES:get|clear|set:...}` ✅
-  - [x] `{LISTBROWSERS}` — Chrome/Brave/Edge/Opera/Firefox ✅
-  - [x] `{NEWPAGE}` / `{NEWPAGE:url}` — CDP (PUT /json/new) + UIA (Ctrl+T) ✅
-  - [x] `{KILL}` ✅
-  - [x] `{SCREENSHOT}` ✅ DONE: CDP `Page.captureScreenshot` via raw TCP WebSocket — saves PNG to file
+  - [x] `{NAVIGATE:url}` ÔÇö CDP + UIA (Ctrl+L) Ôťů
+  - [x] `{QUERYTREE}` / `{QUERYTREE:depth}` ÔÇö CDP (full DOM) + UIA (accessibility tree) Ôťů
+  - [x] `{CLICKID:selector}` ÔÇö CDP (`querySelector`) + UIA (`FocusOrClickElement`) Ôťů
+  - [x] `{CLICKNAME:text}` ÔÇö CDP (text + label `for=` + aria-label) + UIA (Name / LabeledBy) Ôťů
+  - [x] `{FILL:selector:value}` ÔÇö CDP (`el.value` + events) + UIA (`FillElement` / `ValuePattern` / `LabeledBy`) Ôťů
+  - [x] `{READELEM:selector}` ÔÇö CDP (querySelector + label fallback) + UIA (ValuePattern / LabeledBy) Ôťů
+  - [x] `{EXEC:js}` ÔÇö CDP only Ôťů
+  - [x] `{SENDKEYS:keys}` ÔÇö UIA (SendInput to render widget) Ôťů
+  - [x] `{COOKIES:get|clear|set:...}` Ôťů
+  - [x] `{LISTBROWSERS}` ÔÇö Chrome/Brave/Edge/Opera/Firefox Ôťů
+  - [x] `{NEWPAGE}` / `{NEWPAGE:url}` ÔÇö CDP (PUT /json/new) + UIA (Ctrl+T) Ôťů
+  - [x] `{KILL}` Ôťů
+  - [x] `{SCREENSHOT}` Ôťů DONE: CDP `Page.captureScreenshot` via raw TCP WebSocket ÔÇö saves PNG to file
     (reuses existing `BuildWsFrame`/`TryGetActiveTarget` infrastructure; 32 MB response buffer)
-  - [ ] Alert/popup handling — needs WebSocket CDP event loop
-- [x] **`{LAUNCH:browser[:visible|headless]}`** ✅ DONE + FULL-STACK TESTED: start browser with `--remote-debugging-port`
-  - [x] Scans ports 9222–9229 for existing CDP window; returns `reused:true` if found ✅
-  - [x] If not found: spawns `browser.exe --remote-debugging-port=N --user-data-dir=%TEMP%\aiapi-N` ✅
-  - [x] `visible` (default) and `headless` (`--headless=new`) modes supported ✅
-  - [x] Waits up to 6 s for CDP; returns `{"success":true,"port":N,"reused":false/true}` ✅
-  - [x] AI schema text in `OutputApiSchema()` explains CDP unlock ✅
-  - [x] Scans Program Files, LocalAppData, registry paths for browser executables ✅
-  - [x] Idempotency test: 2nd LAUNCH call returns `reused:true` (all 4 browsers) ✅
-- [x] **`{PAGESOURCE}`** ✅ DONE: raw HTML without CDP (UIA clipboard trick)
-  - [x] Ctrl+U → Ctrl+A → Ctrl+C → read clipboard → Ctrl+W to close view-source tab ✅
-  - [x] Returns original HTTP source; works on every browser, no debug port needed ✅
-  - [x] Added to `OutputApiSchema()` (was missing from schema v1.1.0; now in v1.2.0) ✅
+  - [ ] Alert/popup handling ÔÇö needs WebSocket CDP event loop
+- [x] **`{LAUNCH:browser[:visible|headless]}`** Ôťů DONE + FULL-STACK TESTED: start browser with `--remote-debugging-port`
+  - [x] Scans ports 9222ÔÇô9229 for existing CDP window; returns `reused:true` if found Ôťů
+  - [x] If not found: spawns `browser.exe --remote-debugging-port=N --user-data-dir=%TEMP%\aiapi-N` Ôťů
+  - [x] `visible` (default) and `headless` (`--headless=new`) modes supported Ôťů
+  - [x] Waits up to 6 s for CDP; returns `{"success":true,"port":N,"reused":false/true}` Ôťů
+  - [x] AI schema text in `OutputApiSchema()` explains CDP unlock Ôťů
+  - [x] Scans Program Files, LocalAppData, registry paths for browser executables Ôťů
+  - [x] Idempotency test: 2nd LAUNCH call returns `reused:true` (all 4 browsers) Ôťů
+- [x] **`{PAGESOURCE}`** Ôťů DONE: raw HTML without CDP (UIA clipboard trick)
+  - [x] Ctrl+U Ôćĺ Ctrl+A Ôćĺ Ctrl+C Ôćĺ read clipboard Ôćĺ Ctrl+W to close view-source tab Ôťů
+  - [x] Returns original HTTP source; works on every browser, no debug port needed Ôťů
+  - [x] Added to `OutputApiSchema()` (was missing from schema v1.1.0; now in v1.2.0) Ôťů
 - [x] Integration:
-  - [x] CDP over raw masked TCP WebSocket (no NuGet) ✅
-  - [x] `--api-schema` with `targetDescription` ✅
-  - [x] Security filter applied by MCP server ✅
-  - [x] JSON output matching KeyWin.exe (`{"success":...}`) ✅
+  - [x] CDP over raw masked TCP WebSocket (no NuGet) Ôťů
+  - [x] `--api-schema` with `targetDescription` Ôťů
+  - [x] Security filter applied by MCP server Ôťů
+  - [x] JSON output matching KeyWin.exe (`{"success":...}`) Ôťů
   - [ ] Session token authentication (SKIP_SESSION_AUTH currently in env)
 
 ### WebUIProvider Enhancement
@@ -402,21 +570,21 @@ Continue in same priority after this section:
 
 ---
 
-## � Unified Helper Communication Architecture (PRIORITY 1.5)
+## ´┐Ż Unified Helper Communication Architecture (PRIORITY 1.5)
 **Goal:** All helpers (KeyWin, BrowserWin, OfficeWin, future) share identical wire protocol
 across all transports. Remove unsafe env-var credential passing. Enable persistent daemons
 for zero-spawn-overhead operation.
 
-### Transport Modes (naming convention — agreed)
+### Transport Modes (naming convention ÔÇö agreed)
 
 Each helper supports one or more via CLI flags (combinable):
 
 | Flag | Behaviour |
 |---|---|
 | `--listen-stdin` | Read JSON lines from stdin, write JSON lines to stdout. **Exit on EOF** (caller controls lifetime). |
-| `--listen-stdin --persistent` | Same but **ignore EOF** — only exit on `{"action":"_exit"}` or OS signal (SIGTERM / Ctrl-C). |
-| `--listen-pipe=\\.\pipe\Name` | Named pipe server — Windows, multi-caller, survives caller disconnects. ✅ **IMPLEMENTED** — `RunNamedPipeListener` in HelperCommon.cs; wired in both helpers. |
-| `--listen-port=N` | HTTP JSON-RPC on `127.0.0.1:N` (loopback only). ✅ **IMPLEMENTED** — `RunHttpListener` in HelperCommon.cs; wired in both helpers. |
+| `--listen-stdin --persistent` | Same but **ignore EOF** ÔÇö only exit on `{"action":"_exit"}` or OS signal (SIGTERM / Ctrl-C). |
+| `--listen-pipe=\\.\pipe\Name` | Named pipe server ÔÇö Windows, multi-caller, survives caller disconnects. Ôťů **IMPLEMENTED** ÔÇö `RunNamedPipeListener` in HelperCommon.cs; wired in both helpers. |
+| `--listen-port=N` | HTTP JSON-RPC on `127.0.0.1:N` (loopback only). Ôťů **IMPLEMENTED** ÔÇö `RunHttpListener` in HelperCommon.cs; wired in both helpers. |
 | *(combined)* | `--listen-pipe=... --listen-port=N` runs both on two threads, one process. |
 | *(none / current)* | One-shot: `--inject-mode=direct tmpFile` or `--target=... --action=...` |
 
@@ -430,9 +598,9 @@ All transports handle these before routing to the helper's own command dispatch:
 {"action":"_exit"}
 ```
 
-- `_schema` — replaces the `--api-schema` CLI flag; returns the same JSON capabilities doc
-- `_auth` — first-message auth handshake (replaces env-var credentials; see Security section)
-- `_exit` — clean shutdown (only meaningful in `--persistent` mode or daemon)
+- `_schema` ÔÇö replaces the `--api-schema` CLI flag; returns the same JSON capabilities doc
+- `_auth` ÔÇö first-message auth handshake (replaces env-var credentials; see Security section)
+- `_exit` ÔÇö clean shutdown (only meaningful in `--persistent` mode or daemon)
 
 ### Wire Format (identical JSON fields across all transports)
 
@@ -447,50 +615,50 @@ All transports handle these before routing to the helper's own command dispatch:
 
 ### Things to Remove / Replace
 
-- [x] **`MCP_SESSION_TOKEN` env var** — REMOVED from `HelperRegistry.buildEnv()` and class fields;
+- [x] **`MCP_SESSION_TOKEN` env var** ÔÇö REMOVED from `HelperRegistry.buildEnv()` and class fields;
   `sessionToken` / `sessionSecret` constructor args dropped; helpers never consumed this env var.
   Final removal of the credential path happens via `_auth` handshake (see Helper Auth section).
-- [x] **`MCP_SESSION_SECRET` env var** — same as above; removed in the same commit.
-- [ ] **`--token=` / `--secret=` CLI args** — these were never prototyped in code (no helper or
+- [x] **`MCP_SESSION_SECRET` env var** ÔÇö same as above; removed in the same commit.
+- [ ] **`--token=` / `--secret=` CLI args** ÔÇö these were never prototyped in code (no helper or
   registry code passes or reads them); item kept as a guard: do NOT add them.
   Replace credential passage permanently with `_auth` message (see Helper Auth section).
-- [x] **`--inject-mode=direct tmpFile`** — ✅ DONE: replaced by `--listen-stdin` pipe in
+- [x] **`--inject-mode=direct tmpFile`** ÔÇö Ôťů DONE: replaced by `--listen-stdin` pipe in
   `HelperRegistry.callCommand()`. Temp file, `fs.writeFileSync`, and `os.tmpdir()` removed.
-- [x] **`--api-schema` CLI flag** — `HelperRegistry.ts` `querySchema()` now uses `--listen-stdin` +
+- [x] **`--api-schema` CLI flag** ÔÇö `HelperRegistry.ts` `querySchema()` now uses `--listen-stdin` +
   `{"action":"_schema"}` (same wire protocol as commands); `--api-schema` remains as alias in helpers.
-- [ ] Keep: `SKIP_SESSION_AUTH=true` env var — not a credential, just a dev/test bypass flag,
+- [ ] Keep: `SKIP_SESSION_AUTH=true` env var ÔÇö not a credential, just a dev/test bypass flag,
   acceptable in env.
 
 ### HelperRegistry.ts Upgrade Path
 
-- [x] **Step 1 (quick win)** ✅ DONE + FULL-STACK TESTED: `callCommand()` uses `--listen-stdin` pipe.
+- [x] **Step 1 (quick win)** Ôťů DONE + FULL-STACK TESTED: `callCommand()` uses `--listen-stdin` pipe.
   - `HelperRegistry.ts`: removed `os` import, removed `tmpFile` write/unlink, spawns with
     `['--listen-stdin']`, writes JSON line to stdin, closes stdin (EOF triggers exit).
-  - `BrowserWin.cs`: `--listen-stdin` branch added at top of `Main()` — calls
+  - `BrowserWin.cs`: `--listen-stdin` branch added at top of `Main()` ÔÇö calls
     `HelperCommon.RunStdinListener()`, dispatches by re-invoking `Main([target,action])`.
-  - `KeyWin.cs`: same pattern — `--listen-stdin` branch + `HelperCommon.RunStdinListener()`.
+  - `KeyWin.cs`: same pattern ÔÇö `--listen-stdin` branch + `HelperCommon.RunStdinListener()`.
   - `tools/common/HelperCommon.cs` created and compiled into both helpers.
     - Bug fixed: `Console.InputEncoding = UTF8` throws `IOException` when stdin is a pipe
-      on .NET 4.0 → replaced with `StreamReader(Console.OpenStandardInput(), UTF8)` +
+      on .NET 4.0 Ôćĺ replaced with `StreamReader(Console.OpenStandardInput(), UTF8)` +
       `Console.SetOut(StreamWriter(Console.OpenStandardOutput(), UTF8))`.
   - Build script updated: `$commonSrc` added to both KeyWin and BrowserWin compile lines.
   - **Full-stack MCP test: 20/20 passed** (`test-full-stack-stdin.js`):
-    - KeyWin LISTWINDOWS ✅ | BrowserWin LISTBROWSERS ✅
-    - Calculator: launched → found "Kalkulačka" (Czech) → QUERYTREE/CLICKID/READ
-      → result = "32" ✅
-    - Notepad: launched → QUERYTREE → SENDKEYS → READ round-trip ✅
-    - Brave :9222 READ+QUERYTREE ✅ | Edge :9223 READ+QUERYTREE ✅ | Chrome :9224 READ+QUERYTREE ✅
-    - Unicode (Czech window titles) handled correctly via UTF-8 StreamReader ✅
-- [x] **Step 2 (perf win)** ✅ DONE + FULL-STACK TESTED: `--listen-stdin --persistent` daemon per helper
+    - KeyWin LISTWINDOWS Ôťů | BrowserWin LISTBROWSERS Ôťů
+    - Calculator: launched Ôćĺ found "Kalkula─Źka" (Czech) Ôćĺ QUERYTREE/CLICKID/READ
+      Ôćĺ result = "32" Ôťů
+    - Notepad: launched Ôćĺ QUERYTREE Ôćĺ SENDKEYS Ôćĺ READ round-trip Ôťů
+    - Brave :9222 READ+QUERYTREE Ôťů | Edge :9223 READ+QUERYTREE Ôťů | Chrome :9224 READ+QUERYTREE Ôťů
+    - Unicode (Czech window titles) handled correctly via UTF-8 StreamReader Ôťů
+- [x] **Step 2 (perf win)** Ôťů DONE + FULL-STACK TESTED: `--listen-stdin --persistent` daemon per helper
   - `HelperRegistry.ts` rewritten with new `HelperDaemon` class: sequential promise queue,
     string-aware JSON extractor (handles `{}` inside strings), auto-restart on crash
   - `HelperRegistry.discoverHelpers()` starts daemon immediately after schema parse; no extra spawn
-  - `HelperRegistry.callCommand()` routes through daemon — zero process-spawn overhead per call
+  - `HelperRegistry.callCommand()` routes through daemon ÔÇö zero process-spawn overhead per call
   - `HelperRegistry.shutdownAll()` sends `{"action":"_exit"}` to all daemons
   - `mcpServer.stop()` calls `shutdownAll()` first, then closes HTTP server
-  - ⚠️ Daemons lock `.exe` files — server must be stopped before rebuilding (see START_HERE.md)
-  - **117/0 tests passing** with persistent daemons ✅
-- [x] **Step 3** ✅ DONE: Named-pipe transport for multi-client access (`1ad13af`)
+  - ÔÜá´ŞĆ Daemons lock `.exe` files ÔÇö server must be stopped before rebuilding (see START_HERE.md)
+  - **117/0 tests passing** with persistent daemons Ôťů
+- [x] **Step 3** Ôťů DONE: Named-pipe transport for multi-client access (`1ad13af`)
   - `RunNamedPipeListener(string pipeName, dispatch, getSchema)` in `HelperCommon.cs`
   - `--listen-pipe=Name` flag wired in `KeyWin.cs` and `BrowserWin.cs`
   - Re-accepts clients after disconnect (sequential multi-caller)
@@ -499,69 +667,69 @@ All transports handle these before routing to the helper's own command dispatch:
 
 ---
 
-## 🧩 HelperCommon.cs — Shared Source (PRIORITY 1.5)
+## ­čžę HelperCommon.cs ÔÇö Shared Source (PRIORITY 1.5)
 **Goal:** Share transport + dispatch + auth boilerplate across all .exe helpers without
 introducing a separately loadable DLL (which would break binary hash integrity).
 
 ### Design Decision: Compiled-In, NOT a DLL
 
-- A separate `HelperCommon.dll` could be swapped without changing the `.exe` hash → **defeats
+- A separate `HelperCommon.dll` could be swapped without changing the `.exe` hash Ôćĺ **defeats
   binary integrity verification**
 - Solution: `tools/common/HelperCommon.cs` is added to each helper's `csc` compile line
-- Result: code is baked into each `.exe` — changing it changes the hash
+- Result: code is baked into each `.exe` ÔÇö changing it changes the hash
 
 ### File Location
 
 ```
 tools/
   common/
-    HelperCommon.cs    ← shared source, compiled into every helper .exe
+    HelperCommon.cs    ÔćÉ shared source, compiled into every helper .exe
   win/
-    KeyWin.cs          ← adds HelperCommon.cs to its compile command
+    KeyWin.cs          ÔćÉ adds HelperCommon.cs to its compile command
   browser/
-    BrowserWin.cs      ← same
+    BrowserWin.cs      ÔćÉ same
   office/
-    OfficeWin.cs       ← same (future)
+    OfficeWin.cs       ÔćÉ same (future)
 ```
 
 ### HelperCommon.cs Contents (current state)
 
-- [x] `HcJson.GetString(json, key)` — minimal JSON string extractor (\uXXXX, all escape seqs)
-- [x] `HcJson.EscapeStr(s)` — JSON string escaper
-- [x] `HcJson.Err(id, msg)` — build `{"success":false,"error":"..."}` response
-- [x] `HelperCommon.HasFlag(args, flag)` — case-insensitive flag lookup
-- [x] `HelperCommon.RunStdinListener(persistent, dispatch, getSchema)` — full stdin loop
+- [x] `HcJson.GetString(json, key)` ÔÇö minimal JSON string extractor (\uXXXX, all escape seqs)
+- [x] `HcJson.EscapeStr(s)` ÔÇö JSON string escaper
+- [x] `HcJson.Err(id, msg)` ÔÇö build `{"success":false,"error":"..."}` response
+- [x] `HelperCommon.HasFlag(args, flag)` ÔÇö case-insensitive flag lookup
+- [x] `HelperCommon.RunStdinListener(persistent, dispatch, getSchema)` ÔÇö full stdin loop
   with `_schema`, `_exit` built-ins; one-shot (persistent=false) and loop (persistent=true)
-- [x] `RunHttpListener(int port)` — HTTP/1.1 minimal server (System.Net.HttpListener); added
+- [x] `RunHttpListener(int port)` ÔÇö HTTP/1.1 minimal server (System.Net.HttpListener); added
   to `HelperCommon.cs`; `--listen-port=N` flag wired in `KeyWin.cs` and `BrowserWin.cs`.
   Dispatches via same `Console.Out`-capture pattern as stdin; built-in `_schema`, `_ping`,
-  `_exit`, id-injection all work over HTTP. Smoke-tested live (`pong=True id=1`). ✅
-- [x] `RunNamedPipeListener(string pipeName)` — Windows named pipe server thread; added to
+  `_exit`, id-injection all work over HTTP. Smoke-tested live (`pong=True id=1`). Ôťů
+- [x] `RunNamedPipeListener(string pipeName)` ÔÇö Windows named pipe server thread; added to
   `HelperCommon.cs`; `--listen-pipe=Name` flag wired in `KeyWin.cs` and `BrowserWin.cs`.
   Re-accepts clients after disconnect (multi-caller sequential). `Console.Out` redirected to
-  pipe writer for connection duration. Smoke-tested live (`pong=True id=7`). ✅
-- [x] `AuthState` class — tracks `_auth` state, securityConfig path, sessionKey; added to
+  pipe writer for connection duration. Smoke-tested live (`pong=True id=7`). Ôťů
+- [x] `AuthState` class ÔÇö tracks `_auth` state, securityConfig path, sessionKey; added to
   `HelperCommon.cs` with fields `Authenticated`, `SkippedAuth`, `HelperNonce`, `ServerNonce`,
   `PkBytes`, `SecurityConfigPath`, `SessionKey` (SessionKey null until SecurityLib).
-- [x] `ParseArgs(string[] args)` → unified flag parser — `ParseArgs` + `GetFlagValue` added to
+- [x] `ParseArgs(string[] args)` Ôćĺ unified flag parser ÔÇö `ParseArgs` + `GetFlagValue` added to
   `HelperCommon.cs`; also `HcJson.GetBool()` and `HcJson.GetInt()` (needed by `_auth` parser).
 
 ### Each Helper's Responsibilities (current state)
 
 Currently helpers handle dispatch inline (re-invoke `Main([target,action])`).
 The target future state is for each helper to implement a clean `ExecuteCommand(target, action)`
-and `GetSchema()` that HelperCommon calls — but the current approach works and is backward-compat.
+and `GetSchema()` that HelperCommon calls ÔÇö but the current approach works and is backward-compat.
 
 - [x] Refactor `KeyWin.cs`: extract dispatch into `DispatchCommand(target, action)` method-group (mirrors BrowserWin, commit ca93314+1)
 - [x] Refactor `BrowserWin.cs`: extract `GetSchema()` returning string; `DispatchCommand`
-  added as static method — all 3 transport listener lambdas (stdin, HTTP, pipe) now call
+  added as static method ÔÇö all 3 transport listener lambdas (stdin, HTTP, pipe) now call
   `DispatchCommand` directly instead of re-invoking `Main()`. `GetApiSchema()` was already
-  extracted; used as method-group `Func<string>` in all three listeners. ✅
-- [x] Update `scripts/build-win-tools.ps1` to include `HelperCommon.cs` in each compile line ✅
+  extracted; used as method-group `Func<string>` in all three listeners. Ôťů
+- [x] Update `scripts/build-win-tools.ps1` to include `HelperCommon.cs` in each compile line Ôťů
 
 ---
 
-## 🛡️ Shared Security Library (PRIORITY 1.5)
+## ­čŤí´ŞĆ Shared Security Library (PRIORITY 1.5)
 **Goal:** Single security enforcement point used by ALL helpers, independently of the MCP
 server. Ensures security filters apply even to direct helper invocations that bypass MCP.
 
@@ -570,7 +738,7 @@ server. Ensures security filters apply even to direct helper invocations that by
 - Must work cross-platform (future Linux helpers in other languages)
 - C# helpers load it via P/Invoke; future Python/Node helpers via ctypes/N-API
 - Crypto primitives (SHA-256, RSA verify, AES-GCM) available without NuGet on all platforms
-- DLL's own hash stored in `security/config.json` — helpers verify DLL hash BEFORE loading
+- DLL's own hash stored in `security/config.json` ÔÇö helpers verify DLL hash BEFORE loading
 
 ### API Surface
 
@@ -593,16 +761,16 @@ void sec_unload();
 ### Enforcement Rule
 
 - Every helper calls `sec_validate_action()` BEFORE executing any command
-- If result is `SEC_DENY` → return `{"success":false,"error":"SECURITY_FILTER_DENY"}` **without
-  executing the action** — cannot be overridden by caller
-- `SEC_ASK` → surface to user (future: OS dialog); currently treat as DENY for safety
+- If result is `SEC_DENY` Ôćĺ return `{"success":false,"error":"SECURITY_FILTER_DENY"}` **without
+  executing the action** ÔÇö cannot be overridden by caller
+- `SEC_ASK` Ôćĺ surface to user (future: OS dialog); currently treat as DENY for safety
 - MCP server ALSO applies filters (defense in depth; direct helper calls bypass MCP)
 
 ### Implementation Tasks
 
 - [ ] Create `tools/common/security/SecurityLib.cpp` + `SecurityLib.h`
 - [ ] Implement `sec_load()`: parse `security/config.json`, verify `config.json.sig` with
-  embedded/trusted public key, decrypt `private.key.enc` (PBKDF2 + AES-256-GCM — reuse
+  embedded/trusted public key, decrypt `private.key.enc` (PBKDF2 + AES-256-GCM ÔÇö reuse
   same key format as `CertificateManager.ts`)
 - [ ] Implement `sec_validate_signature()`: SHA-256 the exe file, compare to hash in
   `security/config.json`
@@ -615,80 +783,80 @@ void sec_unload();
 
 ---
 
-## 🔐 Helper Authentication — In-Memory PK + HKDF Session Key (PRIORITY 1.5)
+## ­čöÉ Helper Authentication ÔÇö In-Memory PK + HKDF Session Key (PRIORITY 1.5)
 **Goal:** Replace env-var HMAC secret passing with a cryptographically sound scheme where
 the decrypted private key **never touches persistent storage** in its raw form, is passed
 to helpers exclusively over the in-process stdin pipe, and both parties independently
-derive the same temporary session key via HKDF — the session key is never transmitted.
+derive the same temporary session key via HKDF ÔÇö the session key is never transmitted.
 
 ### Design Principles
 
-- **Private key decrypted once in MCP server memory** — password entered by user at startup
-  (or read from Windows DPAPI / Credential Manager — never stored plaintext)
-- **Raw PK material sent to helper via stdin pipe only** — pipe is in-process memory;
+- **Private key decrypted once in MCP server memory** ÔÇö password entered by user at startup
+  (or read from Windows DPAPI / Credential Manager ÔÇö never stored plaintext)
+- **Raw PK material sent to helper via stdin pipe only** ÔÇö pipe is in-process memory;
   never hits disk, never appears in process listing, not in environment variables
-- **No silent/bypass auth is possible** (and this is intentional) — no matter whether the
-  call is one-shot or persistent, the helper MUST complete the `_auth_hello` → `_auth`
+- **No silent/bypass auth is possible** (and this is intentional) ÔÇö no matter whether the
+  call is one-shot or persistent, the helper MUST complete the `_auth_hello` Ôćĺ `_auth`
   exchange as the very first two messages on stdin before accepting any command.
   The raw PK material cannot safely travel on the command line (4096-bit arg length +
   visible in `tasklist /v` / Process Explorer), so the authentication entry point is the
   stdin pipe only. Practically: `--inject-mode=direct tmpFile` is replaced by a stdin pipe
   that begins with the auth exchange; `--target=... --action=...` CLI shortcuts remain
   available only in dev/debug mode with `SKIP_SESSION_AUTH=true` (existing flag).
-- **Session key derived independently on both sides** — neither side transmits the key;
+- **Session key derived independently on both sides** ÔÇö neither side transmits the key;
   both compute `HKDF(private_key_bytes, serverNonce || helperNonce, "AIAPI-v1-session")`
   and get identical output. Classic shared-secret sub-key derivation.
-- **Helper has zero persistent state** — no key files needed on its side
+- **Helper has zero persistent state** ÔÇö no key files needed on its side
   (it receives everything in the `_auth` message)
 
 ### Auth Handshake Flow
 
 ```
 [Helper starts]                           [MCP Server]
-   │                                          │
-   │  1. sec_validate_signature(selfPath)      │  (MCP server has already decrypted
-   │     — verify own exe + DLL hashes         │   private.key.enc on startup,
-   │     BEFORE reading any stdin              │   password came from user/DPAPI)
-   │                                          │
-   ├─ {"action":"_auth_hello",           ───>  │
-   │   "helperNonce":"<base64 32B>",            │
-   │   "exeHash":"<sha256-hex>",                │
-   │   "dllHash":"<sha256-hex>"}               │
-   │                                          │
-   │                      MCP: verify exeHash │
-   │                        against stored    │
-   │                        config.json entry │
-   │                                          │
-   │<─ {"action":"_auth",               <───  │
-   │    "pk":"<base64-pkcs8-raw>",             │  raw decrypted RSA private key bytes
-   │    "serverNonce":"<base64 32B>",          │  never written to disk
-   │    "securityConfig":"<path>",             │
-   │    "helperExePath":"<path>"}              │
-   │                                          │
-   │  2. sec_load(pk_bytes, configPath)        │
-   │     — verify config.json.sig with pk      │
-   │     — load security filter rules          │
-   │  3. Derive session key:                   │
-   │     HKDF-SHA256(                          │  MCP does the same:
-   │       ikm  = pk_bytes,                    │  HKDF-SHA256(
-   │       salt = SHA256(serverNonce           │    ikm  = pk_bytes,
-   │               || helperNonce),            │    salt = SHA256(serverNonce
-   │       info = "AIAPI-v1-session"           │            || helperNonce),
-   │     ) → sessionKey (in memory only)       │    info = "AIAPI-v1-session"
-   │                                          │  ) → same sessionKey
-   ├─ {"action":"_auth_ok"}             ───>  │
-   │                                          │
-   │  All further messages include:            │
-   │  "hmac":"HMAC-SHA256(sessionKey, body)"   │
+   Ôöé                                          Ôöé
+   Ôöé  1. sec_validate_signature(selfPath)      Ôöé  (MCP server has already decrypted
+   Ôöé     ÔÇö verify own exe + DLL hashes         Ôöé   private.key.enc on startup,
+   Ôöé     BEFORE reading any stdin              Ôöé   password came from user/DPAPI)
+   Ôöé                                          Ôöé
+   ÔöťÔöÇ {"action":"_auth_hello",           ÔöÇÔöÇÔöÇ>  Ôöé
+   Ôöé   "helperNonce":"<base64 32B>",            Ôöé
+   Ôöé   "exeHash":"<sha256-hex>",                Ôöé
+   Ôöé   "dllHash":"<sha256-hex>"}               Ôöé
+   Ôöé                                          Ôöé
+   Ôöé                      MCP: verify exeHash Ôöé
+   Ôöé                        against stored    Ôöé
+   Ôöé                        config.json entry Ôöé
+   Ôöé                                          Ôöé
+   Ôöé<ÔöÇ {"action":"_auth",               <ÔöÇÔöÇÔöÇ  Ôöé
+   Ôöé    "pk":"<base64-pkcs8-raw>",             Ôöé  raw decrypted RSA private key bytes
+   Ôöé    "serverNonce":"<base64 32B>",          Ôöé  never written to disk
+   Ôöé    "securityConfig":"<path>",             Ôöé
+   Ôöé    "helperExePath":"<path>"}              Ôöé
+   Ôöé                                          Ôöé
+   Ôöé  2. sec_load(pk_bytes, configPath)        Ôöé
+   Ôöé     ÔÇö verify config.json.sig with pk      Ôöé
+   Ôöé     ÔÇö load security filter rules          Ôöé
+   Ôöé  3. Derive session key:                   Ôöé
+   Ôöé     HKDF-SHA256(                          Ôöé  MCP does the same:
+   Ôöé       ikm  = pk_bytes,                    Ôöé  HKDF-SHA256(
+   Ôöé       salt = SHA256(serverNonce           Ôöé    ikm  = pk_bytes,
+   Ôöé               || helperNonce),            Ôöé    salt = SHA256(serverNonce
+   Ôöé       info = "AIAPI-v1-session"           Ôöé            || helperNonce),
+   Ôöé     ) Ôćĺ sessionKey (in memory only)       Ôöé    info = "AIAPI-v1-session"
+   Ôöé                                          Ôöé  ) Ôćĺ same sessionKey
+   ÔöťÔöÇ {"action":"_auth_ok"}             ÔöÇÔöÇÔöÇ>  Ôöé
+   Ôöé                                          Ôöé
+   Ôöé  All further messages include:            Ôöé
+   Ôöé  "hmac":"HMAC-SHA256(sessionKey, body)"   Ôöé
 ```
 
 ### What Each `_auth` Step Achieves
 
-1. **Helper verifies its own exe + DLL structure** (`sec_validate_signature`) — runs first,
+1. **Helper verifies its own exe + DLL structure** (`sec_validate_signature`) ÔÇö runs first,
    before accepting *any* input; tampered binary refuses to authenticate
-2. **Helper verifies security config integrity** — `config.json.sig` checked with the
+2. **Helper verifies security config integrity** ÔÇö `config.json.sig` checked with the
    received private key (no separate public key file needed on helper's side)
-3. **Both derive the same session key** — HKDF over the shared PK material + both nonces;
+3. **Both derive the same session key** ÔÇö HKDF over the shared PK material + both nonces;
    the session key is never transmitted; subsequent message HMACs use it
 
 ### Why This Is Better Than the Old Challenge-Response Design
@@ -702,15 +870,15 @@ derive the same temporary session key via HKDF — the session key is never tran
 
 ### Implementation Tasks
 
-- [x] `CertificateManager.ts`: add `getRawPrivateKeyBytes()` — returns decrypted PKCS#8 bytes
+- [x] `CertificateManager.ts`: add `getRawPrivateKeyBytes()` ÔÇö returns decrypted PKCS#8 bytes
   after password unlock; keep in a `Buffer` in memory, never write to disk
 - [x] `HelperRegistry.ts`: spawn helper, wait for `_auth_hello`, verify `exeHash` against
-  `security/config.json`; send `_auth` with raw PK bytes + serverNonce — wire protocol
+  `security/config.json`; send `_auth` with raw PK bytes + serverNonce ÔÇö wire protocol
   stub done; `HelperDaemon` has `startupPhase`/`readyPromise`/`handleStartupMessage()` for
   full auth flow; exeHash verification + PK loading are TODO (SecurityLib)
 - [ ] `HelperRegistry.ts`: remove `MCP_SESSION_TOKEN`, `MCP_SESSION_SECRET`, `SKIP_SESSION_AUTH`
   env vars (replace with in-pipe auth)
-- [x] `HelperCommon.cs`: implement `RunAuthHandshake()` — sends `_auth_hello`, receives
+- [x] `HelperCommon.cs`: implement `RunAuthHandshake()` ÔÇö sends `_auth_hello`, receives
   `_auth`, calls `sec_load()`, derives `sessionKey` via HKDF; `RunAuthHandshake(skipAuth)`
   added; helpers call it in `--listen-stdin` branch before `RunStdinListener()`;
   `sec_load()` + HKDF are TODO (SecurityLib)
@@ -720,19 +888,19 @@ derive the same temporary session key via HKDF — the session key is never tran
   helper rejects messages with invalid HMAC
 - [ ] MCP server password entry: prompt at startup; optionally persist (encrypted) via Windows
   DPAPI `ProtectedData.Protect(entropy:machineSID)` so restarts don't require re-entry
-- [ ] Add `sec_validate_signature_self()` to `SecurityLib` — called from `main()` before any
+- [ ] Add `sec_validate_signature_self()` to `SecurityLib` ÔÇö called from `main()` before any
   stdin read; exit code `SECURITY_TAMPER` (exit 77) if hash mismatch
 
 ---
 
-## 🗺️ Unified Action Addressing — XPath-Style UI Path Syntax (PRIORITY 2)
+## ­čŚ║´ŞĆ Unified Action Addressing ÔÇö XPath-Style UI Path Syntax (PRIORITY 2)
 
-> ⚠️ **PLANNED — NOT YET IMPLEMENTED.** The current system uses bare `{CMD:param}` tokens
+> ÔÜá´ŞĆ **PLANNED ÔÇö NOT YET IMPLEMENTED.** The current system uses bare `{CMD:param}` tokens
 > for commands and a freetext pattern field in security filter rules. Everything in this
 > section is a design spec and a list of work items. Nothing here works yet.
 
 **Goal:** A single, uniform addressing scheme that identifies *where* to act (across Win32
-trees, browser DOM, Office document model, x/y coordinates, keystrokes) AND *what* to do —
+trees, browser DOM, Office document model, x/y coordinates, keystrokes) AND *what* to do ÔÇö
 usable both as the `action` parameter in helper commands AND as the pattern in security
 filter rules. Backwards-compatible: `{CMD:param}` shorthands will continue to work as
 aliases.
@@ -842,8 +1010,8 @@ ALLOW //Browser*.exe//[ProcName:brave.exe]//[tab=0]//document//**//action:read
 ### Parsing Rules
 
 - Segments split on `//` (double-slash); single `/` is used within action params
-- First segment starting with `//` and NOT `[` and matching `*.exe` glob pattern → helper
-  selector; if it starts with `[` → process filter; otherwise → tree step
+- First segment starting with `//` and NOT `[` and matching `*.exe` glob pattern Ôćĺ helper
+  selector; if it starts with `[` Ôćĺ process filter; otherwise Ôćĺ tree step
 - `action:` prefix on a segment marks the transition from tree path to action
 - Predicates in `(xpath:...)` are passed through to the underlying query engine
 - Coordinates `x:N/y:N` are always integers; `col:A-Z+` or `col:N` for spreadsheet columns
@@ -853,17 +1021,17 @@ ALLOW //Browser*.exe//[ProcName:brave.exe]//[tab=0]//document//**//action:read
 
 **Core parser + dispatch (required for any of this to work):**
 - [ ] Define formal ABNF grammar for the address syntax in `docs/specs/ACTION_ADDRESS.md`
-- [ ] Implement parser in `HelperCommon.cs`: `ParseAddress(string addr)` → `AddressNode[]`
+- [ ] Implement parser in `HelperCommon.cs`: `ParseAddress(string addr)` Ôćĺ `AddressNode[]`
 - [ ] Map `AddressNode` types: `HelperSelector`, `ProcessFilter`, `TreeStep`, `ActionStep`
 - [ ] Update `KeyWin.cs` command dispatch to accept full address strings (not just bare
-  `{CMD:param}` tokens) — `{CMD:param}` shorthands kept as aliases
-- [ ] Update `BrowserWin.cs` similarly — map tree path segments to CSS selector / CDP node ID
+  `{CMD:param}` tokens) ÔÇö `{CMD:param}` shorthands kept as aliases
+- [ ] Update `BrowserWin.cs` similarly ÔÇö map tree path segments to CSS selector / CDP node ID
 - [ ] `BrowserWin.cs`: handle `(xpath:...)` predicates via CDP `DOM.performSearch` + XPath
 - [x] `KeyWin.cs`: handle `action:keydown` / `action:keyup` for stateful modifier key input
 
 **Security filter engine:**
 - [ ] Update filter rule storage format to the new address syntax (migrate existing rules)
-- [ ] Update filter evaluation engine: `MatchAddress(rule, incomingAddress)` — segment-by-
+- [ ] Update filter evaluation engine: `MatchAddress(rule, incomingAddress)` ÔÇö segment-by-
   segment glob/predicate matching (process filter keys, tree path globs, action verb match)
 - [ ] Update filter rule editor UI: replace freetext pattern field with structured
   address-builder (helper, process, tree path, action each in separate validated inputs)
@@ -885,7 +1053,7 @@ ALLOW //Browser*.exe//[ProcName:brave.exe]//[tab=0]//document//**//action:read
 - [ ] `HelperRegistry.ts`: expose merged grammar via `getHelperSchema` MCP tool response
 
 **Validation tool (LOW PRIORITY):**
-- [ ] `HelperCommon.cs`: `ValidateAddress(string addr, HelperGrammar grammar)` — parse +
+- [ ] `HelperCommon.cs`: `ValidateAddress(string addr, HelperGrammar grammar)` ÔÇö parse +
   check each segment against the grammar, return list of errors/warnings; does NOT execute
 - [ ] MCP server: expose `validateActionAddress(address, helperName)` tool that calls
   `ValidateAddress` on the target helper without running the action
@@ -897,18 +1065,18 @@ ALLOW //Browser*.exe//[ProcName:brave.exe]//[tab=0]//document//**//action:read
 
 ---
 
-## � Daemon Lifecycle, Rebuild Workflow & Helper Control (PRIORITY 2.5)
+## ´┐Ż Daemon Lifecycle, Rebuild Workflow & Helper Control (PRIORITY 2.5)
 **Goal:** Clean daemon management for dev rebuild cycles, test automation, and runtime control
 
 ### Problem: Daemons Lock `.exe` Files
 Persistent helper daemons (`KeyWin.exe`, `BrowserWin.exe`) hold the file open.
 Running `build-all.ps1` while the server is running fails with:
-> `error CS0016: Cannot write to KeyWin.exe — file in use by another process`
+> `error CS0016: Cannot write to KeyWin.exe ÔÇö file in use by another process`
 
-### Rebuild Workflow (documented in START_HERE.md ✅)
+### Rebuild Workflow (documented in START_HERE.md Ôťů)
 ```powershell
 # Clean stop (sends _exit to all daemons via shutdownAll()):
-[Ctrl+C in server terminal]   # preferred — clean graceful shutdown
+[Ctrl+C in server terminal]   # preferred ÔÇö clean graceful shutdown
 
 # OR force-kill everything:
 Get-Process node -EA SilentlyContinue | Stop-Process -Force
@@ -924,38 +1092,38 @@ node dist/start-mcp-server.js
 ### `_ping` / `_schema` Built-in Daemon Actions
 Add to `HelperCommon.cs` `RunStdinListener()` alongside the existing `_exit`:
 
-- [x] `{"action":"_ping"}` ✅ DONE: health check; helper responds `{"success":true,"pong":true}` —
+- [x] `{"action":"_ping"}` Ôťů DONE: health check; helper responds `{"success":true,"pong":true}` ÔÇö
   added to `HelperCommon.cs` `RunStdinListener()` alongside `_schema` and `_exit`;
   `HelperDaemon.ping()` method added to `HelperRegistry.ts` for health checks
-- [x] `{"action":"_schema"}` ✅ DONE (was already implemented in `HelperCommon.cs`): returns same
+- [x] `{"action":"_schema"}` Ôťů DONE (was already implemented in `HelperCommon.cs`): returns same
   JSON as `--api-schema` CLI flag via the alive persistent daemon pipe
 
 ### MCP Server `helpers/reload` Endpoint
 Allow tests and scripts to trigger daemon restart without a full server restart:
 
-- [x] Add `POST /api/helpers/reload` to `httpServerWithDashboard.ts`: ✅ DONE
+- [x] Add `POST /api/helpers/reload` to `httpServerWithDashboard.ts`: Ôťů DONE
   - `HelperRegistry.reloadHelpers()`: stores `searchPaths`, calls `shutdownAll()` + `schemas.clear()` + re-`discoverHelpers()`
-  - Returns `{"success":true,"reloaded": N, "helpers": [...names...]}` — confirmed live
+  - Returns `{"success":true,"reloaded": N, "helpers": [...names...]}` ÔÇö confirmed live
   - Added to `publicEndpoints` whitelist (no auth required)
-- [x] Expose as JSON-RPC method `helpers/reload` in `mcpServer.ts` (same payload) ✅ DONE
-- [x] Dashboard UI: "♻️ Reload Helpers" button in the Helpers card of the Settings tab ✅ DONE
+- [x] Expose as JSON-RPC method `helpers/reload` in `mcpServer.ts` (same payload) Ôťů DONE
+- [x] Dashboard UI: "ÔÖ╗´ŞĆ Reload Helpers" button in the Helpers card of the Settings tab Ôťů DONE
   - `reloadHelpers()` in `dashboard.js`: disables button during reload, shows status, re-runs `scanHelpers()` after
 
 ### Test File Self-Sufficiency
-- [x] `test-full-stack-stdin.js` helper function `reloadHelpers()`: ✅ DONE
+- [x] `test-full-stack-stdin.js` helper function `reloadHelpers()`: Ôťů DONE
   - `DASHBOARD_PORT = MCP_PORT + 1` constant added
   - Calls `POST /api/helpers/reload` via HTTP, then polls `GET /api/listHelpers` (300 ms interval) until `helpers.length >= expectedCount`; default timeout 15 s
-- [x] `--self-hosted` flag for test runner ✅ DONE:
+- [x] `--self-hosted` flag for test runner Ôťů DONE:
   - Spawns `node dist/start-mcp-server.js` as child process, streams stdout/stderr with `[server]` prefix
   - `pollUntilReady(45s)` polls tools/list until both `helper_KeyWin` and `helper_BrowserWin` appear
   - `stopServer()`: sends SIGINT (clean shutdown) with 5 s SIGKILL fallback
-  - Tested live: spawn→poll→ready→SIGINT→graceful stop ✓
-- [x] `--rebuild-first` flag ✅ DONE:
+  - Tested live: spawnÔćĺpollÔćĺreadyÔćĺSIGINTÔćĺgraceful stop Ôťô
+- [x] `--rebuild-first` flag Ôťů DONE:
   - Runs `PowerShell -ExecutionPolicy Bypass -File build-all.ps1` synchronously before tests
   - Exits test process with code 1 if build fails
   - Combine with `--self-hosted` for fully unattended CI: `node test-full-stack-stdin.js --rebuild-first --self-hosted`
 
-### Test-Session Recording ✅ DONE (TypeScript-only, no C# rebuild needed)
+### Test-Session Recording Ôťů DONE (TypeScript-only, no C# rebuild needed)
 **Implemented as a pure TypeScript intercept in `HelperRegistry.callCommand()`.**
 The C#-based `_start`/`_finish` approach from the original spec was replaced by a
 server-side intercept that is simpler and works across all helpers uniformly.
@@ -967,28 +1135,28 @@ server-side intercept that is simpler and works across all helpers uniformly.
 - [x] `HelperRegistry.finishSession()`:
   - Closes `session.log`, writes `summary.json` `{name,passed,failed,total,durationMs,startTime,endTime}`
   - Returns `{sessionDir,logLines,durationMs,passed,failed}`
-- [x] `HelperRegistry.getActiveSessionDir()` — status query
-- [x] `HelperRegistry.callCommand()` intercept: logs every call →
+- [x] `HelperRegistry.getActiveSessionDir()` ÔÇö status query
+- [x] `HelperRegistry.callCommand()` intercept: logs every call Ôćĺ
   `{ts,seq,helper,target,command,parameter,success,durationMs,error?}`
 - [x] Auto-SCREENSHOT on failure for BrowserWin calls (when target has `:PORT`):
   saves `fail_<ts>_<command>.png` into session folder
-- [x] `setSessionBaseDir(dir)` — called from `loadAdvancedFilters()` when
+- [x] `setSessionBaseDir(dir)` ÔÇö called from `loadAdvancedFilters()` when
   `dashboard-settings.json` has a `"testSessionDir"` key; default `./test-sessions`
 - [x] REST endpoints on dashboard port:
-  - `POST /api/session/start  { name, dir? }` → `{success,sessionDir}`
-  - `POST /api/session/finish`               → `{success,sessionDir,logLines,durationMs,passed,failed}`
-  - `GET  /api/session/status`               → `{success,sessionActive,sessionDir|null}`
+  - `POST /api/session/start  { name, dir? }` Ôćĺ `{success,sessionDir}`
+  - `POST /api/session/finish`               Ôćĺ `{success,sessionDir,logLines,durationMs,passed,failed}`
+  - `GET  /api/session/status`               Ôćĺ `{success,sessionActive,sessionDir|null}`
 - [x] MCP cases `session/start` and `session/finish` in `mcpServer.ts` tools/call dispatch
 - [x] `test-full-stack-stdin.js`:
   - `testSession.start(name, overrideDir?)` / `testSession.finish()` / `testSession.status()`
   - `main()` opens session before test sections, closes it after with summary printout
   - `--session-dir=<path>` CLI override: SESSION_DIR_ARG constant (wiring with testSession pending)
-- [x] Dashboard Settings tab: `testSessionDir` path field (deferred — dashboard already reads
+- [x] Dashboard Settings tab: `testSessionDir` path field (deferred ÔÇö dashboard already reads
   it from `dashboard-settings.json` via `setSessionBaseDir`)
 
 ---
 
-## ⌨️ Command Integrity & Action Standardization (PRIORITY 2.7 — HIGH)
+## ÔîĘ´ŞĆ Command Integrity & Action Standardization (PRIORITY 2.7 ÔÇö HIGH)
 **Trigger:** Do this immediately after `BrowserWin.exe` command set is stable.
 **Goal:** All helpers speak an identical wire vocabulary. Any AI assistant or test
 script can call any helper using the same mental model. Inconsistencies eliminated.
@@ -1002,19 +1170,19 @@ must learn per-app vocabulary instead of a universal one.
 
 **Audit tasks:**
 - [x] `KeyWin.cs`: list every command that is a thin wrapper around a key combo
-  - [x] **Audit result:** `NEWDOC` and `RESET` are NOT thin wrappers — both have substantial
+  - [x] **Audit result:** `NEWDOC` and `RESET` are NOT thin wrappers ÔÇö both have substantial
     non-key logic (NEWDOC: window snapshot + new-window detection + HANDLE: return;
-    RESET: UIA AC-button search first, Ctrl+Z×20 fallback). They are legitimate commands.
+    RESET: UIA AC-button search first, Ctrl+Z├Ś20 fallback). They are legitimate commands.
   - [x] All other KeyWin commands (`QUERYTREE`, `READ`, `LISTWINDOWS`, `CLICK*`, `SET`,
-    `GETTEXT`, `KILL`, `SENDKEYS`) are clean — no key-combo-only commands remain.
+    `GETTEXT`, `KILL`, `SENDKEYS`) are clean ÔÇö no key-combo-only commands remain.
 - [x] `BrowserWin.cs`: same audit
-  - [x] `NEWDOC` → confirmed non-trivial (CDP `Target.createTarget` + wait logic)
-  - [x] `RESET` → confirmed non-trivial (CDP page reload + state clear)
-  - [x] `NEWPAGE` → confirmed non-trivial (new CDP browser context)
+  - [x] `NEWDOC` Ôćĺ confirmed non-trivial (CDP `Target.createTarget` + wait logic)
+  - [x] `RESET` Ôćĺ confirmed non-trivial (CDP page reload + state clear)
+  - [x] `NEWPAGE` Ôćĺ confirmed non-trivial (new CDP browser context)
 - [x] Update schema strings and MCP tool descriptions to reflect final vocabulary
   - [x] `executeScenario` MCP tool description updated; XML template mode added (app, scenarioId, params)
 - [x] Update all scenario JSON files in `config/scenarios/` to use new vocab
-  - [x] **Audit result:** JSON files use ScenarioReplayer high-level action names (queryTree, clickElement, etc.) — these are not wire protocol names; no rename needed. Wire protocol names only appear in description strings.
+  - [x] **Audit result:** JSON files use ScenarioReplayer high-level action names (queryTree, clickElement, etc.) ÔÇö these are not wire protocol names; no rename needed. Wire protocol names only appear in description strings.
 - [x] Update `docs/api/KEYWIN_API.md` and `docs/api/API.md`
 
 ### Problem: Non-Uniform JSON Action Shape
@@ -1026,20 +1194,20 @@ Deviations require explicit justification in the schema.
 
 **Audit tasks:**
 - [x] Review every command that uses `parameter` as a structured sub-value
-  (e.g. `FILL`, `COOKIES`, `READELEM`) — confirmed consistent: all use `selector:value`
+  (e.g. `FILL`, `COOKIES`, `READELEM`) ÔÇö confirmed consistent: all use `selector:value`
   or single-value encoding with ColonSep; documented in schema descriptions.
 - [x] Check that every response has `{ "success": bool, "command": "...", ... }`
-  — both helpers audited; all success/error responses include `success` field.
+  ÔÇö both helpers audited; all success/error responses include `success` field.
   `command` is implicitly documented in the schema `name` field; callers use `success`.
 - [x] `id` correlation: both helpers echo the request `id` in every response
-  - [x] `IdInjectingWriter` added to `HelperCommon.cs` — auto-injects `"id":"<n>"`
+  - [x] `IdInjectingWriter` added to `HelperCommon.cs` ÔÇö auto-injects `"id":"<n>"`
     into every JSON-object response line via TextWriter override; zero changes
     to individual command handlers in KeyWin.cs / BrowserWin.cs
   - [x] `RunStdinListener` sets `injectingWriter.CurrentId = id` before each dispatch
     (covers `_schema`, `_ping`, `_exit` and all command handlers)
   - [x] `HelperRegistry.ts` `call()` now sends `id: String(++this.requestSeq)`
     (monotonically incrementing, distinct per request per daemon)
-- [x] Schema `parameters[]` completeness: reviewed both helpers — all 11 KeyWin
+- [x] Schema `parameters[]` completeness: reviewed both helpers ÔÇö all 11 KeyWin
   commands and 16 BrowserWin commands have `parameters`, `description`, and `examples`
   entries in `OutputApiSchema()`. Schema is complete.
 - [x] Write a schema-validation unit test that asserts every known command is
@@ -1048,37 +1216,37 @@ Deviations require explicit justification in the schema.
 
 ---
 
-## 📂 Project Folder Structure Reconciliation (PRIORITY 2.8 — HIGH)
+## ­čôé Project Folder Structure Reconciliation (PRIORITY 2.8 ÔÇö HIGH)
 **Trigger:** Do this immediately after Command Integrity audit is done.
 **Goal:** Eliminate the `src/server/` vs root vs `tools/` ambiguity; make the project
 navigable for a new developer in under 5 minutes.
 
 **Target layout:**
 ```
-tools/helpers/common/   ← HelperCommon.cs  (was tools/common/)
-tools/helpers/win/      ← KeyWin.cs        (was tools/win/)
-tools/helpers/browser/  ← BrowserWin.cs    (was tools/browser/)
-tools/helpers/office/   ← future OfficeWin.cs
-src/helpers/            ← HelperRegistry.ts (was src/server/)
-dist/helpers/           ← flat: KeyWin.exe, BrowserWin.exe
-tests/integration/      ← test-full-stack-stdin.js (was root/)
-config/                 ← dashboard-settings.json (was root/)
+tools/helpers/common/   ÔćÉ HelperCommon.cs  (was tools/common/)
+tools/helpers/win/      ÔćÉ KeyWin.cs        (was tools/win/)
+tools/helpers/browser/  ÔćÉ BrowserWin.cs    (was tools/browser/)
+tools/helpers/office/   ÔćÉ future OfficeWin.cs
+src/helpers/            ÔćÉ HelperRegistry.ts (was src/server/)
+dist/helpers/           ÔćÉ flat: KeyWin.exe, BrowserWin.exe
+tests/integration/      ÔćÉ test-full-stack-stdin.js (was root/)
+config/                 ÔćÉ dashboard-settings.json (was root/)
 ```
 
 **Tasks:**
-- [x] Move `tools/common/` → `tools/helpers/common/`
-- [x] Move `tools/win/` → `tools/helpers/win/`
-- [x] Move `tools/browser/` → `tools/helpers/browser/`
-- [x] Move `src/server/HelperRegistry.ts` → `src/helpers/HelperRegistry.ts`
+- [x] Move `tools/common/` Ôćĺ `tools/helpers/common/`
+- [x] Move `tools/win/` Ôćĺ `tools/helpers/win/`
+- [x] Move `tools/browser/` Ôćĺ `tools/helpers/browser/`
+- [x] Move `src/server/HelperRegistry.ts` Ôćĺ `src/helpers/HelperRegistry.ts`
   - [x] Updated imports in `mcpServer.ts` and `httpServerWithDashboard.ts`
-- [x] Move `test-full-stack-stdin.js` → `tests/integration/test-full-stack-stdin.js`
+- [x] Move `test-full-stack-stdin.js` Ôćĺ `tests/integration/test-full-stack-stdin.js`
   - [x] Updated `__dirname` refs + all 8 task definitions in `.vscode/tasks.json`
-- [x] Move `dashboard-settings.json` → `config/dashboard-settings.json`
+- [x] Move `dashboard-settings.json` Ôćĺ `config/dashboard-settings.json`
   - [x] Updated `settingsPath` / `settingsFilePath` in both server files
 - [x] Update `build-all.ps1` path variables for new tool locations
 - [x] Update `dist/` output to `dist/helpers/` (was `dist/win/` + `dist/browser/`)
   - [x] Updated `mcpServer.ts` search paths: single `dist/helpers/` directory
-- [x] Update `.gitignore` — test output artifacts, compiled TS subdirs, dist/helpers
+- [x] Update `.gitignore` ÔÇö test output artifacts, compiled TS subdirs, dist/helpers
   - [x] Un-tracked: `dist/scenario/`, `dist/security/`, `dist/utils/`, `dist/win/` (compiled TS)
   - [x] Un-tracked: `test-output*.txt`, `server.err`, `test-sessions/`
 - [x] Update `START_HERE.md` to reflect new paths
@@ -1086,12 +1254,12 @@ config/                 ← dashboard-settings.json (was root/)
   Tests: 122/2 (2 pre-existing Notepad clipboard flakiness, unrelated to reorg)
 
 ---
-## 📚 App Knowledge Base — App Templates & Scenario Library (PRIORITY 2.9)
+## ­čôÜ App Knowledge Base ÔÇö App Templates & Scenario Library (PRIORITY 2.9)
 **Trigger:** After folder-structure reconciliation. Drives AI-guided automation without
 per-session trial-and-error tree exploration.
 **Goal:** Ship a deployable folder of per-application knowledge: known control trees with
 semantic annotations, reusable scenario templates, and optional embedding vectors for
-LLM-assisted matching — all in a structured XML format that helpers can query at runtime.
+LLM-assisted matching ÔÇö all in a structured XML format that helpers can query at runtime.
 
 ### Concept
 
@@ -1100,9 +1268,9 @@ Each supported application gets its own sub-folder inside `apptemplates/`:
 ```
 apptemplates/
   calculator/
-    tree.xml           ← annotated control tree (see schema below)
-    scenarios.xml      ← reusable scenario templates
-    embeddings/        ← optional: per-engine vector files (.npy / .bin / .json)
+    tree.xml           ÔćÉ annotated control tree (see schema below)
+    scenarios.xml      ÔćÉ reusable scenario templates
+    embeddings/        ÔćÉ optional: per-engine vector files (.npy / .bin / .json)
       openai-ada-002.bin
       ollama-nomic-embed-text.json
   notepad/
@@ -1118,17 +1286,17 @@ apptemplates/
   ...
 ```
 
-The base path is configured in `dashboard-settings.json` → `"appTemplatesDir"`.
+The base path is configured in `dashboard-settings.json` Ôćĺ `"appTemplatesDir"`.
 A Windows installer (or VS Code extension install hook) deploys a default set.
 
 ---
 
-### tree.xml — Annotated Control Tree Schema
+### tree.xml ÔÇö Annotated Control Tree Schema
 
 ```xml
 <AppTree app="calculator" version="11.2302" os="win11" helper="KeyWin.exe">
   <meta>
-    <description lang="en">Windows Calculator (Modern UWP). Single-session app — use RESET to clear state.</description>
+    <description lang="en">Windows Calculator (Modern UWP). Single-session app ÔÇö use RESET to clear state.</description>
     <description lang="ai">Single-session UWP calculator. Numeric buttons use AutomationId numXButton. Operator buttons: plus, minus, multiply, divide. Result read from CalculatorResults. Reset via AC button (clearEntryButton or clearButton).</description>
     <!-- Optional per-engine embeddings inline or as external file reference -->
     <embeddings>
@@ -1149,7 +1317,7 @@ A Windows installer (or VS Code extension install hook) deploys a default set.
   </Control>
   <!-- ... all other controls ... -->
   <Control id="CalculatorResults" name="Display" role="Text">
-    <label lang="en">Result display — shows current expression value</label>
+    <label lang="en">Result display ÔÇö shows current expression value</label>
     <label lang="ai">Read this control with READ to get the current expression or result as a string</label>
     <action command="READ" parameter=""/>
   </Control>
@@ -1162,14 +1330,14 @@ A Windows installer (or VS Code extension install hook) deploys a default set.
 - [x] Author `apptemplates/notepad/tree.xml`
 - [x] Author `apptemplates/chrome/tree.xml` (CDP-aware, BrowserWin targets)
 - [x] `HelperRegistry` / MCP server: expose `GET /api/appTemplates` endpoint listing all known apps
-- [x] `GET /api/appTemplates/{app}/tree` — return the tree XML (or parsed JSON)
+- [x] `GET /api/appTemplates/{app}/tree` ÔÇö return the tree XML (or parsed JSON)
 - [x] Tree diff: on first connection compare live QUERYTREE hash to stored tree hash;
   warn if control set changed (helper version upgrade detected)
   - **Deferred:** Live tree diff requires runtime QUERYTREE which is app-specific; deferred post-PRIORITY 2.9.
 
 ---
 
-### scenarios.xml — Reusable Scenario Template Library
+### scenarios.xml ÔÇö Reusable Scenario Template Library
 
 ```xml
 <ScenarioLibrary app="calculator" version="1.0">
@@ -1217,29 +1385,29 @@ A Windows installer (or VS Code extension install hook) deploys a default set.
 
 **Tasks:**
 - [x] Define `scenarios.xsd` schema (Scenario, Steps, Step, ScenarioRef, Parameters)
-  - [x] `apptemplates/scenarios.xsd` authored — formal XSD with Scenario, Steps, Step, ScenarioRef, Parameters.
+  - [x] `apptemplates/scenarios.xsd` authored ÔÇö formal XSD with Scenario, Steps, Step, ScenarioRef, Parameters.
 - [x] Author `apptemplates/calculator/scenarios.xml` with: `intro`, `compute`, `teardown-*`
 - [x] Author `apptemplates/notepad/scenarios.xml` with: `intro`, `new-document`, `type-text`, `save`, `close-window`, `teardown-*`
 - [x] Author `apptemplates/chrome/scenarios.xml` with: `intro`, `navigate`, `fill-form`, `read-page`, `close-tab`, `teardown-*`
 - [x] MCP tool `executeScenario` enhancement: resolve `<ScenarioRef>` recursively at runtime
-  - [x] `src/scenario/xmlScenarioLoader.ts` — XmlScenarioLoader + shared executeXmlScenario executor
-  - [x] `mcpServer.ts` — added `app`, `scenarioId`, `params` inputs; delegates to xmlScenarioLoader
+  - [x] `src/scenario/xmlScenarioLoader.ts` ÔÇö XmlScenarioLoader + shared executeXmlScenario executor
+  - [x] `mcpServer.ts` ÔÇö added `app`, `scenarioId`, `params` inputs; delegates to xmlScenarioLoader
 - [x] `GET /api/appTemplates/{app}/scenarios` REST endpoint
-- [x] `POST /api/appTemplates/{app}/scenarios/{id}/run` — execute a named scenario template
+- [x] `POST /api/appTemplates/{app}/scenarios/{id}/run` ÔÇö execute a named scenario template
   - [x] Implemented in `httpServerWithDashboard.ts` `handleRunAppTemplateScenario`
 - [x] Dashboard Settings tab: "App Templates" card showing loaded apps + scenario counts
-  - [x] Added `📚 App Templates` nav section + `loadAppTemplates()` in dashboard.html/js
+  - [x] Added `­čôÜ App Templates` nav section + `loadAppTemplates()` in dashboard.html/js
 - [x] Scenario editor: visual step builder (drag-drop reorder, ScenarioRef picker)
-  - [x] **Fix**: chrome `scenarios.xml` uses lowercase `<steps>/<step action=...>` + top-level `<ScenarioRef>` — made parser case-insensitive & iterates all Scenario children in document order
+  - [x] **Fix**: chrome `scenarios.xml` uses lowercase `<steps>/<step action=...>` + top-level `<ScenarioRef>` ÔÇö made parser case-insensitive & iterates all Scenario children in document order
 - [x] Scenario editor enhancements (all implemented):
-  - [x] **Metadata panel**: collapsible panel in scenario editor — helper, process, window title hint, linked assistant, binary checksum; round-trips through `loadRaw()` → `save()` via PUT body `meta` field; `RawXmlScenario` type extended; `scenarios.xsd` updated with `assistant` + `checksum` attributes
+  - [x] **Metadata panel**: collapsible panel in scenario editor ÔÇö helper, process, window title hint, linked assistant, binary checksum; round-trips through `loadRaw()` Ôćĺ `save()` via PUT body `meta` field; `RawXmlScenario` type extended; `scenarios.xsd` updated with `assistant` + `checksum` attributes
   - [x] **Auto-refresh App Templates list** after saving a scenario (call `loadAppTemplates()` on successful PUT)
-  - [x] **Scenario label not synced**: `listScenarios` returns `id` as `label` for chrome (chrome XML lacks `label=` attr) — placeholder=id, value='' when label==id so input always shows the id hint
+  - [x] **Scenario label not synced**: `listScenarios` returns `id` as `label` for chrome (chrome XML lacks `label=` attr) ÔÇö placeholder=id, value='' when label==id so input always shows the id hint
 - [x] Dashboard Filter Rules enhancements (all implemented):
-  - [x] **Auto-refresh after save**: reload filter list in dashboard when rules are saved (calls `loadFilters()` after successful save ✅)
-  - [x] **Table-based quick-edit** for filter rules — toggle with "🗃️ Quick-Edit" button; inline `<select>`/`<input>` per cell, move-up/down, delete; "💾 Save All Filters" persists; toggle back for card view
-  - [x] **Binary hash / process path / window title criteria wired up** — `saveFilter()` now reads all three fields; `openFilterEditor()` restores them; card view shows hash prefix badge + path/title icons; Quick-Edit table shows Criteria column with ✏️ link back to modal; search includes these fields
-  - [x] **Sync filter ↔ scenario**: when editing a scenario step, offer a "linked filter rules" sidebar showing rules that match the step's command+target; allow creating a new rule directly from a step
+  - [x] **Auto-refresh after save**: reload filter list in dashboard when rules are saved (calls `loadFilters()` after successful save Ôťů)
+  - [x] **Table-based quick-edit** for filter rules ÔÇö toggle with "­čŚâ´ŞĆ Quick-Edit" button; inline `<select>`/`<input>` per cell, move-up/down, delete; "­čĺż Save All Filters" persists; toggle back for card view
+  - [x] **Binary hash / process path / window title criteria wired up** ÔÇö `saveFilter()` now reads all three fields; `openFilterEditor()` restores them; card view shows hash prefix badge + path/title icons; Quick-Edit table shows Criteria column with ÔťĆ´ŞĆ link back to modal; search includes these fields
+  - [x] **Sync filter Ôćö scenario**: when editing a scenario step, offer a "linked filter rules" sidebar showing rules that match the step's command+target; allow creating a new rule directly from a step
 
 ### App Template Namespacing / Package Layout (LOW PRIORITY)
 **Goal:** Organise `apptemplates/` into a reverse-domain namespace hierarchy, similar to
@@ -1256,10 +1424,10 @@ apptemplates/
       notepad/
         tree.xml  scenarios.xml
     windows.v10/
-      notepad/          ← older HWND layout differs
+      notepad/          ÔćÉ older HWND layout differs
   eu.plachy.aiapi/
     default/
-      notepad/          ← user-supplied overrides / additional scenarios
+      notepad/          ÔćÉ user-supplied overrides / additional scenarios
 ```
 
 **Addressing format** (used in REST paths and MCP tool args):
@@ -1270,7 +1438,7 @@ POST /api/appTemplates/com.microsoft%2Fwindows.v11%2Fcalculator/scenarios/comput
 
 **Migration tasks (when this becomes a priority):**
 - [ ] Decide separator: `/` subdirectories (cleaner) vs `.` flat folder names (simpler glob)
-  — recommendation: subdirectory hierarchy (`com.microsoft/windows.v11/notepad`)
+  ÔÇö recommendation: subdirectory hierarchy (`com.microsoft/windows.v11/notepad`)
 - [ ] Move existing `apptemplates/calculator/`, `notepad/`, `chrome/` under
   `apptemplates/com.microsoft/windows.v11/` (calculator, notepad) and
   `apptemplates/com.google/chrome/` / `apptemplates/com.brave/browser/`
@@ -1285,7 +1453,7 @@ POST /api/appTemplates/com.microsoft%2Fwindows.v11%2Fcalculator/scenarios/comput
 - [ ] Update `scenarios.xsd` same
 - [ ] Add `namespace` + `registry` attributes to `<AppTree>` and `<ScenarioLibrary>` roots
 - [ ] Document resolution order (user namespace beats vendor; OS-specific beats generic):
-  `eu.plachy.aiapi/default/notepad` → `com.microsoft/windows.v11/notepad` → `com.microsoft/windows.v10/notepad`
+  `eu.plachy.aiapi/default/notepad` Ôćĺ `com.microsoft/windows.v11/notepad` Ôćĺ `com.microsoft/windows.v10/notepad`
 - [ ] CLI: `npm run embed-tree -- --app com.microsoft/windows.v11/calculator ...`
 
 ---
@@ -1307,19 +1475,19 @@ without exact AutomationId knowledge.
 
 ---
 
-## 🚀 Deployment Targets & Packaging (PRIORITY 3.5)
+## ­čÜÇ Deployment Targets & Packaging (PRIORITY 3.5)
 **Trigger:** After core feature parity is stable on Windows (all current priority 2.x items done).
 **Goal:** The AIAPI server can be deployed in any environment without requiring VS Code.
 Each target shares the same TypeScript core; only the entry-point and service-wrapper differ.
 
 ### Current State
-- ✅ **VS Code Extension** — primary target, works today (`src/extension.ts` activates the server)
+- Ôťů **VS Code Extension** ÔÇö primary target, works today (`src/extension.ts` activates the server)
 
 ### Target Matrix
 
 | Target | OS | Priority | Notes |
 |---|---|---|---|
-| VS Code Extension | Win / Lin / Mac | ✅ done | primary target |
+| VS Code Extension | Win / Lin / Mac | Ôťů done | primary target |
 | Standalone console .exe | Windows | HIGH | single `.exe`, no Node required (pkg/nexe) |
 | Windows Service | Windows | HIGH | `sc create` or NSSM wrapper; auto-start |
 | Standalone GUI tray app | Windows | MEDIUM | system-tray icon, start/stop, log viewer |
@@ -1328,12 +1496,12 @@ Each target shares the same TypeScript core; only the entry-point and service-wr
 | macOS `launchd` daemon | macOS | LOW | `launchctl load ~/Library/LaunchAgents/...` |
 | Standalone console app | Lin / Mac | MEDIUM | same binary packaged with `pkg` for each OS |
 | Linux GUI tray app (KDE/GNOME) | Linux | LOW | AppIndicator / KStatusNotifierItem; start/stop/open-dashboard |
-| Windows Explorer shell extension | Windows | LOW | Right-click context menu "Automate with AIAPI" → opens Dashboard |
+| Windows Explorer shell extension | Windows | LOW | Right-click context menu "Automate with AIAPI" Ôćĺ opens Dashboard |
 
 > **Cross-platform note:** Linux/macOS targets will be built on a separate
 > machine (or CI runner) where the platform-specific helpers
 > (`KeyLin`, `BrowserLin`, `KeyMac`, `BrowserMac`) can be compiled.
-> The TypeScript MCP server itself is already cross-platform — only the helper
+> The TypeScript MCP server itself is already cross-platform ÔÇö only the helper
 > `.exe` launcher paths and the service-wrapper code are OS-specific.
 
 ---
@@ -1362,7 +1530,7 @@ Each target shares the same TypeScript core; only the entry-point and service-wr
 ### Windows: System-Tray GUI App
 - [ ] C# `SystemTray` wrapper (`tools/tray/TrayApp.cs`) using `NotifyIcon` + `ContextMenuStrip`
   - Right-click menu: Start / Stop / Restart / Open Dashboard / View Logs / Exit
-  - Icon changes: grey (stopped) → green (running) → red (error)
+  - Icon changes: grey (stopped) Ôćĺ green (running) Ôćĺ red (error)
 - [ ] Spawns `aiapi-server.exe` as a child process, monitors stdout/stderr
 - [ ] "Open Dashboard" opens `http://127.0.0.1:3458` in default browser
 - [ ] Built by `build-all.ps1` alongside KeyWin.exe and BrowserWin.exe
@@ -1408,7 +1576,7 @@ Each target shares the same TypeScript core; only the entry-point and service-wr
 - [ ] C or C++ (GTK3 + `libappindicator3`) tray application (`tools/tray/TrayAppLin.c`):
   - `AppIndicator` / `KStatusNotifierItem` for cross-desktop compatibility (KDE, GNOME 3+, XFCE)
   - Right-click menu: Start / Stop / Restart / Open Dashboard / View Logs / Exit
-  - Icon states: grey (stopped) → green (running) → red (error)
+  - Icon states: grey (stopped) Ôćĺ green (running) Ôćĺ red (error)
   - "Open Dashboard" calls `xdg-open http://127.0.0.1:3458`
 - [ ] Spawns `aiapi-server` (packaged Linux binary) as a child process, monitors stdout/stderr
 - [ ] Autostart file: `~/.config/autostart/aiapi-tray.desktop`
@@ -1422,13 +1590,13 @@ Each target shares the same TypeScript core; only the entry-point and service-wr
 - [ ] Built separately on Linux host; included in Linux package alongside `aiapi-server`
 
 ### Windows: Explorer Shell Extension (Context-Menu)
-> **Low priority — comfort feature for non-CLI users**
-- [ ] COM in-process shell extension (`tools/shellext/AiapiShellExt.cs` — C# with `SharpShell` or
+> **Low priority ÔÇö comfort feature for non-CLI users**
+- [ ] COM in-process shell extension (`tools/shellext/AiapiShellExt.cs` ÔÇö C# with `SharpShell` or
   native C++ `IContextMenu` + `IShellExtInit`)
-- [ ] Right-click on any file/folder in Windows Explorer → "Automate with AIAPI" sub-menu:
-  - "Open Dashboard" → `http://127.0.0.1:3458`
-  - "Run scenario…" → opens a small picker dialog listing available app scenarios
-  - "Launch server" (if not running) → starts `aiapi-server.exe` silently
+- [ ] Right-click on any file/folder in Windows Explorer Ôćĺ "Automate with AIAPI" sub-menu:
+  - "Open Dashboard" Ôćĺ `http://127.0.0.1:3458`
+  - "Run scenarioÔÇŽ" Ôćĺ opens a small picker dialog listing available app scenarios
+  - "Launch server" (if not running) Ôćĺ starts `aiapi-server.exe` silently
 - [ ] Must be registered via `regsvr32` or included in the NSIS installer as optional component
 - [ ] Requires COM signing for Windows 11 compatibility (same codesign cert as the main exe)
 
@@ -1436,20 +1604,20 @@ Each target shares the same TypeScript core; only the entry-point and service-wr
 - [ ] NSIS script (`scripts/installer/aiapi-setup.nsi`) or WiX `.wxs` file
   - Bundles: `aiapi-server.exe`, `KeyWin.exe`, `BrowserWin.exe`, `dashboard.html/css/js`, `apptemplates/`
   - Install path: `C:\Program Files\AIAPI\`
-  - Start Menu shortcut → TrayApp
+  - Start Menu shortcut Ôćĺ TrayApp
   - Optional: install as Windows Service (checkbox)
   - Optional: add firewall rule for port 3457/3458
   - Uninstall: removes service, firewall rule, files
-- [ ] Version number injected from `package.json` → `package.version`
+- [ ] Version number injected from `package.json` Ôćĺ `package.version`
 - [ ] CI artifact: `dist/release/aiapi-setup-<version>-win-x64.exe`
 
 ---
 
 
-## �📄 MS Office Automation (PRIORITY 3)
+## ´┐Ż­čôä MS Office Automation (PRIORITY 3)
 **Goal:** Control Word, Excel, PowerPoint with document structure access
 
-> ⚠️ **Pre-requisite (this machine):** Microsoft Office must be installed before the
+> ÔÜá´ŞĆ **Pre-requisite (this machine):** Microsoft Office must be installed before the
 > `OfficeWin.exe` helper can be built or tested. The build uses COM Interop assemblies
 > (`Microsoft.Office.Interop.*`) that are only present when Office is installed.
 > Run the Office installer first, then come back here.
@@ -1504,12 +1672,12 @@ Each target shares the same TypeScript core; only the entry-point and service-wr
 
 ---
 
-## 🔧 Infrastructure Updates
+## ­čöž Infrastructure Updates
 
 ### Build System
 - [x] Update `scripts/build-win-tools.ps1`:
   - [x] Build BrowserWin.exe (added, outputs to `dist/browser/`)
-  - [ ] Build OfficeWin.exe (blocked — Office must be installed first)
+  - [ ] Build OfficeWin.exe (blocked ÔÇö Office must be installed first)
   - [x] Copy to dist/browser/ (done by build script)
   - [ ] Copy to dist/office/
 - [ ] Add package references:
@@ -1524,7 +1692,7 @@ Each target shares the same TypeScript core; only the entry-point and service-wr
   - [ ] Add office control tools
 - [ ] Update tool schemas for browser/office operations
 - [ ] Verify MCP server toolset alignment with documented MCP tools
-  - [ ] Generate a quick whitepaper-style report showing MCP server ↔ toolset correspondence
+  - [ ] Generate a quick whitepaper-style report showing MCP server Ôćö toolset correspondence
   - [ ] Ensure MCP server advertises AI-readable API descriptions per MCP protocol
 - [ ] Add fetch_webpage MCP tool (standard webpage scraper + search APIs)
   - [ ] Web security filters (separate section from UI filters):
@@ -1547,13 +1715,13 @@ Each target shares the same TypeScript core; only the entry-point and service-wr
 
 ---
 
-## 🍪 Web Fetch: Cookie Consent & Auth Wall Handling (PRIORITY 4)
+## ­čŹ¬ Web Fetch: Cookie Consent & Auth Wall Handling (PRIORITY 4)
 **Goal:** Allow the AI to navigate sites that gate content behind cookie consent dialogs or
-login walls, without human interaction — while preserving user privacy and security control.
+login walls, without human interaction ÔÇö while preserving user privacy and security control.
 
 ### Cookie Consent / GDPR Popups
 - [ ] Detect common consent frameworks in fetched HTML:
-  - [ ] Google Consent Mode (`consent.google.com/…`, `fc=allyesundefined` patterns)
+  - [ ] Google Consent Mode (`consent.google.com/ÔÇŽ`, `fc=allyesundefined` patterns)
   - [ ] CookieBot (`cookiebot.com` scripts / `data-cookieconsent` attributes)
   - [ ] OneTrust (`onetrust` CSS classes / `OptanonConsent` cookie)
   - [ ] TrustArc / Truste (`truste.com` iframes)
@@ -1572,13 +1740,13 @@ login walls, without human interaction — while preserving user privacy and sec
   - [ ] Respect `Secure`, `HttpOnly`, `SameSite` attributes (no cross-domain leakage)
   - [ ] `WebFetchOptions.cookies?: Record<string, string>` for manual cookie injection
 - [ ] Handle Google-specific consent flow:
-  - [ ] Detect `302 → consent.google.com/ml?continue=…` redirect pattern
+  - [ ] Detect `302 Ôćĺ consent.google.com/ml?continue=ÔÇŽ` redirect pattern
   - [ ] Extract the `continue=` target URL and offer it directly (bypass the consent hop)
-  - [ ] Optional: send `SOCS=…` cookie to skip Google's consent gate
+  - [ ] Optional: send `SOCS=ÔÇŽ` cookie to skip Google's consent gate
 
 ### Session / State Management
 - [ ] Persist cookies between multiple `fetchWebpage` calls in a named session:
-  - [ ] `WebFetchOptions.sessionId?: string` — reuse cookie jar across calls
+  - [ ] `WebFetchOptions.sessionId?: string` ÔÇö reuse cookie jar across calls
   - [ ] Expose `clearSession(sessionId)` to let the AI reset state
 - [ ] Support `POST` method in `fetchWebpage` for form submissions:
   - [ ] `WebFetchOptions.method?: 'GET' | 'POST'`
@@ -1587,15 +1755,15 @@ login walls, without human interaction — while preserving user privacy and sec
 
 ---
 
-## 🌐 Cross-Platform Browser DOM Access — Unified Bridge (PRIORITY 2)
+## ­čîÉ Cross-Platform Browser DOM Access ÔÇö Unified Bridge (PRIORITY 2)
 **Goal:** Access the live DOM of any browser on any platform without requiring the user to
 manually restart their browser with debug flags. Two immediate approaches plus a full
 fallback chain for older platforms.
 
-### Approach 1: CDP — Launch or Detect with Debug Port (IMMEDIATE)
+### Approach 1: CDP ÔÇö Launch or Detect with Debug Port (IMMEDIATE)
 **AI assistant behavior:** When a browser task is requested, BrowserWin checks if CDP is
 available. If not, it EXPLAINS to the user why a debug-port window is needed and offers to
-launch one — either silently/headless or visibly with focus:
+launch one ÔÇö either silently/headless or visibly with focus:
 
 - [ ] **`{LAUNCH:brave}` / `{LAUNCH:chrome}` / `{LAUNCH:firefox}` command** in BrowserWin:
   - [ ] Detect if browser is already running with `--remote-debugging-port` on expected port
@@ -1612,43 +1780,43 @@ launch one — either silently/headless or visibly with focus:
   - [ ] macOS: `/Applications/`, `~/Applications/`
 - [ ] **`{LISTBROWSERS}` enhancement**: show which browsers have CDP available vs UIA-only
 - [ ] **AI prompt in schema**: "If CDP is not available, call `{LAUNCH:browserName}` to open
-      a debug-port window. The user must consent — explain that a separate browser window
+      a debug-port window. The user must consent ÔÇö explain that a separate browser window
       will open. Use `{LAUNCH:brave:headless}` for invisible operation."
 
-### Approach 2: Screen Reader Trick — Force COM DOM Exposure (IMMEDIATE, no flags)
+### Approach 2: Screen Reader Trick ÔÇö Force COM DOM Exposure (IMMEDIATE, no flags)
 Sending `WM_GETOBJECT(OBJID_CLIENT)` to `Chrome_RenderWidgetHostHWND` can trigger Chromium
-to instantiate its `BrowserAccessibility` tree — the same signal a screen reader sends.
+to instantiate its `BrowserAccessibility` tree ÔÇö the same signal a screen reader sends.
 For Firefox, `IAccessible2`/`ISimpleDOMNode` COM interfaces already expose real HTML
 attributes without any flags.
 
 - [ ] **Chromium WM_GETOBJECT nudge** in BrowserWin UIA path:
   - [ ] Find `Chrome_RenderWidgetHostHWND` child of browser window
-  - [ ] Send `WM_GETOBJECT(OBJID_CLIENT)` — triggers accessibility tree creation on some
-        Chrome versions (tested range: Chrome 80–120; may not work on latest)
-  - [ ] Re-query UIA tree after 500ms delay; if node count > 20 → success
+  - [ ] Send `WM_GETOBJECT(OBJID_CLIENT)` ÔÇö triggers accessibility tree creation on some
+        Chrome versions (tested range: Chrome 80ÔÇô120; may not work on latest)
+  - [ ] Re-query UIA tree after 500ms delay; if node count > 20 Ôćĺ success
   - [ ] Flag result: `"mode":"uia_nudge"` in JSON output
 - [ ] **Firefox `ISimpleDOMNode` COM traversal** (C# via COM interop):
-  - [ ] P/Invoke `AccessibleObjectFromWindow(renderHwnd, OBJID_CLIENT)` → `IAccessible`
-  - [ ] `QueryInterface(IID_IAccessible2)` → `IAccessible2`
-  - [ ] `QueryInterface(IID_ISimpleDOMNode)` → `ISimpleDOMNode`
+  - [ ] P/Invoke `AccessibleObjectFromWindow(renderHwnd, OBJID_CLIENT)` Ôćĺ `IAccessible`
+  - [ ] `QueryInterface(IID_IAccessible2)` Ôćĺ `IAccessible2`
+  - [ ] `QueryInterface(IID_ISimpleDOMNode)` Ôćĺ `ISimpleDOMNode`
   - [ ] Walk with `get_nodeInfo()` (tagName, id), `get_attributes()` (all HTML attrs
         including `for=`, `name=`, `type=`, `placeholder=`), `get_childAt()`
   - [ ] Build same `{id,type,name,position,properties,actions,children}` JSON as UIA/CDP
-  - [ ] Use `get_attributes()` to resolve label→input associations (HTML `for=` attr)
+  - [ ] Use `get_attributes()` to resolve labelÔćĺinput associations (HTML `for=` attr)
   - [ ] Mode flag: `"mode":"ia2"` in output
 - [ ] **`--force-renderer-accessibility` hint**: if nudge fails, add to LAUNCH command and
       note in AI schema
 
 ---
 
-## 🎮 Unified Input/Output Control Model — All Helpers (PRIORITY 2)
+## ­čÄ« Unified Input/Output Control Model ÔÇö All Helpers (PRIORITY 2)
 **Goal:** Every helper (KeyWin, BrowserWin, OfficeWin, future Linux/Mac helpers) supports
 the SAME set of input verbs and the SAME tree node schema. The underlying mechanism varies
 by platform/context but the API surface is identical.
 
 ### Unified Tree Node Schema (ancestor class concept)
-Every node in every tree — Win32 UIA, browser DOM (CDP or UIA), Office COM, AT-SPI2,
-AX API — MUST produce this shape. Fields may be null but must always be present:
+Every node in every tree ÔÇö Win32 UIA, browser DOM (CDP or UIA), Office COM, AT-SPI2,
+AX API ÔÇö MUST produce this shape. Fields may be null but must always be present:
 
 ```json
 {
@@ -1669,51 +1837,51 @@ AX API — MUST produce this shape. Fields may be null but must always be presen
 }
 ```
 
-### Unified Input Verbs — ALL helpers must support ALL of these
+### Unified Input Verbs ÔÇö ALL helpers must support ALL of these
 
 #### Keyboard
-- [ ] **`{SENDKEYS:text}`** — type text with embedded special keys (`{ENTER}`, `{TAB}`, etc.)
+- [ ] **`{SENDKEYS:text}`** ÔÇö type text with embedded special keys (`{ENTER}`, `{TAB}`, etc.)
       Already in KeyWin + BrowserWin. Ensure consistent across all helpers.
-- [x] **`{KEYDOWN:key}`** — hold a key (modifier: Ctrl, Alt, Shift, Win)
-      → Win32: `SendInput(KEYEVENTF_KEYDOWN)` | JS: `dispatchEvent(new KeyboardEvent('keydown'))`
-- [x] **`{KEYUP:key}`** — release a held key
-      → Win32: `SendInput(KEYEVENTF_KEYUP)` | JS: `dispatchEvent(new KeyboardEvent('keyup'))`  
-- [x] **`{KEYPRESS:key}`** — atomic keydown+keyup (for non-modifier keys)
-      → Win32: `SendInput` pair | JS: `KeyboardEvent('keydown')` + `KeyboardEvent('keyup')`
-- [x] **`{KEYPRESS:Ctrl+S}`** — chord: hold modifiers, press key, release all
+- [x] **`{KEYDOWN:key}`** ÔÇö hold a key (modifier: Ctrl, Alt, Shift, Win)
+      Ôćĺ Win32: `SendInput(KEYEVENTF_KEYDOWN)` | JS: `dispatchEvent(new KeyboardEvent('keydown'))`
+- [x] **`{KEYUP:key}`** ÔÇö release a held key
+      Ôćĺ Win32: `SendInput(KEYEVENTF_KEYUP)` | JS: `dispatchEvent(new KeyboardEvent('keyup'))`  
+- [x] **`{KEYPRESS:key}`** ÔÇö atomic keydown+keyup (for non-modifier keys)
+      Ôćĺ Win32: `SendInput` pair | JS: `KeyboardEvent('keydown')` + `KeyboardEvent('keyup')`
+- [x] **`{KEYPRESS:Ctrl+S}`** ÔÇö chord: hold modifiers, press key, release all
 - [ ] **Two delivery modes** for all key events:
-  - `global` — `SendInput` to global queue (goes to focused window)
-  - `direct` — `PostMessage(WM_KEYDOWN/WM_CHAR)` to specific HWND or JS `dispatchEvent`
+  - `global` ÔÇö `SendInput` to global queue (goes to focused window)
+  - `direct` ÔÇö `PostMessage(WM_KEYDOWN/WM_CHAR)` to specific HWND or JS `dispatchEvent`
     to specific element. Specify element via path: `{KEYPRESS:Enter::#submitBtn}`
 
 #### Mouse
-- [ ] **`{CLICK:x,y}`** — left click at screen coordinates
+- [ ] **`{CLICK:x,y}`** ÔÇö left click at screen coordinates
       Already in KeyWin as `{CLICK}`. Standardize format.
-- [ ] **`{CLICK:elementPath}`** — left click at element centre (find element first)
+- [ ] **`{CLICK:elementPath}`** ÔÇö left click at element centre (find element first)
 - [x] **`{RIGHTCLICK:x,y}`** / **`{RIGHTCLICK:elementPath}`**
 - [x] **`{DBLCLICK:x,y}`** / **`{DBLCLICK:elementPath}`**
-- [x] **`{HOVER:x,y}`** / **`{HOVER:elementPath}`** — mouse move, no click
-- [x] **`{MOUSEDOWN:x,y}`** / **`{MOUSEUP:x,y}`** — split press/release for drag
+- [x] **`{HOVER:x,y}`** / **`{HOVER:elementPath}`** ÔÇö mouse move, no click
+- [x] **`{MOUSEDOWN:x,y}`** / **`{MOUSEUP:x,y}`** ÔÇö split press/release for drag
 - [ ] **Two delivery modes**:
-  - `sendinput` — `SendInput(INPUT_MOUSE)` via global input queue (realistic)
-  - `message` — `PostMessage(WM_LBUTTONDOWN/WM_LBUTTONUP)` direct to HWND
+  - `sendinput` ÔÇö `SendInput(INPUT_MOUSE)` via global input queue (realistic)
+  - `message` ÔÇö `PostMessage(WM_LBUTTONDOWN/WM_LBUTTONUP)` direct to HWND
     (works in background, but some apps ignore posted mouse messages)
-  - `js` (browser only) — `element.dispatchEvent(new MouseEvent('click'))` — fires
+  - `js` (browser only) ÔÇö `element.dispatchEvent(new MouseEvent('click'))` ÔÇö fires
     JS event handlers without actual OS mouse movement
 
 #### Value / State
-- [x] **`{FILL:selector:value}`** — set input value directly (no keyboard simulation)
-      → Win32: `ValuePattern.SetValue` | JS: `el.value='x'` + input/change events
-      → AT-SPI2: `atspi_editable_text_set_text_contents`
-      → AX API: `AXUIElementSetAttributeValue(kAXValueAttribute)`
-- [ ] **`{SET:selector:value}`** — alias for FILL (already in KeyWin)
-- [x] **`{CHECK:selector}`** / **`{UNCHECK:selector}`** — checkbox toggle
-      → Win32: `TogglePattern` | JS: `el.checked=true` + change event
+- [x] **`{FILL:selector:value}`** ÔÇö set input value directly (no keyboard simulation)
+      Ôćĺ Win32: `ValuePattern.SetValue` | JS: `el.value='x'` + input/change events
+      Ôćĺ AT-SPI2: `atspi_editable_text_set_text_contents`
+      Ôćĺ AX API: `AXUIElementSetAttributeValue(kAXValueAttribute)`
+- [ ] **`{SET:selector:value}`** ÔÇö alias for FILL (already in KeyWin)
+- [x] **`{CHECK:selector}`** / **`{UNCHECK:selector}`** ÔÇö checkbox toggle
+      Ôćĺ Win32: `TogglePattern` | JS: `el.checked=true` + change event
 
 #### Reading
-- [ ] **`{READ}`** — read primary display text (title/value of main control)
-- [x] **`{READELEM:selector}`** — read value of specific element
-- [ ] **`{QUERYTREE}`** / **`{QUERYTREE:depth}`** — full tree at depth
+- [ ] **`{READ}`** ÔÇö read primary display text (title/value of main control)
+- [x] **`{READELEM:selector}`** ÔÇö read value of specific element
+- [ ] **`{QUERYTREE}`** / **`{QUERYTREE:depth}`** ÔÇö full tree at depth
 - [ ] All produce the unified node schema above
 
 ### NOTE: same logic applies to KeyWin.exe
@@ -1724,30 +1892,30 @@ KeyWin currently has `SENDKEYS`, `CLICKID`, `CLICKNAME`, `CLICK`, `READ`, `SET`,
 
 ---
 
-## 🕰️ Platform Portability — Fallback Chain (FUTURE / LOWER PRIORITY)
+## ­čĽ░´ŞĆ Platform Portability ÔÇö Fallback Chain (FUTURE / LOWER PRIORITY)
 
 > These items apply when porting AIAPI helpers to older Windows versions or to Linux/macOS.
 > All fallbacks should mirror the same hidden/shown/listed-existing session model and the
 > same unified input verbs and tree schema defined above.
 
-### Windows Backwards Compatibility — Fallback Chain
+### Windows Backwards Compatibility ÔÇö Fallback Chain
 
 Implement in BrowserWin + KeyWin, selected at runtime based on available APIs:
 
 ```
-Win10/11:  CDP WebSocket  →  UIA (UIAutomationCore.dll)  →  MSAA IAccessible
-Win7/8:    CDP WebSocket  →  UIA  →  MSAA  →  IHTMLDocument2 (WebBrowser ActiveX + IE)
-WinVista:  UIA  →  MSAA  →  IHTMLDocument2
-WinXP:     MSAA  →  IHTMLDocument2 (IE6/7)  →  WM_GETTEXT + EnumChildWindows
-Win2000:   MSAA (partial)  →  IHTMLDocument2 (IE5)  →  WM_GETTEXT
-Win98/95:  IHTMLDocument2 (IE4+)  →  WM_GETTEXT  →  GetDlgItemText (Win16 controls)
-Win3.1:    WM_GETTEXT  →  GetDlgItemText  →  nothing (no accessibility API exists)
+Win10/11:  CDP WebSocket  Ôćĺ  UIA (UIAutomationCore.dll)  Ôćĺ  MSAA IAccessible
+Win7/8:    CDP WebSocket  Ôćĺ  UIA  Ôćĺ  MSAA  Ôćĺ  IHTMLDocument2 (WebBrowser ActiveX + IE)
+WinVista:  UIA  Ôćĺ  MSAA  Ôćĺ  IHTMLDocument2
+WinXP:     MSAA  Ôćĺ  IHTMLDocument2 (IE6/7)  Ôćĺ  WM_GETTEXT + EnumChildWindows
+Win2000:   MSAA (partial)  Ôćĺ  IHTMLDocument2 (IE5)  Ôćĺ  WM_GETTEXT
+Win98/95:  IHTMLDocument2 (IE4+)  Ôćĺ  WM_GETTEXT  Ôćĺ  GetDlgItemText (Win16 controls)
+Win3.1:    WM_GETTEXT  Ôćĺ  GetDlgItemText  Ôćĺ  nothing (no accessibility API exists)
 ```
 
 - [ ] **Runtime API detection**: probe for `UIAutomationCore.dll` existence before using UIA
 - [ ] **IHTMLDocument2 fallback** (Win95+, IE4+ installed):
   - `CoCreateInstance(CLSID_WebBrowser)` + `get_Document(&pDoc)` + `get_body(&el)` +
-    `get_innerHTML` / `put_innerHTML` — full in-process DOM, no flags, all Windows versions
+    `get_innerHTML` / `put_innerHTML` ÔÇö full in-process DOM, no flags, all Windows versions
   - Only works when embedding a WebBrowser control (your own hosted browser window),
     not for standalone Chrome/Firefox
 - [ ] **MSAA IAccessible fallback** (Win95 + MSAA SDK installed, or IE4+):
@@ -1758,36 +1926,36 @@ Win3.1:    WM_GETTEXT  →  GetDlgItemText  →  nothing (no accessibility API e
   - Reliable only for classic Win32 controls (Edit, Button, ListBox, ComboBox)
   - Browser render widget: always returns empty string
 - [ ] **Note**: Session model (headless/visible/reuse-existing) applies equally at every
-  level — regardless of API version, the AI should be able to say "open a browser window
+  level ÔÇö regardless of API version, the AI should be able to say "open a browser window
   silently" or "reuse the existing browser window"
 
-### Linux — Platform Fallback Chain (FUTURE)
+### Linux ÔÇö Platform Fallback Chain (FUTURE)
 
 ```
-Modern (2015+):    CDP WebSocket  →  AT-SPI2 (D-Bus)  →  XDoTool + XQueryTree
-Older (2005-2015): AT-SPI2 (CORBA/D-Bus)  →  XDoTool  →  XQueryTree + XGetWindowProperty
-Classic (1990-2005): XQueryTree + XSendEvent  →  XGetWindowProperty  →  nothing
+Modern (2015+):    CDP WebSocket  Ôćĺ  AT-SPI2 (D-Bus)  Ôćĺ  XDoTool + XQueryTree
+Older (2005-2015): AT-SPI2 (CORBA/D-Bus)  Ôćĺ  XDoTool  Ôćĺ  XQueryTree + XGetWindowProperty
+Classic (1990-2005): XQueryTree + XSendEvent  Ôćĺ  XGetWindowProperty  Ôćĺ  nothing
 ```
 
 - [ ] **AT-SPI2 D-Bus tree walker**: `org.a11y.atspi.Accessible` interface on session bus.
-  Firefox exposes full ARIA→AT-SPI2 bridge. Same role/name/value/children as UIA.
+  Firefox exposes full ARIAÔćĺAT-SPI2 bridge. Same role/name/value/children as UIA.
   Python reference: `pyatspi`. C reference: `at-spi2-core`.
 - [ ] **XDoTool-equivalent**: wrap `XSendEvent(display, window, KeyPress/ButtonPress)` for
   keyboard + mouse injection without any accessibility API
 - [ ] **WebKitGTK `ExecuteScript`**: for hosting a browser in-process on Linux
-  (`webkit_web_view_evaluate_javascript`) — equivalent to WebView2 on Windows
+  (`webkit_web_view_evaluate_javascript`) ÔÇö equivalent to WebView2 on Windows
 - [ ] **Note**: same unified node schema and input verbs must be produced by AT-SPI2 walker
 
-### macOS — Platform Fallback Chain (FUTURE)
+### macOS ÔÇö Platform Fallback Chain (FUTURE)
 
 ```
-Modern (2015+):    CDP WebSocket  →  AX API (AXUIElement)  →  AppleScript
-Older (2005-2015): AX API  →  AppleScript  →  CGEventPost
+Modern (2015+):    CDP WebSocket  Ôćĺ  AX API (AXUIElement)  Ôćĺ  AppleScript
+Older (2005-2015): AX API  Ôćĺ  AppleScript  Ôćĺ  CGEventPost
 Classic MacOS (pre-OSX): AppleScript Apple Events only
 ```
 
-- [ ] **AX API tree walker**: `AXUIElementCreateSystemWide()` → `kAXChildrenAttribute` walk.
-  Same ARIA→AX bridge as UIA/AT-SPI2. ObjC/Swift only; P/Invoke-able from .NET via Mono.
+- [ ] **AX API tree walker**: `AXUIElementCreateSystemWide()` Ôćĺ `kAXChildrenAttribute` walk.
+  Same ARIAÔćĺAX bridge as UIA/AT-SPI2. ObjC/Swift only; P/Invoke-able from .NET via Mono.
 - [ ] **AppleScript `do JavaScript`** (Safari + macOS 10.0+):
   ```applescript
   tell application "Safari"
@@ -1795,9 +1963,9 @@ Classic MacOS (pre-OSX): AppleScript Apple Events only
   end tell
   ```
   Zero flags, works from day 1 of Mac OS X. Gives full JS eval equivalent to CDP
-  `Runtime.evaluate` — but Safari only. AppleScript is sendable via `NSAppleScript` from
+  `Runtime.evaluate` ÔÇö but Safari only. AppleScript is sendable via `NSAppleScript` from
   any process.
-- [ ] **CGEventPost**: `CGEventCreateKeyboardEvent` / `CGEventCreateMouseEvent` — macOS
+- [ ] **CGEventPost**: `CGEventCreateKeyboardEvent` / `CGEventCreateMouseEvent` ÔÇö macOS
   equivalent of `SendInput`. Works globally without accessibility permissions on older macOS;
   requires "Accessibility" permission grant in System Preferences on macOS 10.15+.
 - [ ] **WKWebView `evaluateJavaScript`**: in-process embedded browser on macOS/iOS,
@@ -1806,7 +1974,7 @@ Classic MacOS (pre-OSX): AppleScript Apple Events only
 
 ---
 
-## 📋 Implementation Priority
+## ­čôő Implementation Priority
 1. **PRIORITY 1 - Security & Config UI:**
    - a) Configuration UI for paths and settings
    - b) Security filters visual editor
@@ -1828,7 +1996,7 @@ Classic MacOS (pre-OSX): AppleScript Apple Events only
 
 ---
 
-## ✅ Completed (Current State)
+## Ôťů Completed (Current State)
 - [x] KeyWin.exe for Windows Forms automation
 - [x] Calculator automation working end-to-end
 - [x] Dashboard with Raw Mode

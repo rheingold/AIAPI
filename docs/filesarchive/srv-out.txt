@@ -1,0 +1,34 @@
+
+=== Security Initialization ===
+⚠ No security configuration found - running in INSECURE mode
+  Run security setup to enable protection
+[18:28:23] INFO [Security] Loaded private key from KEY_PASSWORD env var
+
+=== Starting MCP Server ===
+[WindowsFormsProvider] Checking for KeyWin.exe at: C:\Users\plachy\Documents\Dev\VSCplugins\AIAPI\dist\win\KeyWin.exe
+[WindowsFormsProvider] Alternative path: C:\Users\plachy\Documents\Dev\VSCplugins\AIAPI\dist\win\KeyWin.exe
+[WindowsFormsProvider] Found KeyWin.exe at: C:\Users\plachy\Documents\Dev\VSCplugins\AIAPI\dist\helpers\KeyWin.exe
+[WindowsFormsProvider] Using inject mode: direct
+[18:28:23] INFO [Security] Loaded 2 advanced filter rule(s) from dashboard-settings.json
+MCP Server started on http://127.0.0.1:3457
+✓ MCP server running on http://127.0.0.1:3457
+  Ready to accept automation requests
+
+=== Starting Dashboard ===
+[18:28:23] DEBUG [system] Dashboard will use the same AutomationEngine as MCP Server
+[18:28:23] INFO [dashboard] Loaded settings from C:\Users\plachy\Documents\Dev\VSCplugins\AIAPI\config\dashboard-settings.json
+
+[18:28:23] INFO [system] ✓ MCP Server and Dashboard are both running
+[18:28:23] INFO [system] ✓ JSON-RPC request/response logging is enabled
+[18:28:23] DEBUG [HelperDaemon] [BrowserWin.exe] persistent daemon started
+[18:28:23] INFO [HelperRegistry] Discovered: BrowserWin.exe v1.2.0 (26 commands)
+[18:28:23] DEBUG [HelperDaemon] [BrowserWin.exe] _auth sent to helper
+[18:28:23] WARN [HelperDaemon] [BrowserWin.exe] stderr: AIAPI: WARNING - SecurityLib.dll not found; security filter enforcement disabled. Build SecurityLib.dll to enable native security.
+[18:28:23] DEBUG [HelperDaemon] [BrowserWin.exe] HKDF session key derived (32 bytes)
+[18:28:23] INFO [HelperDaemon] [BrowserWin.exe] auth handshake complete
+[18:28:23] DEBUG [HelperDaemon] [KeyWin.exe] persistent daemon started
+[18:28:23] INFO [HelperRegistry] Discovered: KeyWin.exe v1.1.0 (23 commands)
+[18:28:23] DEBUG [HelperDaemon] [KeyWin.exe] _auth sent to helper
+[18:28:23] WARN [HelperDaemon] [KeyWin.exe] stderr: AIAPI: WARNING � SecurityLib.dll not found; security filter enforcement disabled. Build SecurityLib.dll to enable native security.
+[18:28:23] DEBUG [HelperDaemon] [KeyWin.exe] HKDF session key derived (32 bytes)
+[18:28:23] INFO [HelperDaemon] [KeyWin.exe] auth handshake complete

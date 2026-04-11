@@ -1,6 +1,12 @@
-{
+﻿{
 	"version": "2.0.0",
 	"tasks": [
+		{
+			"label": "test-auth",
+			"type": "shell",
+			"command": "node node_modules/jest-cli/bin/jest.js components/server/src/helpers/HelperRegistry.auth.test.ts --no-coverage --verbose",
+			"isBackground": false
+		},
 		{
 			"label": "npm: compile",
 			"type": "shell",
@@ -33,31 +39,31 @@
 		{
 			"label": "build-all-ps1",
 			"type": "shell",
-			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build/windows/build.ps1",
 			"isBackground": false
 		},
 		{
 			"label": "build-all-ps1-fix",
 			"type": "shell",
-			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build/windows/build.ps1",
 			"isBackground": false
 		},
 		{
 			"label": "build-all-final",
 			"type": "shell",
-			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build/windows/build.ps1",
 			"isBackground": false
 		},
 		{
 			"label": "run-full-test",
 			"type": "shell",
-			"command": "node tests/integration/test-full-stack-stdin.js",
+			"command": "node test/src/integration/test-full-stack-stdin.js",
 			"isBackground": false
 		},
 		{
 			"label": "run-full-test-2",
 			"type": "shell",
-			"command": "node tests/integration/test-full-stack-stdin.js",
+			"command": "node test/src/integration/test-full-stack-stdin.js",
 			"isBackground": false
 		},
 		{
@@ -69,54 +75,125 @@
 		{
 			"label": "build-foreground",
 			"type": "shell",
-			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build/windows/build.ps1",
 			"isBackground": false
 		},
 		{
 			"label": "build-and-test-newdoc",
 			"type": "shell",
-			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1 ; node tests/integration/test-full-stack-stdin.js",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build/windows/build.ps1 ; node test/src/integration/test-full-stack-stdin.js",
 			"isBackground": false
 		},
 		{
 			"label": "build-test-specialkeys",
 			"type": "shell",
-			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1 ; node tests/integration/test-full-stack-stdin.js",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build/windows/build.ps1 ; node test/src/integration/test-full-stack-stdin.js",
 			"isBackground": false
 		},
 		{
 			"label": "build-test-sendkeys-translate",
 			"type": "shell",
-			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1 ; node tests/integration/test-full-stack-stdin.js",
+			"command": "PowerShell -ExecutionPolicy Bypass -File build/windows/build.ps1 ; node test/src/integration/test-full-stack-stdin.js",
 			"isBackground": false
 		},
 		{
 			"label": "build-wincommon",
 			"type": "shell",
-			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1"
+			"command": "PowerShell -ExecutionPolicy Bypass -File build/windows/build.ps1"
 		},
 		{
 			"label": "test-with-browseruia",
 			"type": "shell",
-			"command": "node tests/integration/test-full-stack-stdin.js"
+			"command": "node test/src/integration/test-full-stack-stdin.js"
 		},
 		{
 			"label": "build-wincommon-fix",
 			"type": "shell",
-			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1"
+			"command": "PowerShell -ExecutionPolicy Bypass -File build/windows/build.ps1"
 		},
 		{
 			"label": "build-test-browser-uia",
 			"type": "shell",
-			"command": "PowerShell -ExecutionPolicy Bypass -File build-all.ps1 ; node tests/integration/test-full-stack-stdin.js"
+			"command": "PowerShell -ExecutionPolicy Bypass -File build/windows/build.ps1 ; node test/src/integration/test-full-stack-stdin.js"
 		},
 		{
 			"label": "test-uia-form",
 			"type": "shell",
 			"command": "node",
 			"args": [
-				"tests/integration/test-full-stack-stdin.js"
+				"test/src/integration/test-full-stack-stdin.js"
 			]
+		},
+		{
+			"label": "test-xmlscenarioloader",
+			"type": "shell",
+			"command": "node node_modules/jest-cli/bin/jest.js components/server/src/scenario/xmlScenarioLoader.test.ts --no-coverage",
+			"isBackground": false
+		},
+		{
+			"label": "test-xmlscenarioloader-2",
+			"type": "shell",
+			"command": "node node_modules/jest-cli/bin/jest.js components/server/src/scenario/xmlScenarioLoader.test.ts --no-coverage",
+			"isBackground": false
+		},
+		{
+			"label": "test-xmlscenarioloader-3",
+			"type": "shell",
+			"command": "node node_modules/jest-cli/bin/jest.js components/server/src/scenario/xmlScenarioLoader.test.ts --no-coverage",
+			"isBackground": false
+		},
+		{
+			"label": "test-all-suite",
+			"type": "shell",
+			"command": "node node_modules/jest-cli/bin/jest.js --no-coverage",
+			"isBackground": false
+		},
+		{
+			"label": "git-commit-xmlscenario",
+			"type": "shell",
+			"command": "git add src/scenario/xmlScenarioLoader.test.ts src/__mocks__/jsdom-mock.js src/__mocks__/encoding-stub.js jest.config.json TODO.md ; git commit -m \"test: xmlScenarioLoader unit tests (27) + jsdom CJS mock\\n\\nAdds 27 unit tests for src/scenario/xmlScenarioLoader.ts covering:\\n  - XmlScenarioLoader.substitute(): 7 tests (pure static, no I/O)\\n  - executeXmlScenario(): 14 tests with mocked callFn covering WAIT,\\n    LISTWINDOWS/hwnd-binding, conditional=absent skip/run, variable\\n    substitution in target/parameter, success/fail/throw handling,\\n    multi-step aggregation, result metadata\\n  - XmlScenarioLoader filesystem: 6 tests using real temp-dir XML\\n    (listScenarios, load flat, load with ScenarioRef expansion,\\n    unknown-app/scenario errors, circular ScenarioRef detection)\\n\\njsdom v28 pulls in @asamuzakjp/css-color, @exodus/bytes and other\\nESM-only transitive dependencies which are incompatible with Jest\\nin CJS mode (SyntaxError: Unexpected token export).\\nFix: src/__mocks__/jsdom-mock.js â€” minimal CJS-only JSDOM replacement\\nwith a stack-based XML parser that implements the exact DOM API subset\\nused by xmlScenarioLoader (querySelector, querySelectorAll, getAttribute,\\nchildNodes, nodeType, tagName).  jest.config.json gets moduleNameMapper\\nto redirect \\\"jsdom\\\" to this mock for all Jest runs.\\n\\nTODO.md: xmlScenarioLoader unit tests marked [x]; jsdom workaround noted.\"",
+			"isBackground": false
+		},
+		{
+			"label": "git-commit-xmlscenario-2",
+			"type": "shell",
+			"command": "git add src/scenario/xmlScenarioLoader.test.ts src/__mocks__/jsdom-mock.js src/__mocks__/encoding-stub.js jest.config.json TODO.md ; git commit -F commit-msg.txt ; Remove-Item commit-msg.txt ; git push",
+			"isBackground": false
+		},
+		{
+			"label": "test-logger",
+			"type": "shell",
+			"command": "node node_modules/jest-cli/bin/jest.js components/server/src/utils/Logger.test.ts --no-coverage",
+			"isBackground": false
+		},
+		{
+			"label": "test-filtereval",
+			"type": "shell",
+			"command": "node node_modules/jest-cli/bin/jest.js components/server/src/utils/filterEval.test.ts --no-coverage",
+			"isBackground": false
+		},
+		{
+			"label": "test-filtereval-2",
+			"type": "shell",
+			"command": "node node_modules/jest-cli/bin/jest.js components/server/src/utils/filterEval.test.ts --no-coverage",
+			"isBackground": false
+		},
+		{
+			"label": "test-all-utils",
+			"type": "shell",
+			"command": "node node_modules/jest-cli/bin/jest.js components/server/src/utils/Logger.test.ts src/utils/filterEval.test.ts src/utils/wildcardMatch.test.ts src/scenario/xmlScenarioLoader.test.ts --no-coverage",
+			"isBackground": false
+		},
+		{
+			"label": "git-commit-filtereval",
+			"type": "shell",
+			"command": "git add src/utils/Logger.test.ts src/utils/filterEval.ts src/utils/filterEval.test.ts src/server/mcpServer.ts src/server/httpServerWithDashboard.ts TODO.md ; git commit -F commit-msg.txt ; Remove-Item commit-msg.txt ; git push",
+			"isBackground": false
+		},
+		{
+			"label": "test-security-filter",
+			"type": "shell",
+			"command": "npx jest --testPathPattern=\"securityFilter\" --no-coverage 2>&1"
 		}
 	]
 }

@@ -1,15 +1,15 @@
 {
   "preset": "ts-jest",
   "testEnvironment": "node",
-  "roots": ["<rootDir>/src"],
+  "roots": ["<rootDir>/components/server/src"],
   "testMatch": ["**/__tests__/**/*.ts", "**/?(*.)+(spec|test).ts"],
   "moduleFileExtensions": ["ts", "tsx", "js", "jsx", "json", "node"],
   "moduleNameMapper": {
-    "^jsdom$": "<rootDir>/src/__mocks__/jsdom-mock.js"
+    "^jsdom$": "<rootDir>/components/server/src/__mocks__/jsdom-mock.js"
   },
   "collectCoverageFrom": [
-    "src/**/*.ts",
-    "!src/**/*.d.ts",
-    "!src/extension.ts"
+    "components/server/src/**/*.ts",
+    "!components/server/src/**/*.d.ts",
+    "!components/server/src/extension.ts"
   ]
 }

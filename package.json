@@ -75,11 +75,25 @@
       }
     ]
   },
+  "pkg": {
+    "scripts": "dist/**/*.js",
+    "assets": [
+      "components/server/dist-resources/dashboard/**",
+      "components/server/dist-resources/apptemplates/**",
+      "config/dashboard-settings.json",
+      "dist/helpers/**"
+    ],
+    "targets": [
+      "node18-win-x64"
+    ],
+    "outputPath": "dist/release"
+  },
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "start:mcp": "node dist/start-mcp-server.js",
-    "dev:start:mcp": "npx ts-node src/start-mcp-server.ts",
+    "package:win": "PowerShell -ExecutionPolicy Bypass -File scripts/package-win.ps1",
+    "dev:start:mcp": "npx ts-node components/server/src/start-mcp-server.ts",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile",
     "lint": "echo 'Linting disabled for now'",

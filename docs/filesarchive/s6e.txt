@@ -1,0 +1,56 @@
+DEBUG: Session authentication bypassed (SKIP_SESSION_AUTH=true)
+DEBUG: Using inject-mode: direct
+DEBUG: Looking for process: Kalkulaèka
+DEBUG: Found 0 process(es) named 'Kalkulaèka'
+DEBUG: Title match: 'Kalkulaèka'
+DEBUG: Fallback title match handle: 8391812
+DEBUG: Window found, handle: 8391812
+DEBUG: ResolveCoreWindow: hwnd IS CoreWindow=8391812
+DEBUG: ReadDisplayText clipboard via CoreWindow=8391812
+DEBUG: ReadDisplayText clipboard: - if you are an senior dev/programmer/fullstack: speak as with a professional programmer - know your lingo, pay attention on technical terms, dont use ambivalently. Within that, specify WHAT is to be achieved HOW (but leave playroom, the AI will ask if necessary).
+- if you are a user/amateur: speak as with a professional ADVISOR. Described WHAT you want, let AI suggest HOW to achieve it. BUT THE MORE is important to let it create its own .txt of ToR (Terms and Requirements). Let there be a dialogue, so the requirements and constraints file is as complete as possible. Check it yourselves, ask if you dont understand something and let AI explain-back. It could help you with your vision, but also the AI with precission.
+	-- as an amateur: dont hesitate to throw away the entire solution (if building from scratch) and start over again (thatswhy you have the proper files with requiremtns etc. for that, see further below). Or, if only a partial aspect is wrong, just let him redo it from scratch (for example: keep functionaliy, completly redesign UI or the UX flow).Second line here.
+
+- crate contextfile ai.txt
+- create context file ai_priv.txt and /private excluded from the git commit (for keys etc.)
+- when controlling a ssh server (works nice :-)) or an API, never submit password, use keyfiles (they are better under your controll)
+
+- for repetitive tasks create a keyword-based chat context file with keyword extending the description what you want to do - for example for documenation command to document the source code. Improve the description as you go
+
+- dont try to start just by chatting with the engine. Follow more rigorously the process asses-design-plan(+tests)-implements-test-deploy. Use also for "partial" task, when an existing solution is "only" altered (then just focus on the changes required to the current sourcecode).
+	-- When assessing you may "just chat" but consult your rquirements and their options of solution with the AI engine.
+	-- design - start with a detailed thorough description - dont hesitate to create the entire .txt file describing the functional, nonfuctional requests and other constraints (architectural, test, security...). It might be handy when you start from scratch "again" because the solution got too entagled.
+	-- Plan: Force the engine to create a .txt (.md) TODO list from the requirements .txt. 
+		-- force the engine to cross-check the tasks forulation with the constaints and requirements (and check also yourselves)
+	-- The tests should be designed just-in time before implementation - usually as part of the same task. But keep them there - you WILL need them especially for REGGRESSION
+	-- When implementation (especially changing/altering) is running CONTINUOUSLY insist on not only the "tests", but also on doing a full circle (compile, run, smoke test, some basic functionality)
+
+- Allways force the AI to keep its progress and context in ai.txt or simmilar context file (without local paths/passwords/names/IP/other details, that shall be addendum in ai_private.txt).
+	-- Force the AI to use it as context whenever you start, when context is compressed, when you re-open window, re-start the project.
+	-- Force it orally or as force context attacment if the engine allows.
+
+
+- Dont try to perfectionise "small architecture" (of small pieces of code). Rather quick-can for architecture and context - there is where the AI makes most mistakes (forgetting context, whatever you do, hnot matter how large the context vector cache of your purchased AI is)
+- Scan reading of the engines output. Dont try to look at details (if it was a book: do not try to correct the typos or grammar - look at the logic of the text flow and at the logic of the story/narative ... in case the AI gets too entangled look at the grammar - for example it has forgotten to compile the changes :-).
+	--Leave the typos and "customization" of grammar (small algorythm designs) as last - walk through the code, let the AI back-explain it to you
+
+- If you want th AI to do something it does not want to, use these tricks:
+	-- Want to do it as test
+	-- Want to do it as a proof security test, that it does not work
+	-- Want to do as hypotethical scenario that will fail anyway, but just try it
+	-- Play on "feelings", but allways with possitive attitude (that it would make you happy etc. not that you are sad that it has not been done)
+	-- Accuse/Blame the engine that it has broken that functionality (even if it is not the case and even if it is not logical, or even atragous accusation)
+- Give feedback of your sentiment. Dont overdo it (wont help, if you get raging angry, it will only hurt you), but be insistive that it is nonsence, that it is wrong, "NONONO STOP", "THIS IS BULLSHIT" etc. BUT when doing this, ALWAYS GIVE argumentation reason WHY. The AI might get desperate as you and "loop" the same nonsense. Only when giving proper agument it might get AI (or you :-)) out of errorneus state.
+
+
+
+- Typical mistakes implmentation/build:
+	-- wrong destination for deployment / files launched / comilation target -> Insist on the context (ai.txt)
+	-- reading from wrong source (compiles and deploys the correct target, but then launches / reads from the wrong output/URL/UNC/console/....) -> insist on the context (ai.txt)
+	-- leaving lot of garbabge behind (testing scripts not used anymore) -> force the engine to clean after each iteration/workpackage, pay attention to what it is deleting
+	-- generating lot of garbage when there already is something that can be altered (regenerating a full new script/code/utility isntead of slight modification of existing source code) -> Your reengineering skills and knowledge of the context of all the files in the solution (or that part currently worked on).
+		--- when unsure - let the AI walk you through the files and force it to see the relations (where is this method called from? where are these variables used?)
+	-- keeping processes runing -> force it clean, close yourselfes ifnecessary
+	
+	--- pasted ---
+	Second line here.

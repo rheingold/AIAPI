@@ -1,0 +1,3 @@
+DEBUG: Session authentication bypassed (SKIP_SESSION_AUTH=true)
+DEBUG: Using inject-mode: direct
+DEBUG: Command=LISTWINDOWS, Parameter=*

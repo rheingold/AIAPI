@@ -37,6 +37,28 @@ namespace LibreOfficeWin
         //  Win32 P/Invoke (for FOCUS)
         // ──────────────────────────────────────────────────────────────────────
 
+        [DllImport("kernel32.dll")] static extern bool ProcessIdToSessionId(uint dwProcessId, out uint pSessionId);
+        [DllImport("kernel32.dll")] static extern uint WTSGetActiveConsoleSessionId();
+
+        // ── QA-3: Session 0 detection ─────────────────────────────────────────
+        static bool IsSession0()
+        {
+            try {
+                uint sid = 0;
+                ProcessIdToSessionId((uint)System.Diagnostics.Process.GetCurrentProcess().Id, out sid);
+                return sid == 0;
+            } catch { return false; }
+        }
+        static string BuildSessionWarning(string operation)
+        {
+            uint cs = WTSGetActiveConsoleSessionId();
+            string sessionLabel = cs == uint.MaxValue ? "N/A (no user logged in)" : cs.ToString();
+            return "LibreOfficeWin is running in Windows Session 0 (service context). "
+                + operation + " starts a process in Session 0 — it will be invisible to the user in Session " + sessionLabel + ". "
+                + "Fix: pre-start LibreOffice in Session 1 with --accept=socket,host=localhost,port=2002;urp; and use UNO socket commands from service mode. "
+                + "See docs/specs/SESSION0_ISOLATION.md for details.";
+        }
+
         [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
         [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
         [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
@@ -208,18 +230,42 @@ namespace LibreOfficeWin
 
             if (cmdType == "RELAUNCH")
             {
+                // QA-3: RELAUNCH uses Process.Start — soffice starts in Session 0, invisible to user
+                if (IsSession0())
+                {
+                    string sw = BuildSessionWarning("RELAUNCH");
+                    Console.Error.WriteLine("AIAPI SESSION0 WARNING: LibreOfficeWin RELAUNCH cannot create a visible LibreOffice window in Session 0. " + sw);
+                    Console.WriteLine("{\"success\":false,\"command\":\"RELAUNCH\",\"error\":\"Session 0: LibreOffice launched here would be invisible. Pre-start soffice with --accept=socket,host=localhost,port=2002;urp; in the user session instead.\",\"_sessionWarning\":\"" + JsonEscape(sw) + "\"}");
+                    return;
+                }
                 CmdRelaunch(ExtractParam(action, "RELAUNCH"));
                 return;
             }
 
             if (cmdType == "LAUNCH")
             {
+                // QA-3: LAUNCH uses Process.Start — same Session 0 problem as RELAUNCH
+                if (IsSession0())
+                {
+                    string sw = BuildSessionWarning("LAUNCH");
+                    Console.Error.WriteLine("AIAPI SESSION0 WARNING: LibreOfficeWin LAUNCH cannot create a visible LibreOffice window in Session 0. " + sw);
+                    Console.WriteLine("{\"success\":false,\"command\":\"LAUNCH\",\"error\":\"Session 0: LibreOffice launched here would be invisible. Pre-start soffice with --accept=socket,host=localhost,port=2002;urp; in the user session instead.\",\"_sessionWarning\":\"" + JsonEscape(sw) + "\"}");
+                    return;
+                }
                 CmdLaunch(target, ExtractParam(action, "LAUNCH"));
                 return;
             }
 
             if (cmdType == "FOCUS")
             {
+                // QA-3: FOCUS uses SetForegroundWindow — broken in Session 0
+                if (IsSession0())
+                {
+                    string sw = BuildSessionWarning("FOCUS");
+                    Console.Error.WriteLine("AIAPI SESSION0 WARNING: LibreOfficeWin FOCUS cannot bring window to foreground from Session 0 (SetForegroundWindow is cross-session silently ignored). " + sw);
+                    Console.WriteLine("{\"success\":false,\"command\":\"FOCUS\",\"error\":\"Session 0: cannot focus LibreOffice window — SetForegroundWindow is silently ignored across session boundaries.\",\"_sessionWarning\":\"" + JsonEscape(sw) + "\"}");
+                    return;
+                }
                 CmdFocus();
                 return;
             }

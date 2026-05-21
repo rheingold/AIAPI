@@ -32,6 +32,44 @@ export interface BuiltinResult {
   exitCode?: number;
   /** entries for FS_LIST */
   entries?: BuiltinFsEntry[];
+  /** QA-3: present when running in Windows Session 0 and the command may have no visible effect */
+  _sessionWarning?: string;
+}
+
+// ── QA-3: Session 0 detection (Windows only) ─────────────────────────────────
+
+/**
+ * Returns true when the Node.js server process is running in Windows Session 0
+ * (i.e. launched as a Windows Service). Synchronous — reads process session ID
+ * from WMI via a small PowerShell query. Cached after first call.
+ */
+let _session0Cache: boolean | null = null;
+function isSession0(): boolean {
+  if (!(_session0Cache === null)) return _session0Cache!;
+  if (os.platform() !== 'win32') { _session0Cache = false; return false; }
+  try {
+    // Use synchronous execFileSync for the one-time session ID probe.
+    const { execFileSync } = require('child_process');
+    const out: string = execFileSync('powershell', [
+      '-NoProfile', '-NonInteractive', '-Command',
+      `(Get-WmiObject Win32_Process -Filter 'ProcessId=${process.pid}').SessionId`,
+    ], { timeout: 5000, encoding: 'utf8' });
+    _session0Cache = parseInt(out.trim(), 10) === 0;
+  } catch {
+    _session0Cache = false; // safe default — assume not Session 0
+  }
+  return _session0Cache!;
+}
+
+/** Simple heuristic: if the executable name is not a known console tool, flag as GUI. */
+const CONSOLE_TOOLS = new Set([
+  'cmd', 'cmd.exe', 'powershell', 'powershell.exe', 'pwsh', 'pwsh.exe',
+  'node', 'node.exe', 'python', 'python.exe', 'python3', 'python3.exe',
+  'wscript', 'cscript', 'bash', 'bash.exe', 'sh', 'sh.exe',
+]);
+function looksLikeGuiProcess(executable: string): boolean {
+  const base = path.basename(executable).toLowerCase();
+  return !CONSOLE_TOOLS.has(base);
 }
 
 export interface BuiltinFsEntry {
@@ -70,13 +108,21 @@ export async function execCmd(
       env,
       maxBuffer: 1024 * 1024 * 4, // 4 MB
     });
-    return {
+    const result: BuiltinResult = {
       success: true,
       value:   stdout.trim(),
       stdout:  stdout,
       stderr:  stderr || undefined,
       exitCode: 0,
     };
+    // QA-3: warn when running in Session 0 and the command likely spawns a GUI app
+    if (isSession0() && looksLikeGuiProcess(executable)) {
+      result._sessionWarning = 'exec_cmd launched a process in Session 0 which has no interactive desktop. '
+        + 'GUI windows will not be visible to users. '
+        + 'Use Task Scheduler interactive task or the VSIX dev-mode server (port 3457) for GUI automation. '
+        + 'See docs/specs/SESSION0_ISOLATION.md for details.';
+    }
+    return result;
   } catch (e: any) {
     const exitCode = typeof e.code === 'number' ? e.code : undefined;
     return {

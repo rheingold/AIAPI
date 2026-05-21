@@ -273,7 +273,19 @@ namespace BrowserWin
 
             // Commands that never need CDP
             if (cmdType == "LISTBROWSERS") return CmdListBrowsers();
-            if (cmdType == "FOCUS")        return CmdFocusBrowser(browser);
+            if (cmdType == "FOCUS")
+            {
+                // QA-3: FOCUS uses SetForegroundWindow — broken in Session 0
+                if (WinUtils.IsSession0())
+                {
+                    uint cs = WinUtils.GetActiveConsoleSessionId();
+                    string sw = WinUtils.BuildSessionWarning("FOCUS", cs);
+                    Console.Error.WriteLine("AIAPI SESSION0 WARNING: BrowserWin FOCUS cannot bring browser window to foreground in Session 0 (no interactive desktop). " + sw);
+                    Console.WriteLine("{\"success\":false,\"command\":\"FOCUS\",\"error\":\"Session 0: cannot focus browser window — no interactive desktop.\",\"_sessionWarning\":\"" + WinUtils.EscapeJson(sw) + "\"}");
+                    return 1;
+                }
+                return CmdFocusBrowser(browser);
+            }
             if (cmdType == "KILL")         return CmdKill(browser);
             if (cmdType == "LISTWINDOWS")
             {
@@ -283,7 +295,19 @@ namespace BrowserWin
 
             // LAUNCH: start browser with --remote-debugging-port (or detect existing).
             // Handles its own CDP/UIA logic internally.
-            if (cmdType == "LAUNCH") return CmdLaunch(browser, ExtractParam(command, "LAUNCH"), port);
+            if (cmdType == "LAUNCH")
+            {
+                // QA-3: LAUNCH uses Process.Start — browser starts in Session 0, invisible to user
+                if (WinUtils.IsSession0())
+                {
+                    uint cs = WinUtils.GetActiveConsoleSessionId();
+                    string sw = WinUtils.BuildSessionWarning("LAUNCH", cs);
+                    Console.Error.WriteLine("AIAPI SESSION0 WARNING: BrowserWin LAUNCH cannot create a visible browser window in Session 0 (no interactive desktop). Use a pre-started browser with --remote-debugging-port instead. " + sw);
+                    Console.WriteLine("{\"success\":false,\"command\":\"LAUNCH\",\"error\":\"Session 0: browser launched here would be invisible. Pre-start Chrome with --remote-debugging-port=9222 in the user session instead.\",\"_sessionWarning\":\"" + WinUtils.EscapeJson(sw) + "\"}");
+                    return 1;
+                }
+                return CmdLaunch(browser, ExtractParam(command, "LAUNCH"), port);
+            }
 
             // SENDKEYS is always UIA-only (keyboard injection)
             if (cmdType == "SENDKEYS")

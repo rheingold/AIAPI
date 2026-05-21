@@ -186,6 +186,107 @@ The MCP server runs automatically when the VS Code extension activates. The exte
 - **Commands** - Start/stop/restart server
 - **Configuration** - Custom port, logging, etc.
 
+## Deployment Modes and Session 0
+
+> **Reference:** [`docs/architecture/decisions/ADR-018-session0-fix-strategy.md`](../architecture/decisions/ADR-018-session0-fix-strategy.md) |
+> Full compatibility matrix: [`docs/specs/SESSION0_ISOLATION.md`](../specs/SESSION0_ISOLATION.md)
+
+AIAPI has two deployment modes with fundamentally different capability sets, driven by
+**Windows Session 0 isolation** — the OS mechanism that prevents services from accessing
+the interactive user desktop.
+
+### Two Deployment Modes
+
+#### Service Mode — port 4457 (Windows Service, Session 0)
+
+Installed as a Windows Service, the Node.js server and all helper `.exe` processes run in
+**Session 0**, the non-interactive system session. Session 0 has no display, no input queues
+connected to the user desktop, and its COM Running Object Table (ROT) is separate from the
+user's.
+
+- **NativeWin tools** (`fs_read`, `fs_write`, `fs_list`, `fetch_webpage`) work fully — filesystem and network I/O have no session boundary.
+- **BrowserWin/LibreOfficeWin** CDP/UNO socket commands work **if** the user pre-started the browser or LibreOffice with the appropriate debug port flag (TCP is session-transparent).
+- **UI automation commands** (`KeyWin`, `BrowserWin LAUNCH/FOCUS`, `MSOfficeWin`, `LibreOfficeWin LAUNCH/FOCUS`) return `_sessionWarning` errors — they cannot reach the user's desktop.
+
+#### Dev / VSIX Mode — port 3457 (user session)
+
+Running `node components/server/dist/start-mcp-server.js` interactively, or via the VS Code
+VSIX extension, keeps the server in the **user's interactive session**. All helpers run in
+the same session as the user's desktop — full automation capability.
+
+### Capability Table
+
+| Helper | Command category | Service mode (4457) | Dev mode (3457) |
+|--------|-----------------|---------------------|-----------------|
+| NativeWin | `fs_read` / `fs_write` / `fs_list` | ✅ | ✅ |
+| NativeWin | `exec_cmd` (console tools) | ✅ | ✅ |
+| NativeWin | `exec_cmd` (GUI app — e.g. `calc.exe`) | ⚠️ process starts invisible | ✅ |
+| NativeWin | `fetch_webpage` | ✅ | ✅ |
+| KeyWin | `LISTWINDOWS`, `QUERYTREE`, `SENDKEYS`, etc. | ❌ Session 0 — all broken | ✅ |
+| BrowserWin | `LAUNCH`, `FOCUS` | ❌ Session 0 — browser invisible | ✅ |
+| BrowserWin | CDP attach, navigate, interact | ✅ (pre-start browser) | ✅ |
+| LibreOfficeWin | `LAUNCH`, `RELAUNCH`, `FOCUS` | ❌ Session 0 — LO invisible | ✅ |
+| LibreOfficeWin | UNO socket commands | ✅ (pre-start LO with `--accept`) | ✅ |
+| MSOfficeWin | ALL commands | ❌ COM ROT is per-session | ✅ |
+
+When a command is blocked in service mode, the helper returns `success: false` with a
+`_sessionWarning` field explaining the Session 0 constraint and the recommended fix.
+
+### Task Scheduler Workaround — Pre-starting Chrome / LibreOffice
+
+For `BrowserWin` CDP commands and `LibreOfficeWin` UNO socket commands to work from service
+mode, the **browser or LibreOffice must be started in the user session** with the appropriate
+debug/accept flag. Use Windows Task Scheduler to do this automatically at logon:
+
+#### Pre-start Chrome with CDP debug port
+
+```powershell
+$action = New-ScheduledTaskAction -Execute 'chrome.exe' `
+    -Argument '--remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 --user-data-dir=C:\AIAPI\chrome-debug'
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
+Register-ScheduledTask -TaskName 'AIAPI-Chrome-Debug' -Action $action `
+    -Trigger $trigger -Principal $principal
+```
+
+After this, `BrowserWin` CDP commands (`NAVIGATE`, `QUERYTREE`, `CLICKID`, etc.) will work
+from service mode by connecting to `localhost:9222`.
+
+#### Pre-start LibreOffice with UNO socket
+
+```powershell
+$action = New-ScheduledTaskAction -Execute 'soffice.exe' `
+    -Argument '--accept="socket,host=localhost,port=2002;urp;StarOffice.ServiceManager" --norestore --nologo'
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
+Register-ScheduledTask -TaskName 'AIAPI-LibreOffice-UNO' -Action $action `
+    -Trigger $trigger -Principal $principal
+```
+
+After this, `LibreOfficeWin` UNO socket commands (`READ`, `WRITE`, `QUERYTREE`, `SAVE`,
+`EXPORT`) will work from service mode by connecting to `localhost:2002`.
+
+### Recommended Architecture (ADR-018)
+
+> See [`docs/architecture/decisions/ADR-018-session0-fix-strategy.md`](../architecture/decisions/ADR-018-session0-fix-strategy.md) — authoritative decision record.
+
+**For full UI automation → use Dev mode (port 3457) or the VSIX extension:**
+
+- Install the `.vsix` extension — the server activates inside VS Code's user session; all helpers have full desktop access immediately.
+- No configuration required; VS Code always runs in the user's interactive session.
+
+**For server / headless automation → use Service mode (port 4457) with pre-started apps:**
+
+- Service mode is the correct choice for `fs_*`, `exec_cmd` (console), `fetch_webpage`, and
+  supervised browser/LO automation (where the user's browser/LO stays open continuously).
+- Do **not** attempt `KeyWin` or `MSOfficeWin` commands from service mode — they will always fail with `_sessionWarning`.
+
+**Phase 2 (planned): AiapiBridge.exe** — a companion process launched at user logon that
+relays UI automation commands from the Session 0 service to the user session, enabling full
+automation without VS Code. Tracked as `NEW-1` in [`TODO.md`](../../TODO.md).
+
+---
+
 ## Testing the Server
 
 ### PowerShell Health Check
@@ -474,3 +575,48 @@ See complete error reference: http://127.0.0.1:3457/docs/errors
 5. ✅ Execute test: Use `test-mcp-scenario.js`
 6. 🎯 Create your own scenarios in `/scenarios` folder
 7. 🎯 Integrate with your AI or automation tools
+
+---
+
+## Configuring authentication
+
+Open the dashboard → click **🔑 Auth** in the side nav.
+
+### Password mode (recommended first setup)
+1. Mode → **Password**.
+2. JWT → **🎲 Generate** secret; set Expiry to `60`; Issuer to `aiapi`.
+3. bcrypt Rounds → `10` (use `12` in production).
+4. User Store → **JSON file**, path `./config/users.json`.
+5. **💾 Save Auth Config**.
+6. Switch to **Users & Roles** tab → **➕ Add User**.
+
+### API Key mode
+1. Mode → **API Key**.
+2. Set Default username for anonymous keys (e.g. `apikey-user`).
+3. **💾 Save Auth Config**.
+4. In Users & Roles → find a user → click 🗝️＋ to generate a key.
+   The key is shown **once** — copy it immediately.
+
+### OAuth 2.0 / OIDC (e.g. Keycloak)
+Fill in: Client ID, Client Secret, Authorization URL, Token URL,
+User Info URL, Scope (`openid profile email`), Callback URL
+(`http://localhost:3458/api/auth/oauth/callback`), Username path
+(`preferred_username`). Enable PKCE for public clients.
+
+### SAML 2.0 (e.g. Okta)
+Fill in: IdP Entry Point (SSO URL), Issuer (SP Entity ID = your server URL),
+IdP Certificate (paste PEM or use 📂 Browse), SP Private Key (optional),
+Callback URL (`http://localhost:3458/api/auth/saml/callback`),
+Username attribute path (`nameID`), Signature algorithm (`sha256`).
+
+### Client Certificate / mTLS
+1. Mode → **Certificate**.
+2. CA Certificate Path → path to your CA PEM on the server.
+3. Toggle "Require Client Certificate" → ON for strict mTLS.
+4. **💾 Save Auth Config** — server restart required for mTLS to take effect.
+   Run: `POST /api/restart`.
+
+### User Store: Database
+In the User Store group → Source → **Database**.
+Fill engine, host, port, database, auth method and credentials.
+Use **🔧 Provision / Initialize Database** to run migrations before first use.

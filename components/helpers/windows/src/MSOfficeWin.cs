@@ -40,6 +40,28 @@ namespace MSOfficeWin
 
         [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
         [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+        [DllImport("kernel32.dll")] static extern bool ProcessIdToSessionId(uint dwProcessId, out uint pSessionId);
+        [DllImport("kernel32.dll")] static extern uint WTSGetActiveConsoleSessionId();
+
+        // ── QA-3: Session 0 detection ─────────────────────────────────────────
+        static bool IsSession0()
+        {
+            try {
+                uint sid = 0;
+                ProcessIdToSessionId((uint)System.Diagnostics.Process.GetCurrentProcess().Id, out sid);
+                return sid == 0;
+            } catch { return false; }
+        }
+        static string BuildSessionWarning(string operation)
+        {
+            uint cs = WTSGetActiveConsoleSessionId();
+            string sessionLabel = cs == uint.MaxValue ? "N/A (no user logged in)" : cs.ToString();
+            return "MSOfficeWin is running in Windows Session 0 (service context). "
+                + operation + " cannot access COM objects from Session 0 — the COM Running Object Table is per-session. "
+                + "User's Word/Excel/PowerPoint instances are in Session " + sessionLabel + " and are not visible from Session 0. "
+                + "Fix: use VSIX dev mode (port 3457) or Task Scheduler interactive task. "
+                + "See docs/specs/SESSION0_ISOLATION.md for details.";
+        }
 
         // ──────────────────────────────────────────────────────────────────────
         //  Entry point
@@ -150,6 +172,16 @@ namespace MSOfficeWin
 
         static void DispatchCommand(string target, string action)
         {
+            // QA-3: ALL MSOfficeWin commands require COM ROT access which is per-session.
+            // Session 0 (Windows Service context) cannot see user's running Office instances.
+            if (IsSession0())
+            {
+                string sw = BuildSessionWarning(DetermineCommandType(action));
+                Console.Error.WriteLine("AIAPI SESSION0 WARNING: MSOfficeWin cannot access COM objects from Session 0 (COM ROT is per-session). All Office automation commands require running in the user's interactive session.");
+                Console.WriteLine("{\"success\":false,\"error\":\"Session 0: MSOfficeWin cannot reach user Office instances — COM ROT is per-session.\",\"_sessionWarning\":\"" + JsonEscape(sw) + "\"}");
+                return;
+            }
+
             // Strip optional SCROLL_ prefix added by HelperCommon when scroll=true.
             // Office helpers work via COM and don't have a screen-scroll concept,
             // so the flag is silently consumed here.

@@ -12,7 +12,7 @@
 | ID  | Chapter                                        | State       | Key pending items                                      |
 |-----|------------------------------------------------|-------------|--------------------------------------------------------|
 | G-A | 🔴 Security Enforcement Gate                  | ✅ done     | G-A1 skipAuth env-explicit ✅, G-A2 build hash ✅, G-A3 caller roles wire ✅ |
-| G-B | 🗄️ Auth Subsystem Wiring                      | 🟡 active   | U0–U4b done ✅; U5 (auth provider unit tests), U6 (UI) pending |
+| G-B | 🗄️ Auth Subsystem Wiring                      | ✅ done     | U0–U5 done ✅; U6 UI panel ✅ (2026-05-21); U6 backend gap ✅ (2026-05-21) DEBT-2 resolved |
 | G-C | 🔒 Security Infrastructure (SecurityLib+HKDF) | ✅ done     | SecurityLib.cpp all fns ✅, P/Invoke ✅, HKDF ✅, HMAC ✅ |
 | G-D | 🧹 KeyWin Purity + XML Self-Sufficiency       | 🟡 active   | ADR-009 + ADR-010; ASSERT step; RESET removal; d5 fix  |
 | S-1 | 🔐 Security & Configuration UI                | 🟡 active   | file-dialog, installer, auth UI panel, log pagination  |
@@ -32,15 +32,52 @@
 | F-1 | 🔧📄 MS Office Automation                     | ⚪ future   | blocked — Office not installed on this machine         |
 | F-2 | 🚀 Deployment & Packaging                     | 🟢 active  | **Windows service ✅**, installer, Linux, macOS       |
 | F-3 | 🌍 Platform Portability                       | ⚪ future   | separate build machine required                        |
+| ADR-018 | 🔒 Session 0 Fix Strategy                | ✅ decided  | Option C (VSIX) v1.0; Option B (bridge) Phase 3; QA-3 pending |
 | ADM | 📝 Admin / Legal                              | ⚪ backlog  | LICENSE.md — requires owner input on licence choice    |
 | NEW-2 | ✂️ Output Truncation                        | ✅ done     | `truncateResponse()` + slim `listHelpers`/`getHelperSchema` + `queryTree` budget cap |
 
 - [x] NEW-7: SSE transport — GET /sse + POST /messages added to mcpServer.ts; single _dispatchRequest() path; backward-compat POST / preserved; integration tests added *(2026-05-21)*
+- [x] NEW-7 deploy: compile + deploy SSE transport to AIAPIService; SSE endpoint verified on port 4457 *(2026-05-21)*
 - [x] NEW-5: git commit + push + local redeploy; fix update-service.ps1 build paths + -BuildTarget param *(2026-05-21)*
 - [x] NEW-4: Native built-in actions — EXEC_CMD + FS_READ + FS_WRITE + FS_LIST implemented in builtinActions.ts; wired into xmlScenarioLoader.ts + mcpServer.ts; unit tests added; CONVENTIONS.md updated *(2026-05-21)*
 - [x] NEW-2: Output truncation — `truncateResponse()` utility + slim `listHelpers`/`getHelperSchema` (compact by default, `full:true` for detail) + `queryTree` budget cap (24 000 chars) *(2026-05-21)*
 - [x] NEW-1 (safe subset): Session 0 detection in WinCommon.cs ListWindowsJson() → _sessionWarning field; tools/diag/check-session.ps1; docs/specs/SESSION0_ISOLATION.md *(2026-05-21)*
 - [ ] NEW-1 (full fix): WTSQueryUserToken + CreateProcessAsUser launcher — spawn helpers in active console session from Session 0 service *(deferred — needs SeTcbPrivilege + full service test)*
+- [x] DEBT-1 **Phase 1 done 2026-05-21**: NativeWin virtual helper grouping — `NativeWin` entry added to `listHelpers`/`getHelperSchema` in `mcpServer.ts`; `AutomateUI` enum updated; `CONVENTIONS.md` §1 updated. *(Phase 2 = full helperRegistry virtual entry — see QA-5/VSIX-CAPS)*
+
+- [x] **ADR-017-P1 (MCP hierarchy Phase 1 — deprecation markers):** `[DEPRECATED - use KeyWin helper via AutomateUI instead]` added to all 8 legacy tool descriptions in `handleToolsList()` in [`components/server/src/server/mcpServer.ts`](components/server/src/server/mcpServer.ts:554). ✅ done 2026-05-21
+
+- [ ] **ADR-017-P2 (MCP hierarchy Phase 2 — remove legacy tools from tools/list):** Remove the 8 legacy stubs from `handleToolsList()` response. Keep `handleToolsCall()` dispatch for them but return an error with migration hint. Update D9 `hs4-mcp-tools-list` scenario to verify the legacy tools are absent and new count is correct. *(⚪ v2.0 — after P1 grace period)*
+
+- [x] **QA-1 (Service-mode smoke test script):** `test/smoke/service-mode.ps1` created — 8 checks (health, tools/list, listHelpers, exec_cmd, fs_list, /api/settings, session detection, port assertion). ✅ done 2026-05-21
+
+- [ ] **QA-2 (D9 hs4 tool-hierarchy assertions):** Extend `test/e2e/d9/scenarios.xml` scenario `hs4-mcp-tools-list` to assert: (a) tool count ≥ 13 and ≤ 21; (b) `listHelpers`, `getHelperSchema`, `AutomateUI`, `executeScenario` are present; (c) `NativeWin` appears in `listHelpers` response after DEBT-1 is done; (d) after ADR-017-P1, check at least one deprecated tool has `[DEPRECATED]` in its description. *(🟡 high)*
+
+- [x] **QA-3 (Session 0 warning on all affected commands):** `_sessionWarning` injected into all UI-impacting commands in WinCommon.cs (QUERYTREE, READ, SETPROPERTY/FILL, CLICKID/FOCUS, SENDKEYS), BrowserWin (LAUNCH, FOCUS), MSOfficeWin (all commands), LibreOfficeWin (LAUNCH, RELAUNCH, FOCUS). builtinActions.ts also detects Session 0 for GUI processes. ✅ done 2026-05-21
+
+- [x] **QA-4 (Post-deploy CI gate):** `update-service.ps1` now runs `test/smoke/service-mode.ps1` post-deploy (line 241); exits non-zero on failure. ✅ done 2026-05-21 *(Note: GitHub Actions CI step remains TODO)*
+
+- [ ] **QA-5 (D9 deprecated tool description check):** After ADR-017-P1 is done, add scenario `hs9-deprecated-tool-markers` to `test/e2e/d9/scenarios.xml`: call `tools/list`, parse JSON, assert that `queryTree` description contains `[DEPRECATED]`. *(🟡 medium — tied to ADR-017-P1)*
+
+- [ ] **QA-6 (D20 Service-Mode Isolation suite):** New test suite `test/e2e/d20-service-mode.js` targeting port 4457 (service endpoint). Asserts: (a) `LISTWINDOWS` returns `windows:[]` and `_sessionWarning` set; (b) `fs_read` works; (c) `SENDKEYS` response includes `_sessionWarning` (after QA-3); (d) `launchProcess` result includes `_sessionWarning`. Prerequisite: QA-1, QA-3. *(⚪ backlog)*
+
+- [x] **SESSION0-DOC (Server Guide deployment section):** [`docs/guides/SERVER_GUIDE.md`](docs/guides/SERVER_GUIDE.md) line 189 — "Deployment Modes and Session 0" section added; capability matrix per helper; Task Scheduler workaround; port split. ✅ done 2026-05-21
+
+- [ ] **VSIX-CAPS (session-blocked helper flags in listHelpers):** When `IsSession0()` is true, `listHelpers` response should include `"sessionBlocked": true` on all UI helpers (`KeyWin`, `BrowserWin`, `MSOfficeWin`, `LibreOfficeWin`) so MCP clients can detect the limitation programmatically. Implement in [`components/server/src/helpers/HelperRegistry.ts`](components/server/src/helpers/HelperRegistry.ts) and [`components/server/src/server/mcpServer.ts`](components/server/src/server/mcpServer.ts). *(🟡 medium — post-N-0)*
+
+- [ ] **ADR-018 CODEBASE_MAP update:** Add `ADR-018` row to the ADR table in [`docs/architecture/CODEBASE_MAP.md`](docs/architecture/CODEBASE_MAP.md): `ADR-018 — Session 0 Isolation Fix Strategy: Option C (VSIX) for v1.0; Option B (bridge) for Phase 3 post-MSI`. *(🟡 low — housekeeping)*
+
+- [ ] **BRIDGE-SPEC (Phase 3 — post-F-2):** Write `docs/specs/BRIDGE_PROTOCOL.md` — named pipe IPC spec for `AiapiBridge.exe`. Define: pipe name `\\.\pipe\AIAPI-Bridge-{sessionId}`, JSON-line framing same as helper stdin, `_bridgeSessionId` routing header, auth via HKDF session key, multi-session RDP routing logic. Prerequisite: F-2 MSI installer underway. *(⚪ backlog — Phase 3)*
+
+- [ ] **BRIDGE-IMPL (Phase 3 — post-F-2):** Implement `components/helpers/windows/src/AiapiBridge.cs` — lightweight user-session relay using `HelperCommon.cs` `RunNamedPipeListener()`; spawns helpers in user session; routes commands from Session 0 service pipe. Prerequisite: BRIDGE-SPEC. *(⚪ backlog — Phase 3)*
+- [x] DEBT-2: **U6 backend gap — two missing TypeScript server-side items** ✅ resolved 2026-05-21
+  - [x] `handleInternalListUserApiKeys()` in `internalHandlers.ts` (lines 302–321): `GET /api/auth/users/:id/apikeys` — returns `{ id, label, createdAt }`, never exposes `keyHash` ✅
+  - [x] `handleGetAuthConfig()` in `httpServerWithDashboard.ts` (lines 2041–2045): `jwt.issuer` now always present in GET /api/auth/config response ✅
+  - [x] New routes wired in `httpServerWithDashboard.ts`: `GET /api/auth/users/:id/apikeys` + `DELETE /api/auth/users/:id/apikeys/:keyId` ✅
+  - ⚠️ Audit note: `handleInternalRevokeApiKey` now returns **204 No Content** (was 200) — intentional, matches REST spec; dashboard JS checks status code only, not body. Breaking only for legacy `_internal` DELETE callers.
+  - Add `GET /api/auth/users/:id/apikeys` route + handler in `httpServerWithDashboard.ts` + `internalHandlers.ts`; returns array of `{ id, label, createdAt, lastUsed }` for the given user; `loadUserApiKeys()` in dashboard.js calls this endpoint
+  - Both items require re-sign of `config/security/config.json` after any schema change
+  - Unblocked: no dependency on G-E or DB changes; can be done as a standalone Code sprint
 
 ---
 
@@ -627,25 +664,36 @@ its encoding in the XML prolog:
 - [ ] Integration test: `CertificateAuthProvider` — mTLS handshake → CN extracted → user looked up → JWT; invalid cert → 401
 - [ ] Verify `auth.debugExternalAuth = true` writes sanitised req/resp bodies to logger (credentials redacted)
 
-### U6 — Dashboard auth configuration UI
-- [ ] New **"Auth"** panel (or sub-tab of Settings) with:
+### U6 — Dashboard auth configuration UI *(partially done 2026-05-21)*
+
+- [x] New **"Auth"** panel (sub-tab of Settings) with: *(2026-05-21)*
   - Auth mode selector: None / Password / API Key / Certificate / OAuth / SAML
-  - JWT settings: enabled toggle, expiry minutes, secret (masked)
+  - JWT settings: enabled toggle, expiry minutes, secret (masked), **issuer field** (`#auth-jwt-issuer`)
   - Password settings: bcrypt rounds
   - OAuth form: clientId, clientSecret (masked), authorizationUrl, tokenUrl,
     userInfoUrl, scope, callbackUrl, usernamePath, groupsPath, PKCE toggle
-  - SAML form: entryPoint, issuer, SP cert (upload), IdP cert (upload),
-    privateKey (masked), callbackUrl, usernamePath, groupsPath, signatureAlgorithm
+  - SAML form: entryPoint, issuer, SP cert (📂 Browse), IdP cert (📂 Browse),
+    privateKey (📂 Browse), callbackUrl, usernamePath, groupsPath, signatureAlgorithm
   - Debug external auth toggle
   - User store source: JSON (path field) / DB (shows DbConfig form)
   - DB form: engine selector, host, port, database, auth method + fields
-- [ ] **"Users & Roles"** sub-panel (requires `auth.mode ≠ "none"`):
-  - User list: username, enabled toggle, roles, API key count
+- [x] **"Users & Roles"** sub-panel: *(2026-05-21)*
+  - User list (5-col): username, enabled, roles (badge inline edit via `editUserRoles()`), API key count (expand toggle via `toggleUserApiKeys()`)
   - Inline "Add user" form: username, password (masked), initial roles
-  - Role list: name, description, permissions matrix
-  - API key management per user: generate (shown once), revoke
-- [ ] `POST /api/auth/config` — save auth section of dashboard settings (re-sign JSON)
-- [ ] Docs: add auth config example to `docs/guides/SERVER_GUIDE.md`
+  - Role list (5-col): name, description, permissions matrix; **Edit** via `openEditRoleModal()` + `#edit-role-modal`; **Delete**
+  - API key management per user: expand row → list → `revokeApiKey()` (generate flow wired; show-once is server-side)
+  - Permissions matrix: `AUTH_PERMISSIONS` constant, `_renderPermMatrix()`, `_collectPermMatrix()` in both Add and Edit role modals
+- [x] `POST /api/auth/config` — `saveAuthConfig()` wired to `btn-save-auth`; reads all form fields incl. `jwt.issuer` *(2026-05-21)*
+- [x] `GET /api/auth/config` — `loadAuthConfig()` populates all form fields *(2026-05-21)*
+- [x] `.role-badge` CSS rule added *(2026-05-21)*
+- [x] E2E scenarios: `a12-jwt-issuer`, `a13-role-permissions`, `a14-apikey-revoke`, `a15-user-role-edit` in [`test/e2e/d3/scenarios.xml`](test/e2e/d3/scenarios.xml); [`test/e2e/d3-auth-ui.js`](test/e2e/d3-auth-ui.js) extended with 4 `runOk` calls *(2026-05-21)*
+- [x] Docs: "Configuring authentication" section added to [`docs/guides/SERVER_GUIDE.md`](docs/guides/SERVER_GUIDE.md) *(2026-05-21)*
+
+**~~Deferred~~ RESOLVED — DEBT-2 closed 2026-05-21:**
+- [x] `handleGetAuthConfig()` now always returns `jwt.issuer` (defaults to `''` if absent) — dashboard issuer field round-trips correctly ✅
+- [x] `GET /api/auth/users/:id/apikeys` endpoint live — returns metadata only, no `keyHash` ✅
+- [x] `DELETE /api/auth/users/:id/apikeys/:keyId` returns 204 No Content (REST-correct) ✅
+- [ ] `GET /api/auth/users/:id/apikeys` endpoint not yet implemented in TypeScript backend — `loadUserApiKeys()` will 404 until added
 
 ---
 
@@ -814,8 +862,9 @@ MCP server ALSO applies filters for defense-in-depth.
 
 ### Unit & Integration Test Coverage (current state)
 - [x] `wildcardMatch` — 19 tests (`src/utils/wildcardMatch.test.ts`)
-- [x] `xmlScenarioLoader` — 27 tests (`src/scenario/xmlScenarioLoader.test.ts`)
+- [x] `xmlScenarioLoader` — 48 tests (`src/scenario/xmlScenarioLoader.test.ts`)
   _jsdom v28 ESM-only deps → solved via `src/__mocks__/jsdom-mock.js` + `moduleNameMapper`_
+  _**2026-05-21:** Added well-formedness regression suite (6 new tests) that discovers every shipped `scenarios.xml` under both apptemplates roots and asserts zero JSDOM parse errors. Fixed two pre-existing malformations surfaced by the new suite: (a) `apptemplates/pgadmin/scenarios.xml` — escaped `--` inside two `<!-- … -->` comment bodies (lines 45, 88-89, XML §2.5 forbids `--` in comments) and escaped bare `<` in a `parameter=""` attribute (line 256, `indexOf(n)<0` → `&lt;0`); (b) `apptemplates/libreoffice/scenarios.xml` — escaped `HANDLE:<hwnd>` → `HANDLE:&lt;hwnd&gt;` in `<Description>` text (line 108, was parsed as unclosed element). All 25 shipped `scenarios.xml` now parse with zero errors; no scenario logic changed._
 - [x] `Logger` — 18 tests (`src/utils/Logger.test.ts`)
 - [x] `filterEval` — 33 tests (`src/utils/filterEval.test.ts`)
   _extracted `evaluateFilterRules()` from duplicate private loops_

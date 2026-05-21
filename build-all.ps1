@@ -144,10 +144,8 @@ if (-not $clExe) {
                 lastModified = $fileInfo.LastWriteTimeUtc.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
             }
             $entryJson = ($entry.GetEnumerator() | ForEach-Object {
-                '"' + $_.Key + '": ' + (
-                    if ($_.Value -is [long] -or $_.Value -is [int]) { $_.Value }
-                    else { '"' + $_.Value + '"' }
-                )
+                $val = if ($_.Value -is [long] -or $_.Value -is [int]) { $_.Value } else { '"' + $_.Value + '"' }
+                '"' + $_.Key + '": ' + $val
             }) -join ', '
 
             # Replace or insert SecurityLib.dll entry inside binaryHashes

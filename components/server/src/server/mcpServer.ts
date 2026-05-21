@@ -291,8 +291,11 @@ export class MCPServer {
 
     const url = req.url?.split('?')[0] ?? '/';
 
-    // SSE handshake — MCP HTTP+SSE transport
-    if (req.method === 'GET' && url === '/sse') {
+    // SSE handshake — MCP HTTP+SSE transport.
+    // Accept both dedicated /sse path AND root / with Accept: text/event-stream
+    // (the latter is what zoot/Claude-Desktop send when the config url ends with /).
+    const acceptsEventStream = (req.headers['accept'] ?? '').includes('text/event-stream');
+    if (req.method === 'GET' && (url === '/sse' || acceptsEventStream)) {
       this.handleSseConnect(req, res);
       return;
     }

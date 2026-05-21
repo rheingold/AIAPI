@@ -293,13 +293,13 @@ export class AutomationEngine {
   /**
    * Launch a process
    */
-  async launchProcess(executable: string, args?: string[]): Promise<any> {
+  async launchProcess(executable: string, args?: string[], options?: { background?: boolean }): Promise<any> {
     const provider = this.getProvider('windows-forms');
     if (!provider) {
       throw new Error('Windows provider not available');
     }
     // Call windows-forms provider's launchProcess method
-    return await (provider as any).launchProcess(executable, args);
+    return await (provider as any).launchProcess(executable, args, options);
   }
 
   /**

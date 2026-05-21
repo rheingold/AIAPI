@@ -1,0 +1,219 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  apptemplates/libreoffice/scenarios.xml
+  Reusable scenario fragments for LibreOffice (Writer / Calc / Impress).
+
+  Primary helper:   LibreOfficeWin.exe — document content commands
+  Keystroke helper: KeyWin.exe         — window/UI interaction (SENDKEYS, LISTWINDOWS)
+
+  Placeholders:
+    {{hwnd}}      — HANDLE:<number> of the target LibreOffice window (from KeyWin LISTWINDOWS)
+    {{apptype}}   — "writer" | "calc" | "impress"
+    {{docname}}   — matching fragment of the document window title
+    {{filepath}}  — full path for Save As operations
+
+  ── TEMPLATE DIALOG NOTE (Impress) ───────────────────────────────────────────
+  When "NEWDOC impress" is called, LibreOffice may show a "Select Template" dialog
+  (Win32 class SALSUBFRAME, no WS_MAXIMIZEBOX) before creating the blank document.
+  LibreOfficeWin.exe attempts to dismiss it automatically (WM_CLOSE + VK_ESCAPE).
+  If the dialog persists, the AI should detect it via KeyWin LISTWINDOWS and
+  dismiss it with KeyWin SENDKEYS {ESC} on HANDLE:<hwnd> of the dialog.
+  See scenario id="newdoc-impress" and scenario id="dismiss-transient-dialog".
+  ─────────────────────────────────────────────────────────────────────────────
+-->
+<Scenarios app="libreoffice" helper="LibreOfficeWin.exe" keystroke_helper="KeyWin.exe"
+           process="soffice.exe soffice.bin">
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       intro — locate or start the LibreOffice process
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="intro" effect="idempotent">
+    <Description lang="en">
+      Check whether LibreOffice is running and list open documents.
+      Sets context for subsequent scenarios.
+    </Description>
+    <Description lang="ai">
+      1. Call LibreOfficeWin LISTDOCS to enumerate open documents.
+         If the UNO bridge is not reachable, LISTDOCS returns an error — call RELAUNCH.
+      2. Find the document window via KeyWin LISTWINDOWS
+         (process="soffice.bin", title contains "LibreOffice").
+      3. Record HANDLE:&lt;hwnd&gt; of the target window as {{hwnd}}.
+    </Description>
+    <Steps>
+      <Step action="LISTDOCS" target="writer" parameter=""
+            note="list open LO docs; also works with target=calc or impress"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       newdoc-writer — open a blank Writer document
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="newdoc-writer" effect="creates-document">
+    <Description lang="en">Open a blank LibreOffice Writer document.</Description>
+    <Description lang="ai">
+      Calls LibreOfficeWin NEWDOC with target=writer.
+      After success, a new SALFRAME window with title "Untitled N - LibreOffice Writer" appears.
+      Use KeyWin LISTWINDOWS → pick the window with title containing "LibreOffice Writer"
+      → record HANDLE as {{hwnd}} for subsequent SENDKEYS operations.
+    </Description>
+    <Steps>
+      <Step action="NEWDOC" target="writer" parameter=""
+            note="open blank Writer document; returns {success:true, name:'Untitled N - LibreOffice Writer'}"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       newdoc-calc — open a blank Calc spreadsheet
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="newdoc-calc" effect="creates-document">
+    <Description lang="en">Open a blank LibreOffice Calc spreadsheet.</Description>
+    <Description lang="ai">
+      Calls LibreOfficeWin NEWDOC with target=calc.
+      After success, a new SALFRAME window titled "Untitled N - LibreOffice Calc" appears.
+    </Description>
+    <Steps>
+      <Step action="NEWDOC" target="calc" parameter=""
+            note="open blank Calc spreadsheet"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       newdoc-impress — open a blank Impress presentation
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="newdoc-impress" effect="creates-document">
+    <Description lang="en">Open a blank LibreOffice Impress presentation.</Description>
+    <Description lang="ai">
+      Calls LibreOfficeWin NEWDOC with target=impress.
+
+      KNOWN SIDE-EFFECT — TEMPLATE CHOOSER DIALOG:
+        LibreOffice may show a "Select Template" / "New Presentation" modal dialog
+        (SALSUBFRAME class, no WS_MAXIMIZEBOX) before the blank slide is ready.
+        LibreOfficeWin.exe automatically attempts to dismiss it (WM_CLOSE + VK_ESC).
+
+        If NEWDOC returns success but you still see an unexpected SALSUBFRAME window
+        in KeyWin LISTWINDOWS (title NOT containing "LibreOffice", "Impress", "Calc",
+        "Writer", or "OpenOffice"), that is the template chooser.
+        Dismiss it using KeyWin.exe:
+          SENDKEYS {ESC}    on HANDLE:&lt;hwnd&gt; of the dialog  — cancels → blank presentation
+          SENDKEYS {ENTER}  on HANDLE:&lt;hwnd&gt; of the dialog  — accepts highlighted template
+
+        This dialog handling MUST use KeyWin.exe (not LibreOfficeWin.exe), because:
+          1. It is a OS-level window, not a document element accessible via UNO.
+          2. KeyWin.exe can address any HANDLE:<hwnd> regardless of application.
+          3. LibreOfficeWin.exe has no command to interact with dialogs it did not create.
+
+      After the dialog is dismissed, the Impress document window (SALFRAME + WS_MAXIMIZEBOX,
+      title "Untitled N - LibreOffice Impress") becomes the active document.
+      Use KeyWin LISTWINDOWS → HANDLE of that window → assign to {{hwnd}}.
+    </Description>
+    <Steps>
+      <!-- Step 1: create the document -->
+      <Step action="NEWDOC" target="impress" parameter=""
+            note="open blank Impress presentation; LibreOfficeWin auto-dismisses template dialog"/>
+      <!-- Step 2 (conditional): if template dialog still visible, dismiss via KeyWin -->
+      <!-- The AI should call KeyWin LISTWINDOWS after NEWDOC to check for SALSUBFRAME dialogs. -->
+      <!-- If found: use scenario id="dismiss-transient-dialog" with {{hwnd}} of the dialog. -->
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       dismiss-transient-dialog — close any unexpected SALSUBFRAME dialog
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="dismiss-transient-dialog" effect="closes-dialog">
+    <Description lang="en">
+      Close an unexpected modal dialog that is preventing further interaction.
+      Uses KeyWin.exe to send ESC to the dialog window.
+    </Description>
+    <Description lang="ai">
+      Use this scenario when KeyWin LISTWINDOWS reveals a SALSUBFRAME / dialog window
+      belonging to soffice.bin that is NOT the main document window (i.e. has no
+      WS_MAXIMIZEBOX, title does not contain app name keywords).
+
+      Identification steps:
+        1. KeyWin LISTWINDOWS target=SYSTEM
+        2. Find entry where process="soffice.bin" or "soffice.exe" AND title does NOT
+           contain "LibreOffice" / "Writer" / "Calc" / "Impress" / "OpenOffice".
+        3. That HANDLE:&lt;hwnd&gt; is the dialog — assign to {{hwnd}}.
+
+      Dismissal:
+        ESC   → cancels / closes most dialogs without saving
+        ENTER → confirms default button (accepts template, saves, etc.)
+
+      After dismissal, the dialog disappears and the document window is active.
+      Always verify via LISTWINDOWS that no more dialogs remain.
+    </Description>
+    <Steps>
+      <Step action="SENDKEYS" target="HANDLE:{{hwnd}}" parameter="{ESC}"
+            note="dismiss dialog — cancel / close without action"
+            helper="KeyWin.exe"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       save-document — save current document
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="save-document" effect="persists-document">
+    <Description lang="ai">
+      Calls LibreOfficeWin SAVE with target={{apptype}} (writer / calc / impress).
+      If the document was never saved (new/unsaved), SAVE may trigger a Save As dialog
+      (SALSUBFRAME — see scenario id="save-as-dialog").
+      PDF export: use parameter="pdf" or parameter="/full/path/to/file.pdf".
+    </Description>
+    <Steps>
+      <Step action="SAVE" target="{{apptype}}" parameter=""
+            note="save in native format (.odt/.ods/.odp)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       save-as-dialog — handle the Save As file dialog
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="save-as-dialog" effect="persists-document">
+    <Description lang="ai">
+      When a Save As dialog appears (SALSUBFRAME, title contains "Save As" or locale variant):
+        1. KeyWin LISTWINDOWS → find SALSUBFRAME with "Save" in title → record HANDLE as {{hwnd}}.
+        2. Type the destination path: KeyWin SENDKEYS "{{filepath}}" on HANDLE:{{hwnd}}.
+        3. Confirm: KeyWin SENDKEYS {ENTER} on HANDLE:{{hwnd}}.
+      The dialog closes and the document is saved at {{filepath}}.
+    </Description>
+    <Steps>
+      <Step action="SENDKEYS" target="HANDLE:{{hwnd}}" parameter="{{filepath}}"
+            note="type save path into file dialog" helper="KeyWin.exe"/>
+      <Step action="SENDKEYS" target="HANDLE:{{hwnd}}" parameter="{ENTER}"
+            note="confirm save" helper="KeyWin.exe"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       close-document — close a LibreOffice document without saving
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="close-document" effect="closes-window">
+    <Description lang="ai">
+      Sends Alt+F4 to close the target window (requires {{hwnd}} from KeyWin LISTWINDOWS).
+      If the document has unsaved changes, LO shows a "Save?" dialog (SALSUBFRAME).
+      To discard changes: send {TAB} to select "Discard / Don't Save" then {ENTER},
+      or reliably send {ALT+D} (Don't Save accelerator, EN locale) or {ESC} to cancel closing.
+      Prefer saving first (scenario id="save-document") to avoid this dialog.
+    </Description>
+    <Steps>
+      <Step action="SENDKEYS" target="HANDLE:{{hwnd}}" parameter="{ALT+F4}"
+            note="request window close" helper="KeyWin.exe"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       teardown-kill — hard-kill LibreOffice (test teardown only)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="teardown-kill" effect="kills-process">
+    <Description lang="ai">
+      Hard-terminates all soffice processes.  Use ONLY as a test teardown action.
+      Unsaved changes will be lost.  After this, LibreOfficeWin.exe must reconnect
+      (call {RELAUNCH} if UNO socket mode was active).
+    </Description>
+    <Steps>
+      <Step action="KILL" target="SYSTEM" parameter="soffice.exe"
+            note="kill LibreOffice launcher" helper="KeyWin.exe"/>
+    </Steps>
+  </Scenario>
+
+</Scenarios>

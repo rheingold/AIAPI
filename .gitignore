@@ -36,3 +36,5 @@ yarn-error.log*
 *.swo
 *~
 .vscode-test/
+# local-only private credentials (never commit)
+ai_priv/

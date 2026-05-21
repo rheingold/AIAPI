@@ -109,25 +109,58 @@ $calc = $result.windows | Where-Object { $_.title -like "*alcul*" } | Select-Obj
 WinKeys.exe "HANDLE:$($calc.handle)" "{READ}"
 ```
 
-### 2. Keyboard Input
-**Syntax**: Send literal text
-```
-WinKeys.exe "PID:12345" "123"
-WinKeys.exe "HANDLE:67890" "Hello World"
-WinKeys.exe "notepad" "test"
+### 2. SENDKEYS — Keyboard Input
+
+**MCP call fields:**
+
+| Field | Role |
+|-------|------|
+| `proc` | Target window (HANDLE, PID, process name) |
+| `action` | `SENDKEYS` |
+| `path` | **Element address** — XPath/AutomationId of the control to focus first. Omit (empty) to send to the window itself. |
+| `value` | **Keystroke sequence** — literal text and/or key tokens (see table below). |
+
+**Key tokens** (use inside `value=`; case-insensitive):
+
+| Token | Key sent |
+|-------|----------|
+| `{ENTER}` | Enter / Return |
+| `{ESC}` | Escape |
+| `{TAB}` | Tab |
+| `{BACK}` | Backspace |
+| `{DELETE}` | Delete |
+| `{HOME}` | Home |
+| `{END}` | End |
+| `{PAGEUP}` | Page Up |
+| `{PAGEDOWN}` | Page Down |
+| `{LEFT}` `{RIGHT}` `{UP}` `{DOWN}` | Arrow keys |
+| `{F1}` … `{F12}` | Function keys |
+| `{CTRL+X}` | Ctrl + any key — e.g. `{CTRL+A}`, `{CTRL+C}`, `{CTRL+V}`, `{CTRL+Z}`, `{CTRL+S}` |
+| `{ALT+X}` | Alt + any key — e.g. `{ALT+F4}` |
+| `{SHIFT+X}` | Shift + any key |
+| `{+}` | Literal `+` (unshifted) |
+
+Literal text (printable characters) can be mixed freely with tokens:
+`Hello{ENTER}World{TAB}{CTRL+A}`
+
+**Window-level keystrokes** (no element targeting):
+```xml
+<step action="SENDKEYS" proc="{{hwnd}}" value="{ESC}"/>
+<step action="SENDKEYS" proc="{{hwnd}}" value="Hello World{ENTER}"/>
+<step action="SENDKEYS" proc="{{hwnd}}" value="{CTRL+A}{CTRL+C}"/>
 ```
 
-**Special Keys**:
-- `+` is automatically escaped as `{+}` (literal plus sign)
-- `=` is converted to `{ENTER}` for calculator operations
-- Use `{ESC}`, `{TAB}`, `{ENTER}` for special keys
+**Element-targeted keystrokes** (focus element, then type):
+```xml
+<step action="SENDKEYS" proc="{{hwnd}}" path="*[@id='searchBox']" value="hello world{ENTER}"/>
+```
 
 **Output**: JSON
 ```json
-{"success": true, "action": "keys"}
+{"success": true, "action": "keys", "mode": "direct"}
 ```
 
-**Error Example**:
+**Error example**:
 ```json
 {"success": false, "error": "sendkeys_failed", "message": "Window was destroyed"}
 ```

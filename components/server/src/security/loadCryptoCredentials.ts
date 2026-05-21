@@ -40,9 +40,10 @@ export async function loadCryptoCredentials(
   }
 
   // 2. Interactive prompt (hidden input) — only when stdin is a real terminal.
-  if (!process.stdin.isTTY) {
+  // Skip if AIAPI_NON_INTERACTIVE is set (for service/daemon mode).
+  if (!process.stdin.isTTY || process.env['AIAPI_NON_INTERACTIVE']) {
     globalLogger.info('Security',
-      'stdin is not a TTY and KEY_PASSWORD not set — running without HMAC session keys');
+      'stdin is not a TTY (or AIAPI_NON_INTERACTIVE set) and KEY_PASSWORD not set — running without HMAC session keys');
     return null;
   }
 

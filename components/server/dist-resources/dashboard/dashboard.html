@@ -73,6 +73,9 @@
           <button class="nav-btn" data-section="templates">
             📚 App Templates
           </button>
+          <button class="nav-btn" data-section="auth">
+            🔑 Auth
+          </button>
         </nav>
 
         <div class="actions">
@@ -149,7 +152,28 @@
           <div class="info-banner">
             ℹ️ <strong>Tip:</strong> Security filters have moved to their own dedicated section. Click <strong>🛡️ Security Filters</strong> in the sidebar.
           </div>
-          
+
+          <!-- ⚙️ Setup Wizard Panel -->
+          <div id="setup-wizard-panel" style="margin-bottom:1rem;border:1px solid var(--border);border-radius:6px;overflow:hidden;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:0.55rem 0.8rem;background:var(--bg-secondary);cursor:pointer;"
+                 onclick="toggleSetupPanel()">
+              <span style="font-weight:600;font-size:0.88rem;">⚙️ First-Run Setup Wizard</span>
+              <span id="setup-panel-chevron" style="font-size:0.8rem;color:var(--text-secondary);">▼</span>
+            </div>
+            <div id="setup-panel-body" style="display:none;padding:0.75rem 1rem;">
+              <p style="margin:0 0 0.6rem;font-size:0.82rem;color:var(--text-secondary);">
+                Run this wizard on a fresh install to generate crypto keys, sign the security config, and create the initial admin user.
+                All steps are <strong>idempotent</strong> — safe to re-run at any time.
+              </p>
+              <div id="setup-step-table" style="font-size:0.8rem;margin-bottom:0.75rem;"></div>
+              <div style="display:flex;gap:0.5rem;">
+                <button class="btn-primary" onclick="runSetup()" id="btn-run-setup">▶ Run Setup</button>
+                <button class="btn-secondary" onclick="loadSetupStatus()" id="btn-check-setup">🔄 Check Status</button>
+              </div>
+              <div id="setup-output" style="margin-top:0.6rem;font-family:monospace;font-size:0.78rem;white-space:pre-wrap;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:0.5rem;max-height:180px;overflow-y:auto;display:none;"></div>
+            </div>
+          </div>
+
           <div class="settings-container">
             <!-- File Paths -->
             <div class="setting-group">
@@ -158,35 +182,35 @@
                 Scenarios Folder:
                 <div class="path-input">
                   <input type="text" id="setting-scenarios-path" value="./scenarios" placeholder="./scenarios">
-                  <button class="btn-browse" data-target="setting-scenarios-path">📂 Browse</button>
+                  <button class="btn-browse" data-target="setting-scenarios-path" data-folder="true">📂 Browse</button>
                 </div>
               </label>
               <label>
                 Security Folder:
                 <div class="path-input">
                   <input type="text" id="setting-security-path" value="./security" placeholder="./security">
-                  <button class="btn-browse" data-target="setting-security-path">📂 Browse</button>
+                  <button class="btn-browse" data-target="setting-security-path" data-folder="true">📂 Browse</button>
                 </div>
               </label>
               <label>
                 Public Key File:
                 <div class="path-input">
                   <input type="text" id="setting-public-key" value="./security/public.key.enc" placeholder="./security/public.key.enc">
-                  <button class="btn-browse" data-target="setting-public-key">📂 Browse</button>
+                  <button class="btn-browse" data-target="setting-public-key" data-filter="Encrypted Key Files (*.key.enc)|*.key.enc|PEM Files (*.pem;*.key)|*.pem;*.key|All files (*.*)|*.*">📂 Browse</button>
                 </div>
               </label>
               <label>
                 Private Key File:
                 <div class="path-input">
                   <input type="text" id="setting-private-key" value="./security/private.key.enc" placeholder="./security/private.key.enc">
-                  <button class="btn-browse" data-target="setting-private-key">📂 Browse</button>
+                  <button class="btn-browse" data-target="setting-private-key" data-filter="Encrypted Key Files (*.key.enc)|*.key.enc|PEM Files (*.pem;*.key)|*.pem;*.key|All files (*.*)|*.*">📂 Browse</button>
                 </div>
               </label>
               <label>
                 Helper Executables (wildcards allowed):
                 <div class="path-input">
                   <input type="text" id="setting-helper-paths" value="./dist/win/*.exe" placeholder="./dist/win/*.exe, ./dist/office/*.exe">
-                  <button class="btn-browse" data-target="setting-helper-paths">📂 Browse</button>
+                  <button class="btn-browse" data-target="setting-helper-paths" data-folder="true">📂 Browse</button>
                 </div>
                 <small>Comma-separated paths (e.g., ./dist/win/*.exe, ./dist/office/*.exe)</small>
               </label>
@@ -194,7 +218,7 @@
                 Test Session Directory:
                 <div class="path-input">
                   <input type="text" id="setting-session-dir" value="./test-sessions" placeholder="./test-sessions">
-                  <button class="btn-browse" data-target="setting-session-dir">📂 Browse</button>
+                  <button class="btn-browse" data-target="setting-session-dir" data-folder="true">📂 Browse</button>
                 </div>
                 <small>Base directory for test session logs and screenshots</small>
               </label>
@@ -374,15 +398,29 @@
           <details id="security-log-panel" style="margin-top:1rem;">
             <summary style="cursor:pointer;padding:0.5rem 0;font-size:0.9rem;user-select:none;font-weight:600;">🔍 Security Audit Log</summary>
             <div style="margin-top:0.5rem;">
-              <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;">
-                <button onclick="loadSecurityLog()" class="btn-secondary" style="padding:0.25rem 0.75rem;font-size:0.8rem;">🔄 Refresh</button>
+              <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;flex-wrap:wrap;">
+                <button onclick="loadSecurityLog(0)" class="btn-secondary" style="padding:0.25rem 0.75rem;font-size:0.8rem;">🔄 Refresh</button>
                 <label style="font-size:0.8rem;display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
                   <input type="checkbox" id="security-log-autorefresh" onchange="toggleSecurityLogAutoRefresh()"> Auto-refresh (5s)
+                </label>
+                <label style="font-size:0.8rem;display:flex;align-items:center;gap:0.3rem;">
+                  Per page:
+                  <select id="security-log-pagesize" onchange="loadSecurityLog(0)" style="font-size:0.8rem;padding:0 0.2rem;">
+                    <option value="50">50</option>
+                    <option value="100" selected>100</option>
+                    <option value="200">200</option>
+                    <option value="500">500</option>
+                  </select>
                 </label>
                 <span id="security-log-count" style="font-size:0.8rem;opacity:0.6;margin-left:auto;"></span>
               </div>
               <div id="security-log-list" style="max-height:280px;overflow-y:auto;font-family:monospace;font-size:0.78rem;border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.5rem;background:var(--bg-secondary);">
                 <em style="opacity:0.6;">Open to load events…</em>
+              </div>
+              <div id="security-log-pager" style="display:none;margin-top:0.4rem;display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;">
+                <button id="security-log-prev" onclick="securityLogPage(-1)" class="btn-secondary" style="padding:0.2rem 0.6rem;">◀ Prev</button>
+                <span id="security-log-page-info" style="opacity:0.7;"></span>
+                <button id="security-log-next" onclick="securityLogPage(1)" class="btn-secondary" style="padding:0.2rem 0.6rem;">Next ▶</button>
               </div>
             </div>
           </details>
@@ -424,7 +462,399 @@
             <div class="loading">Loading app templates...</div>
           </div>
         </section>
+        <!-- Auth Configuration Section -->
+        <section id="section-auth" class="section">
+          <div class="section-header">
+            <h2>🔑 Authentication Configuration</h2>
+            <button id="btn-save-auth" class="btn-primary">💾 Save Auth Config</button>
+            <button id="btn-reload-auth" class="btn-secondary">🔄 Reload</button>
+          </div>
+
+          <!-- Sub-tabs -->
+          <div class="auth-tabs" style="display:flex;gap:0.5rem;margin-bottom:1rem;border-bottom:1px solid var(--border);padding-bottom:0.5rem;">
+            <button class="auth-tab-btn active" data-auth-tab="config" onclick="switchAuthTab('config')">⚙️ Auth Config</button>
+            <button class="auth-tab-btn" data-auth-tab="users" onclick="switchAuthTab('users')">👥 Users &amp; Roles</button>
+          </div>
+
+          <!-- ── Auth Config Tab ── -->
+          <div id="auth-tab-config" class="auth-tab-panel">
+
+            <!-- Auth Mode -->
+            <div class="setting-group">
+              <h3>🔐 Authentication Mode</h3>
+              <label>
+                Mode:
+                <select id="auth-mode" onchange="onAuthModeChange()">
+                  <option value="none">None (open access)</option>
+                  <option value="password">Password (username + password)</option>
+                  <option value="apikey">API Key</option>
+                  <option value="certificate">Client Certificate (mTLS)</option>
+                  <option value="oauth">OAuth 2.0 / OIDC</option>
+                  <option value="saml">SAML 2.0</option>
+                </select>
+              </label>
+              <label>
+                <input type="checkbox" id="auth-debug-external">
+                Debug External Auth <small>(logs sanitised OAuth/SAML req/resp — credentials redacted)</small>
+              </label>
+            </div>
+
+            <!-- JWT Settings -->
+            <div class="setting-group">
+              <h3>🎫 JWT Settings</h3>
+              <label>
+                <input type="checkbox" id="auth-jwt-enabled" checked>
+                Enable JWT tokens
+              </label>
+              <label>
+                JWT Secret:
+                <div class="input-with-button">
+                  <input type="password" id="auth-jwt-secret" placeholder="Leave blank to keep current secret"
+                         autocomplete="new-password" style="font-family:monospace;letter-spacing:0.05em;">
+                  <button type="button" onclick="generateJwtSecret()" class="btn-tool" title="Generate a cryptographically random 64-char secret">🎲 Generate</button>
+                </div>
+                <small>Minimum 32 characters. Leave blank when saving to preserve the existing secret.</small>
+              </label>
+              <label>
+                Token Expiry (minutes):
+                <input type="number" id="auth-jwt-expiry" value="60" min="1" max="10080" style="width:6rem;">
+                <small style="margin-left:0.5rem;">e.g. 60 = 1 h · 480 = 8 h · 10080 = 1 week</small>
+              </label>
+            </div>
+
+            <!-- Password mode settings -->
+            <div class="setting-group auth-mode-panel" id="auth-panel-password" style="display:none;">
+              <h3>🔒 Password Settings</h3>
+              <label>
+                bcrypt Rounds:
+                <input type="number" id="auth-password-rounds" value="10" min="8" max="14" style="width:5rem;">
+                <small style="margin-left:0.5rem;">8 = fast (dev) · 10 = default · 12+ = production</small>
+              </label>
+            </div>
+
+            <!-- API Key mode settings -->
+            <div class="setting-group auth-mode-panel" id="auth-panel-apikey" style="display:none;">
+              <h3>🗝️ API Key Settings</h3>
+              <label>
+                Default username for anonymous API keys:
+                <input type="text" id="auth-apikey-default-user" placeholder="apikey-user" style="width:16rem;">
+                <small>Used when the API key is not tied to a specific user account.</small>
+              </label>
+            </div>
+
+            <!-- Certificate mode settings -->
+            <div class="setting-group auth-mode-panel" id="auth-panel-certificate" style="display:none;">
+              <h3>📜 Client Certificate / mTLS</h3>
+              <label>
+                CA Certificate Path (PEM):
+                <div class="path-input">
+                  <input type="text" id="auth-cert-ca-path" placeholder="./config/security/ca.pem">
+                  <button class="btn-browse" data-target="auth-cert-ca-path" data-filter="Certificate Files (*.pem;*.crt;*.cer)|*.pem;*.crt;*.cer|All files (*.*)|*.*">📂 Browse</button>
+                </div>
+              </label>
+              <label>
+                <input type="checkbox" id="auth-cert-require" checked>
+                Require Client Certificate (disable to allow unauthenticated fallback)
+              </label>
+            </div>
+
+            <!-- OAuth mode settings -->
+            <div class="setting-group auth-mode-panel" id="auth-panel-oauth" style="display:none;">
+              <h3>🌐 OAuth 2.0 / OIDC Settings</h3>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 1rem;">
+                <label>
+                  Client ID:
+                  <input type="text" id="auth-oauth-client-id" placeholder="your-client-id" style="width:100%;box-sizing:border-box;">
+                </label>
+                <label>
+                  Client Secret:
+                  <input type="password" id="auth-oauth-client-secret" placeholder="Leave blank to keep current"
+                         autocomplete="new-password" style="width:100%;box-sizing:border-box;">
+                </label>
+              </div>
+              <label>Authorization URL:
+                <input type="text" id="auth-oauth-auth-url" placeholder="https://provider.example.com/oauth2/authorize" style="width:100%;box-sizing:border-box;">
+              </label>
+              <label>Token URL:
+                <input type="text" id="auth-oauth-token-url" placeholder="https://provider.example.com/oauth2/token" style="width:100%;box-sizing:border-box;">
+              </label>
+              <label>User Info URL <small>(optional)</small>:
+                <input type="text" id="auth-oauth-userinfo-url" placeholder="https://provider.example.com/userinfo" style="width:100%;box-sizing:border-box;">
+              </label>
+              <label>Scope:
+                <input type="text" id="auth-oauth-scope" placeholder="openid profile email" style="width:100%;box-sizing:border-box;">
+              </label>
+              <label>Callback URL:
+                <input type="text" id="auth-oauth-callback-url" placeholder="http://localhost:3458/api/auth/oauth/callback" style="width:100%;box-sizing:border-box;">
+              </label>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 1rem;">
+                <label>Username JSON Path:
+                  <input type="text" id="auth-oauth-username-path" placeholder="preferred_username" style="width:100%;box-sizing:border-box;">
+                </label>
+                <label>Groups JSON Path <small>(optional)</small>:
+                  <input type="text" id="auth-oauth-groups-path" placeholder="groups" style="width:100%;box-sizing:border-box;">
+                </label>
+              </div>
+              <label>
+                <input type="checkbox" id="auth-oauth-pkce">
+                Enable PKCE (Proof Key for Code Exchange — recommended for public clients)
+              </label>
+            </div>
+
+            <!-- SAML mode settings -->
+            <div class="setting-group auth-mode-panel" id="auth-panel-saml" style="display:none;">
+              <h3>🔐 SAML 2.0 Settings</h3>
+              <label>IdP Entry Point (SSO URL):
+                <input type="text" id="auth-saml-entry-point" placeholder="https://idp.example.com/sso/saml" style="width:100%;box-sizing:border-box;">
+              </label>
+              <label>Issuer (SP Entity ID):
+                <input type="text" id="auth-saml-issuer" placeholder="https://your-aiapi-server.com" style="width:100%;box-sizing:border-box;">
+              </label>
+              <label>IdP Certificate (PEM or <code>file://path</code>):
+                <textarea id="auth-saml-cert" rows="4"
+                          placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+                          style="width:100%;box-sizing:border-box;font-family:monospace;font-size:0.8rem;resize:vertical;"></textarea>
+              </label>
+              <label>SP Private Key <small>(PEM, optional — for signed AuthN requests)</small>:
+                <textarea id="auth-saml-private-key" rows="3"
+                          placeholder="-----BEGIN PRIVATE KEY-----&#10;(optional)"
+                          style="width:100%;box-sizing:border-box;font-family:monospace;font-size:0.8rem;resize:vertical;"></textarea>
+              </label>
+              <label>Callback URL:
+                <input type="text" id="auth-saml-callback-url" placeholder="http://localhost:3458/api/auth/saml/callback" style="width:100%;box-sizing:border-box;">
+              </label>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 1rem;">
+                <label>Username Attribute Path:
+                  <input type="text" id="auth-saml-username-path" placeholder="nameID" style="width:100%;box-sizing:border-box;">
+                </label>
+                <label>Groups Attribute Path <small>(optional)</small>:
+                  <input type="text" id="auth-saml-groups-path" placeholder="memberOf" style="width:100%;box-sizing:border-box;">
+                </label>
+              </div>
+              <label>Signature Algorithm:
+                <select id="auth-saml-sig-alg">
+                  <option value="sha256">SHA-256 (recommended)</option>
+                  <option value="sha512">SHA-512</option>
+                  <option value="sha1">SHA-1 (legacy)</option>
+                </select>
+              </label>
+            </div>
+
+            <!-- User Store -->
+            <div class="setting-group">
+              <h3>🗄️ User Store</h3>
+              <label>
+                Source:
+                <select id="auth-users-store-source" onchange="onUserStoreSourceChange()">
+                  <option value="json">JSON file (simple)</option>
+                  <option value="db">Database (PostgreSQL / MSSQL / MySQL)</option>
+                </select>
+              </label>
+
+              <div id="auth-users-json-panel">
+                <label>
+                  Users JSON Path:
+                  <div class="path-input">
+                    <input type="text" id="auth-users-json-path" placeholder="./config/users.json">
+                    <button class="btn-browse" data-target="auth-users-json-path" data-filter="JSON Files (*.json)|*.json|All files (*.*)|*.*">📂 Browse</button>
+                  </div>
+                </label>
+              </div>
+
+              <div id="auth-users-db-panel" style="display:none;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 1rem;">
+                  <label>
+                    DB Engine:
+                    <select id="auth-users-db-engine">
+                      <option value="postgresql">PostgreSQL</option>
+                      <option value="mssql">MSSQL (SQL Server)</option>
+                      <option value="mysql">MySQL / MariaDB</option>
+                      <option value="oracle">Oracle</option>
+                    </select>
+                  </label>
+                  <label>
+                    Auth Method:
+                    <select id="auth-users-db-auth-method" onchange="onDbAuthMethodChange('users')">
+                      <option value="password">Username + Password</option>
+                      <option value="integrated">Integrated / Kerberos (Windows)</option>
+                      <option value="certificate">TLS Client Certificate</option>
+                      <option value="impersonation">Windows Impersonation (MSSQL)</option>
+                      <option value="constant">Connection String</option>
+                    </select>
+                  </label>
+                </div>
+                <div id="auth-users-db-creds" style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 1rem;">
+                  <label>Host: <input type="text" id="auth-users-db-host" placeholder="localhost" style="width:100%;box-sizing:border-box;"></label>
+                  <label>Port: <input type="number" id="auth-users-db-port" placeholder="5432" min="1" max="65535" style="width:100%;box-sizing:border-box;"></label>
+                  <label>Database: <input type="text" id="auth-users-db-name" placeholder="aiapi" style="width:100%;box-sizing:border-box;"></label>
+                  <label>Username: <input type="text" id="auth-users-db-user" placeholder="sa" style="width:100%;box-sizing:border-box;"></label>
+                  <label style="grid-column:1/-1;">Password: <input type="password" id="auth-users-db-password" placeholder="Leave blank to keep current" autocomplete="new-password" style="width:100%;box-sizing:border-box;"></label>
+                </div>
+                <div id="auth-users-db-connstr-panel" style="display:none;">
+                  <label>Connection String:
+                    <input type="text" id="auth-users-db-connstr-val" placeholder="postgresql://user:pass@host/db" style="width:100%;box-sizing:border-box;">
+                  </label>
+                </div>
+
+                <!-- ── Provision DB ── -->
+                <details id="auth-db-provision-sect" style="margin-top:1rem;border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;">
+                  <summary style="cursor:pointer;font-weight:600;">🔧 Provision / Initialize Database</summary>
+                  <div style="margin-top:0.75rem;">
+                    <div style="display:flex;gap:1.5rem;margin-bottom:0.6rem;flex-wrap:wrap;">
+                      <label><input type="checkbox" id="auth-db-provision-create"> Create database if not exists</label>
+                      <label><input type="checkbox" id="auth-db-provision-seed" checked> Seed initial admin user</label>
+                    </div>
+                    <details id="auth-db-admin-creds-sect" style="margin-bottom:0.6rem;">
+                      <summary style="cursor:pointer;color:var(--text-muted);font-size:0.9em;">▸ Admin / DDL credentials <small>(only when creating the DB; never stored)</small></summary>
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 1rem;margin-top:0.5rem;">
+                        <label>Host: <input type="text" id="auth-db-admin-host" placeholder="same as above" style="width:100%;box-sizing:border-box;"></label>
+                        <label>Port: <input type="number" id="auth-db-admin-port" placeholder="5432" min="1" max="65535" style="width:100%;box-sizing:border-box;"></label>
+                        <label>Database: <input type="text" id="auth-db-admin-name" placeholder="postgres" style="width:100%;box-sizing:border-box;"></label>
+                        <label>Username: <input type="text" id="auth-db-admin-user" placeholder="ddladmin" style="width:100%;box-sizing:border-box;"></label>
+                        <label style="grid-column:1/-1;">Password: <input type="password" id="auth-db-admin-password" autocomplete="new-password" placeholder="DDL account password" style="width:100%;box-sizing:border-box;"></label>
+                      </div>
+                    </details>
+                    <button class="btn-primary" onclick="provisionDb()" id="btn-provision-db">🔧 Run Provision</button>
+                    <div id="auth-db-provision-result" style="margin-top:0.75rem;font-size:0.9em;white-space:pre-wrap;display:none;"></div>
+                  </div>
+                </details>
+              </div>
+            </div>
+          </div><!-- end auth-tab-config -->
+
+          <!-- ── Users & Roles Tab ── -->
+          <div id="auth-tab-users" class="auth-tab-panel" style="display:none;">
+            <div id="auth-mode-none-notice" class="info-banner" style="display:none;">
+              ℹ️ <strong>Auth mode is set to None</strong> — save an auth mode above to manage users and roles.
+            </div>
+            <div id="auth-users-roles-panel">
+
+              <!-- Users table -->
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                <h3 style="margin:0;">👤 Users</h3>
+                <button class="btn-primary" onclick="openAddUserModal()">➕ Add User</button>
+              </div>
+              <table style="width:100%;border-collapse:collapse;font-size:0.85rem;margin-bottom:1.5rem;">
+                <thead>
+                  <tr style="background:var(--bg-secondary);">
+                    <th style="padding:6px 8px;text-align:left;">Username</th>
+                    <th style="padding:6px 8px;text-align:center;width:80px;">Enabled</th>
+                    <th style="padding:6px 8px;text-align:left;">Roles</th>
+                    <th style="padding:6px 8px;text-align:center;width:90px;">API Keys</th>
+                    <th style="padding:6px 8px;text-align:center;width:120px;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="auth-users-tbody">
+                  <tr><td colspan="5" style="text-align:center;padding:1rem;opacity:0.6;">Loading…</td></tr>
+                </tbody>
+              </table>
+
+              <!-- Roles table -->
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                <h3 style="margin:0;">🎭 Roles</h3>
+                <button class="btn-primary" onclick="openAddRoleModal()">➕ Add Role</button>
+              </div>
+              <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+                <thead>
+                  <tr style="background:var(--bg-secondary);">
+                    <th style="padding:6px 8px;text-align:left;">Role Name</th>
+                    <th style="padding:6px 8px;text-align:left;">Description</th>
+                    <th style="padding:6px 8px;text-align:center;width:80px;">Members</th>
+                    <th style="padding:6px 8px;text-align:center;width:120px;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="auth-roles-tbody">
+                  <tr><td colspan="4" style="text-align:center;padding:1rem;opacity:0.6;">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div><!-- end auth-tab-users -->
+        </section>
+
       </main>
+    </div>
+  </div>
+
+  <!-- Add User Modal -->
+  <div id="add-user-modal" class="modal">
+    <div class="modal-content" style="max-width:480px;">
+      <div class="modal-header">
+        <h3 id="add-user-modal-title">➕ Add User</h3>
+        <button class="modal-close" onclick="closeAddUserModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="new-user-username">Username:</label>
+          <input type="text" id="new-user-username" placeholder="alice" autocomplete="off" style="width:100%;box-sizing:border-box;">
+        </div>
+        <div class="form-group">
+          <label for="new-user-password">Password:</label>
+          <input type="password" id="new-user-password" placeholder="(required for password mode)" autocomplete="new-password" style="width:100%;box-sizing:border-box;">
+        </div>
+        <div class="form-group">
+          <label for="new-user-roles">Roles <small>(comma-separated)</small>:</label>
+          <input type="text" id="new-user-roles" placeholder="admin, operator" style="width:100%;box-sizing:border-box;">
+        </div>
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="new-user-enabled" checked>
+            Enabled
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:0.75rem;padding:1rem 1.5rem;border-top:1px solid var(--border);">
+        <button class="btn-secondary" onclick="closeAddUserModal()">Cancel</button>
+        <button class="btn-primary" onclick="saveNewUser()">💾 Save User</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Role Modal -->
+  <div id="add-role-modal" class="modal">
+    <div class="modal-content" style="max-width:420px;">
+      <div class="modal-header">
+        <h3>➕ Add Role</h3>
+        <button class="modal-close" onclick="closeAddRoleModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="new-role-name">Role Name:</label>
+          <input type="text" id="new-role-name" placeholder="admin" autocomplete="off" style="width:100%;box-sizing:border-box;">
+        </div>
+        <div class="form-group">
+          <label for="new-role-description">Description:</label>
+          <input type="text" id="new-role-description" placeholder="Full administrative access" style="width:100%;box-sizing:border-box;">
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:0.75rem;padding:1rem 1.5rem;border-top:1px solid var(--border);">
+        <button class="btn-secondary" onclick="closeAddRoleModal()">Cancel</button>
+        <button class="btn-primary" onclick="saveNewRole()">💾 Save Role</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Generate API Key Result Modal -->
+  <div id="apikey-result-modal" class="modal">
+    <div class="modal-content" style="max-width:480px;">
+      <div class="modal-header">
+        <h3>🗝️ New API Key Generated</h3>
+        <button class="modal-close" onclick="closeApiKeyResultModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="info-banner" style="background:#1a3a1a;border-color:#4caf50;color:#c8e6c9;">
+          ⚠️ <strong>Copy this key now.</strong> It will not be shown again.
+        </div>
+        <div style="margin-top:0.75rem;">
+          <label>API Key:</label>
+          <div style="display:flex;gap:0.5rem;margin-top:0.25rem;">
+            <input type="text" id="apikey-result-value" readonly style="flex:1;font-family:monospace;font-size:0.8rem;letter-spacing:0.04em;">
+            <button class="btn-secondary" onclick="copyApiKey()">📋 Copy</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;padding:1rem 1.5rem;border-top:1px solid var(--border);">
+        <button class="btn-primary" onclick="closeApiKeyResultModal()">Done</button>
+      </div>
     </div>
   </div>
 
@@ -456,7 +886,7 @@
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 1rem;margin-top:0.5rem;font-size:0.82rem;">
             <div>
               <label for="se-meta-helper" style="display:block;margin-bottom:2px;">Helper exe:</label>
-              <select id="se-meta-helper" style="width:100%;padding:3px;">
+              <select id="se-meta-helper" style="width:100%;padding:3px;" onchange="_seRefreshCommandList()">
                 <option value="">— inherit from template —</option>
                 <option value="KeyWin.exe">KeyWin.exe</option>
                 <option value="BrowserWin.exe">BrowserWin.exe</option>
@@ -481,6 +911,15 @@
           </div>
         </details>
 
+        <!-- Autocomplete datalists for the scenario editor -->
+        <datalist id="se-cmd-list"></datalist>
+        <datalist id="se-tgt-list">
+          <option value="HANDLE:"></option>
+          <option value="PAGE:"></option>
+          <option value="chrome:"></option>
+          <option value="SYSTEM"></option>
+        </datalist>
+        <datalist id="se-par-list"></datalist>
         <!-- Steps table -->
         <div style="overflow-x:auto;margin-top:0.5rem;">
           <table id="scenario-editor-steps-table" style="width:100%;border-collapse:collapse;font-size:0.8rem;">
@@ -588,6 +1027,7 @@
             <option value="KeyWin.exe">🎹 KeyWin.exe - Windows UI Automation</option>
             <option value="BrowserWin.exe">🌐 BrowserWin.exe - Web Browser (Coming Soon)</option>
             <option value="OfficeWin.exe">📄 OfficeWin.exe - MS Office (Coming Soon)</option>
+            <option value="_internal">🔒 _internal - REST Admin / Security Log</option>
           </select>
           <small>The automation helper that will execute the command</small>
         </div>
@@ -616,6 +1056,11 @@
             </optgroup>
             <optgroup label="Special">
               <option value="*">* - All commands (use with caution)</option>
+            </optgroup>
+            <optgroup label="🔒 _internal Admin Commands">
+              <option value="access">access - Read internal API (users, roles)</option>
+              <option value="settings_change">settings_change - Modify users/roles/config</option>
+              <option value="access_logs">access_logs - Read security / session logs</option>
             </optgroup>
           </select>
           <small>The specific command/operation to control</small>
@@ -647,6 +1092,14 @@
           <input type="text" id="filter-description" 
                  placeholder="Brief description of what this filter does">
         </div>
+
+        <div class="form-group">
+          <label for="filter-role">Required Role <small style="font-weight:normal;opacity:0.7;">(optional)</small>:</label>
+          <input type="text" id="filter-role"
+                 placeholder="e.g. admin  — leave blank to apply to all users"
+                 title="Comma-separated roles. Rule is skipped for callers that do not carry any of these roles.">
+          <small>Leave empty to apply this rule to <em>all</em> authenticated callers regardless of role.</small>
+        </div>
         
         <div class="filter-preview">
           <strong>🔍 Filter Preview:</strong>
@@ -658,8 +1111,8 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button onclick="closeFilterEditor()" class="btn-secondary">Cancel</button>
-        <button onclick="saveFilter()" class="btn-primary">Save Filter</button>
+        <button id="btn-filter-editor-cancel" onclick="closeFilterEditor()" class="btn-secondary">Cancel</button>
+        <button id="btn-filter-editor-save" onclick="saveFilter()" class="btn-primary">Save Filter</button>
       </div>
     </div>
   </div>

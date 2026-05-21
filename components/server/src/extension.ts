@@ -39,7 +39,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   log('AIAPI: activating...');
 
   const cfg = vscode.workspace.getConfiguration('aiAutomation');
-  const mcpPort = cfg.get<number>('mcpPort', 3457);
+  // Default 3467/3468 so the installed VSIX does not clash with the dev server (3457/3458).
+  const mcpPort = cfg.get<number>('mcpPort', 3467);
   const dashboardPort = mcpPort + 1;
 
   try {

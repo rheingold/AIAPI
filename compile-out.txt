@@ -1,0 +1,3 @@
+﻿error CS0006: Soubor s metadaty C:\Users\plachy\Documents\Dev\VSCplugins\AIAPI\components\helpers\shared\dist\HelperCommon.dll nebyl nalezen.
+error CS0006: Soubor s metadaty C:\Users\plachy\Documents\Dev\VSCplugins\AIAPI\dist\helpers\WinUtils.dll nebyl nalezen.
+error CS0006: Soubor s metadaty C:\Users\plachy\Documents\Dev\VSCplugins\AIAPI\dist\helpers\SecurityLib.dll nebyl nalezen.

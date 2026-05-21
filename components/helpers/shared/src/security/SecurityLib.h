@@ -137,6 +137,8 @@ SECLIB_API int sec_validate_signature_self(void);
  * processPath – Full path of target process (may be NULL or "").
  * processHash – SHA-256 hex of target process exe (may be NULL or "").
  * processId   – PID of target process (0 if unknown).
+ * callerUser  – Authenticated username forwarded from the MCP layer (may be NULL or "").
+ * callerRoles – Comma-separated role list, e.g. "admin,operator" (may be NULL or "").
  *
  * Returns SEC_ALLOW, SEC_DENY, SEC_ASK, or negative error code.
  */
@@ -146,7 +148,9 @@ SECLIB_API int sec_validate_action(
     const char* processName,
     const char* processPath,
     const char* processHash,
-    int         processId);
+    int         processId,
+    const char* callerUser,
+    const char* callerRoles);
 
 /**
  * Derive a session key using HKDF-SHA256.

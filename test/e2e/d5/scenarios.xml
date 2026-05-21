@@ -1,0 +1,339 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D5 KeyWin Calculator test scenarios â€” test/e2e/d5/scenarios.xml
+  app     : d5
+  helper  : KeyWin.exe
+  process : calc.exe
+
+  ADR-009: KeyWin is app-agnostic â€” NO RESET command; clear is done by
+           CLICKID on the app's actual clearButton AutomationId.
+  ADR-010: All assertions are inline ASSERT steps â€” JS harness is bootstrap-only.
+
+  Wire protocol (CONVENTIONS.md Â§2):
+    proc = HANDLE:<hwnd>  (bound by LISTWINDOWS)
+    path = bare AutomationId for CLICKID/READ; JS expr for ASSERT
+    value = expected value for ASSERT; ms for WAIT; keystrokes for SENDKEYS
+-->
+<Scenarios app="d5" helper="KeyWin.exe" process="calc.exe" xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d5">
+
+  <!-- ── CLEAR helper: send Escape to reset display ── -->
+  <!-- Escape is the keyboard equivalent of the AC/C button regardless of calc state -->
+  <Scenario id="clear" effect="clears-state">
+    <Description lang="en">
+      Send Escape key to clear any pending entry or result.
+      More reliable than CLICKID because AutomationId of the clear button
+      changes between states (clearButton in entry mode, different ID after =).
+    </Description>
+    <Steps>
+      <Step action="SENDKEYS" proc="{{hwnd}}" value="{ESC}" note="Escape = AC/C — clear all"/>
+      <Step action="WAIT"     proc=""         value="200"     note="allow UIA display to settle"/>
+    </Steps>
+  </Scenario>
+
+  <!-- â”€â”€ C1 â€” Launch Calculator + bind {{hwnd}} â”€â”€ -->
+  <Scenario id="c1-launch-calc" effect="launches-app">
+    <Description lang="en">
+      Launch Calculator (if not already running) and bind {{hwnd}} to its window handle.
+      Uses conditional="absent" so LAUNCH + WAIT are skipped if {{hwnd}} is already bound.
+    </Description>
+    <Steps>
+      <Step action="LAUNCH"      proc="calc.exe" conditional="absent" note="launch Calculator if not already running"/>
+      <Step action="WAIT"        proc=""         value="4000" conditional="absent" note="wait for UWP Calculator UIA bridge"/>
+      <Step action="LISTWINDOWS" proc="SYSTEM"   path="calc|calculator|kalku"    note="bind {{hwnd}} to Calculator window"/>
+    </Steps>
+  </Scenario>
+
+  <!-- â”€â”€ C2 â€” Clear Calculator â”€â”€ -->
+  <Scenario id="c2-clear" effect="clears-state">
+    <Description lang="en">Click clearButton (AC) to clear any pending expression.</Description>
+    <Steps>
+      <ScenarioRef ref="clear"/>
+    </Steps>
+  </Scenario>
+
+  <!-- â”€â”€ C3 â€” CLICKID: compute 4 Ă— 8 = 32 â”€â”€ -->
+  <Scenario id="c3-click-4x8" effect="computes">
+    <Description lang="en">
+      Click 4 Ă— 8 = via button AutomationIds. Bind READ result to {{readVal}}.
+      Assert result equals 32.
+    </Description>
+    <Steps>
+      <ScenarioRef ref="clear"/>
+      <Step action="CLICKID" proc="{{hwnd}}" path="num4Button"     note="click 4"/>
+      <Step action="CLICKID" proc="{{hwnd}}" path="multiplyButton" note="click Ă—"/>
+      <Step action="CLICKID" proc="{{hwnd}}" path="num8Button"     note="click 8"/>
+      <Step action="CLICKID" proc="{{hwnd}}" path="equalButton"    note="click ="/>
+      <Step action="WAIT"   proc=""         value="300"           note="settle"/>
+      <Step action="ASSERT" proc="{{hwnd}}" path="NavView/CalculatorResults" value="32" op="contains" note="C3: 4 × 8 = 32"/>
+      <ScenarioRef ref="clear"/>
+    </Steps>
+  </Scenario>
+
+  <!-- â”€â”€ C4 â€” SENDKEYS: compute 7 + 6 = 13 â”€â”€ -->
+  <Scenario id="c4-sendkeys-7plus6" effect="computes">
+    <Description lang="en">
+      Click num1Button for keyboard focus, clear, then type 7+6{ENTER} via SENDKEYS.
+      Bind READ result to {{readVal}}. Assert result equals 13.
+    </Description>
+    <Steps>
+      <ScenarioRef ref="clear"/>
+      <Step action="CLICKID"  proc="{{hwnd}}" path="num1Button"  note="click 1 to acquire keyboard focus"/>
+      <ScenarioRef ref="clear"/>
+      <Step action="SENDKEYS" proc="{{hwnd}}" value="7+6{ENTER}"  note="type 7+6 and press Enter"/>
+      <Step action="WAIT"   proc=""         value="400"        note="allow expression to settle"/>
+      <Step action="ASSERT" proc="{{hwnd}}" path="NavView/CalculatorResults" value="13" op="contains" note="C4: 7 + 6 = 13"/>
+      <ScenarioRef ref="clear"/>
+    </Steps>
+  </Scenario>
+
+  <!-- â”€â”€ C5 â€” READ by AutomationId: read CalculatorResults element â”€â”€ -->
+  <Scenario id="c5-readelem" effect="reads-element">
+    <Description lang="en">
+      Clear, click 5, READ with explicit CalculatorResults AutomationId path.
+      Bind result to {{readVal}}. Assert equals 5.
+    </Description>
+    <Steps>
+      <ScenarioRef ref="clear"/>
+      <Step action="CLICKID" proc="{{hwnd}}" path="num5Button"        note="click 5"/>
+      <Step action="WAIT"   proc=""         value="100"              note="settle"/>
+      <Step action="ASSERT" proc="{{hwnd}}" path="NavView/CalculatorResults" value="5" op="contains" note="C5: display shows 5"/>
+      <ScenarioRef ref="clear"/>
+    </Steps>
+  </Scenario>
+
+  <!-- â”€â”€ C6 â€” clearButton (AC) â€” verify display resets to 0 â”€â”€ -->
+  <Scenario id="c6-clear-button" effect="clears-state">
+    <Description lang="en">
+      Click 9 twice, click clearButton (AC), verify display shows 0.
+      Bind READ result to {{readVal}}. Assert equals 0.
+    </Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{hwnd}}" path="num9Button"        note="click 9 (first)"/>
+      <Step action="WAIT"    proc=""         value="100"              note="settle"/>
+      <Step action="CLICKID" proc="{{hwnd}}" path="num9Button"        note="click 9 (second)"/>
+      <Step action="WAIT"    proc=""         value="100"              note="settle"/>
+      <Step action="SENDKEYS" proc="{{hwnd}}" value="{ESC}"          note="Escape = AC — clear all"/>
+      <Step action="WAIT"   proc=""               value="400"              note="allow UIA to update display"/>
+      <Step action="ASSERT" proc="{{hwnd}}" path="NavView/CalculatorResults" value="0" op="contains" note="C6: display shows 0 after AC"/>
+    </Steps>
+  </Scenario>
+
+  <!-- â”€â”€ CLOSE helper: send Alt+F4 to gracefully close the window â”€â”€ -->
+  <Scenario id="close-app" effect="closes-app">
+    <Description lang="en">
+      Close the Calculator window gracefully.
+      First attempt: CLICKID on the standard UIA close button (AutomationId: Close).
+      Fallback: SENDKEYS Alt+F4 (%{F4}) if the close button is not enumerated.
+    </Description>
+    <Steps>
+      <Step action="SENDKEYS" proc="{{hwnd}}" value="{ALT+F4}" note="send Alt+F4 to close window"/>
+      <Step action="WAIT"     proc=""         value="500"  note="allow OS to process close"/>
+    </Steps>
+  </Scenario>
+
+  <!-- â”€â”€ C7 â€” Close Calculator â”€â”€ -->
+  <Scenario id="c7-close-calc" effect="closes-app">
+    <Description lang="en">Close the Calculator window with Alt+F4 after all tests are done.</Description>
+    <Steps>
+      <ScenarioRef ref="close-app"/>
+    </Steps>
+  </Scenario>
+
+  <!-- â”€â”€ d5-suite â€” full D5 suite: C1â€“C7 in sequence â”€â”€ -->
+  <Scenario id="d5-suite" effect="test-suite">
+    <Description lang="en">
+      Full D5 Calculator dogfood suite.
+      Chains C1 (launch) through C7 (close).
+      JS harness calls only this scenario; all assertions are inline ASSERT steps (ADR-010).
+    </Description>
+    <Steps>
+      <ScenarioRef ref="c1-launch-calc"/>
+      <ScenarioRef ref="c2-clear"/>
+      <ScenarioRef ref="c3-click-4x8"/>
+      <ScenarioRef ref="c4-sendkeys-7plus6"/>
+      <ScenarioRef ref="c5-readelem"/>
+      <ScenarioRef ref="c6-clear-button"/>
+      <ScenarioRef ref="c7-close-calc"/>
+    </Steps>
+  </Scenario>
+
+
+  <!-- ── Mode-switch helpers ──────────────────────────────────────────── -->
+
+  <!-- cm-to-standard: activate Standard mode via nav pane -->
+  <Scenario id="cm-to-standard" effect="switches-mode">
+    <Description lang="en">
+      Open the hamburger nav pane (TogglePaneButton) and click the Standard nav item.
+      Assert Header confirms Standard mode.
+    </Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{hwnd}}" path="TogglePaneButton"  note="open mode nav pane"/>
+      <Step action="WAIT"    proc=""         value="400"              note="pane animation"/>
+      <Step action="CLICKID" proc="{{hwnd}}" path="Standard"          note="nav item AutomationId: Standard"/>
+      <Step action="WAIT"    proc=""         value="600"              note="mode transition + UIA rebuild"/>
+      <Step action="READ"    proc="{{hwnd}}" path="clearEntryButton" bind="cePresent"
+            note="clearEntryButton exists only in Standard mode — locale-invariant structural check (ADR-012)"/>
+      <Step action="ASSERTPATHEVAL" path="'{{cePresent}}'.length > 0"
+            note="Standard mode confirmed: clearEntryButton present (AutomationId is locale-invariant)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- cm-to-scientific: activate Scientific mode via nav pane -->
+  <Scenario id="cm-to-scientific" effect="switches-mode">
+    <Description lang="en">
+      Open the nav pane and click the Scientific nav item.
+      Assert Header confirms Scientific mode.
+      NavView/Header is the assert-gate path used in tree.xml for Scientific controls.
+    </Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{hwnd}}" path="TogglePaneButton"  note="open mode nav pane"/>
+      <Step action="WAIT"    proc=""         value="400"              note="pane animation"/>
+      <Step action="CLICKID" proc="{{hwnd}}" path="Scientific"        note="nav item AutomationId: Scientific"/>
+      <Step action="WAIT"    proc=""         value="600"              note="mode transition + UIA rebuild"/>
+      <Step action="READ"    proc="{{hwnd}}" path="factorialButton" bind="factPresent"
+            note="factorialButton exists only in Scientific mode — locale-invariant structural check (ADR-012)"/>
+      <Step action="ASSERTPATHEVAL" path="'{{factPresent}}'.length > 0"
+            note="Scientific mode confirmed: factorialButton present (AutomationId is locale-invariant)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── CM1: Standard mode, CLICKID 6 x 7 = 42 ── -->
+  <Scenario id="cm1-standard-click" effect="computes">
+    <Description lang="en">
+      Switch to Standard, click 6 x 7 = 42 via AutomationIds.
+      Exercises StandardOperators and NumberPad (always-present controls in tree.xml).
+    </Description>
+    <Steps>
+      <ScenarioRef ref="cm-to-standard"/>
+      <ScenarioRef ref="clear"/>
+      <Step action="CLICKID" proc="{{hwnd}}" path="num6Button"        note="click 6"/>
+      <Step action="CLICKID" proc="{{hwnd}}" path="multiplyButton"    note="click x"/>
+      <Step action="CLICKID" proc="{{hwnd}}" path="num7Button"        note="click 7"/>
+      <Step action="CLICKID" proc="{{hwnd}}" path="equalButton"       note="click ="/>
+      <Step action="WAIT"    proc=""         value="300"              note="settle"/>
+      <Step action="ASSERT"  proc="{{hwnd}}" path="NavView/CalculatorResults" op="contains" value="42"
+            note="CM1: 6 x 7 = 42"/>
+      <ScenarioRef ref="clear"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── CM2: Standard mode, SENDKEYS 9-4 = 5 ── -->
+  <Scenario id="cm2-standard-sendkeys" effect="computes">
+    <Description lang="en">
+      In Standard mode, type 9-4{ENTER} via SENDKEYS. Assert result is 5.
+    </Description>
+    <Steps>
+      <ScenarioRef ref="clear"/>
+      <Step action="CLICKID"  proc="{{hwnd}}" path="num1Button"        note="click to acquire keyboard focus"/>
+      <ScenarioRef ref="clear"/>
+      <Step action="SENDKEYS" proc="{{hwnd}}" value="9-4{ENTER}"       note="type 9 - 4 Enter"/>
+      <Step action="WAIT"     proc=""         value="400"              note="settle"/>
+      <Step action="ASSERT"   proc="{{hwnd}}" path="NavView/CalculatorResults" op="contains" value="5"
+            note="CM2: 9 - 4 = 5"/>
+      <ScenarioRef ref="clear"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── CM3: Standard-only clearEntryButton (assert-gated control) ── -->
+  <Scenario id="cm3-standard-clearentry" effect="computes">
+    <Description lang="en">
+      Verify the Standard-mode-only clearEntryButton works.
+      Type 99, click CE (clearEntryButton), verify display shows 0.
+      clearEntryButton is wrapped by assert op="contains" value="Standardni" in tree.xml.
+    </Description>
+    <Steps>
+      <ScenarioRef ref="clear"/>
+      <Step action="CLICKID" proc="{{hwnd}}" path="num9Button"         note="click 9 (first digit)"/>
+      <Step action="CLICKID" proc="{{hwnd}}" path="num9Button"         note="click 9 (second digit)"/>
+      <Step action="WAIT"    proc=""         value="100"               note="settle"/>
+      <Step action="CLICKID" proc="{{hwnd}}" path="clearEntryButton"   note="CE - Standard mode only"/>
+      <Step action="WAIT"    proc=""         value="200"               note="settle"/>
+      <Step action="ASSERT"  proc="{{hwnd}}" path="NavView/CalculatorResults" op="contains" value="0"
+            note="CM3: CE clears entry to 0"/>
+      <ScenarioRef ref="clear"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── CM4: Scientific mode, CLICKID 5! = 120 ── -->
+  <Scenario id="cm4-scientific-click-factorial" effect="computes">
+    <Description lang="en">
+      Switch to Scientific mode. Click 5, then factorialButton (5! = 120).
+      factorialButton is wrapped by the assert Vedecky gate in tree.xml.
+      Tests CLICKID on a condition-gated control.
+    </Description>
+    <Steps>
+      <ScenarioRef ref="cm-to-scientific"/>
+      <ScenarioRef ref="clear"/>
+      <Step action="CLICKID" proc="{{hwnd}}" path="num5Button"         note="click 5"/>
+      <Step action="CLICKID" proc="{{hwnd}}" path="factorialButton"    note="n! (Scientific only)"/>
+      <Step action="WAIT"    proc=""         value="300"               note="settle"/>
+      <Step action="ASSERT"  proc="{{hwnd}}" path="NavView/CalculatorResults" op="contains" value="120"
+            note="CM4: 5! = 120"/>
+      <ScenarioRef ref="clear"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── CM5: Scientific mode, SENDKEYS 9 then CLICKID squareRoot = 3 ── -->
+  <Scenario id="cm5-scientific-sendkeys-sqrt" effect="computes">
+    <Description lang="en">
+      In Scientific mode, type 9 via SENDKEYS then click squareRootButton.
+      sqrt(9) = 3. Mixed SENDKEYS + CLICKID on a Scientific-mode control.
+    </Description>
+    <Steps>
+      <ScenarioRef ref="clear"/>
+      <Step action="CLICKID"  proc="{{hwnd}}" path="num1Button"        note="acquire keyboard focus"/>
+      <ScenarioRef ref="clear"/>
+      <Step action="SENDKEYS" proc="{{hwnd}}" value="9"                note="type 9"/>
+      <Step action="WAIT"     proc=""         value="150"              note="settle"/>
+      <Step action="CLICKID"  proc="{{hwnd}}" path="squareRootButton"  note="sqrt (Scientific mode)"/>
+      <Step action="WAIT"     proc=""         value="300"              note="settle"/>
+      <Step action="ASSERT"   proc="{{hwnd}}" path="NavView/CalculatorResults" op="contains" value="3"
+            note="CM5: sqrt(9) = 3"/>
+      <ScenarioRef ref="clear"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── CM6: switch back to Standard mode, verify 4+4=8 ── -->
+  <Scenario id="cm6-back-to-standard" effect="computes">
+    <Description lang="en">
+      Switch from Scientific back to Standard mode.
+      Assert Header reverts to Standardni.
+      Compute 4+4=8 via SENDKEYS to confirm mode is fully operational.
+    </Description>
+    <Steps>
+      <ScenarioRef ref="cm-to-standard"/>
+      <ScenarioRef ref="clear"/>
+      <Step action="CLICKID"  proc="{{hwnd}}" path="num1Button"        note="acquire keyboard focus"/>
+      <ScenarioRef ref="clear"/>
+      <Step action="SENDKEYS" proc="{{hwnd}}" value="4+4{ENTER}"       note="type 4 + 4 Enter"/>
+      <Step action="WAIT"     proc=""         value="400"              note="settle"/>
+      <Step action="ASSERT"   proc="{{hwnd}}" path="NavView/CalculatorResults" op="contains" value="8"
+            note="CM6: 4 + 4 = 8 after return to Standard"/>
+      <ScenarioRef ref="clear"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── d5-mode-suite: full mode-switching suite ── -->
+  <Scenario id="d5-mode-suite" effect="test-suite">
+    <Description lang="en">
+      Mode-switching dogfood suite.
+      Standard (CLICKID 6x7, SENDKEYS 9-4, CE button) ->
+      Scientific (factorial CLICKID 5!, sqrt SENDKEYS+CLICKID) ->
+      back to Standard (SENDKEYS 4+4).
+      All assertions are inline ASSERT steps (ADR-010). No JS assertions.
+    </Description>
+    <Steps>
+      <ScenarioRef ref="c1-launch-calc"/>
+      <ScenarioRef ref="cm1-standard-click"/>
+      <ScenarioRef ref="cm2-standard-sendkeys"/>
+      <ScenarioRef ref="cm3-standard-clearentry"/>
+      <ScenarioRef ref="cm4-scientific-click-factorial"/>
+      <ScenarioRef ref="cm5-scientific-sendkeys-sqrt"/>
+      <ScenarioRef ref="cm6-back-to-standard"/>
+      <ScenarioRef ref="c7-close-calc"/>
+    </Steps>
+  </Scenario>
+</Scenarios>
+
+
+

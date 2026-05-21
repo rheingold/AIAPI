@@ -27,7 +27,6 @@ import { OAuthProvider } from './providers/OAuthProvider';
 import { SamlProvider } from './providers/SamlProvider';
 import { JsonUserStore } from './stores/JsonUserStore';
 import { DbUserStore } from './stores/DbUserStore';
-import { DbConfig } from '../settings/types';
 import { globalLogger } from '../utils/Logger';
 
 const TAG = 'AuthService';
@@ -53,7 +52,7 @@ export class AuthService {
     // ── User store ──────────────────────────────────────────────────────────
     let store: IUserStore;
     if (cfg.users.storeSource === 'db') {
-      const dbCfg = (cfg as AuthConfig & { users: { db: DbConfig } }).users.db;
+      const dbCfg = cfg.users.db;
       if (!dbCfg) throw new Error('auth.users.storeSource = "db" but no auth.users.db config provided');
       const dbStore = new DbUserStore(dbCfg);
       await dbStore.initialize();
@@ -136,4 +135,20 @@ export class AuthService {
 
   /** Verify a JWT issued by any provider — used for session continuation */
   verifyJwt(token: string) { return this.jwt.verify(token); }
+
+  /**
+   * Issue a fresh JWT from a still-valid token (sliding-window refresh).
+   * Returns the new token string, or null if the old token is invalid/expired.
+   */
+  refreshToken(oldToken: string): string | null {
+    const payload = this.jwt.verify(oldToken);
+    if (!payload) return null;
+    return this.jwt.sign({
+      sub:            payload.sub,
+      username:       payload.username,
+      roles:          payload.roles,
+      externalGroups: payload.externalGroups ?? [],
+      authMode:       payload.authMode,
+    });
+  }
 }

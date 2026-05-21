@@ -1,0 +1,36 @@
+
+=== Security Initialization ===
+⚠ No security configuration found - running in INSECURE mode
+  Run security setup to enable protection
+[1G[0JEnter private key password (press Enter to skip): [51G**************************************************
+[20:43:28] WARN [Security] Password incorrect — Unsupported state or unable to authenticate data; running without HMAC
+
+=== Starting MCP Server ===
+[WindowsFormsProvider] Checking for KeyWin.exe at: C:\Users\plachy\Documents\Dev\VSCplugins\AIAPI\dist\win\KeyWin.exe
+[WindowsFormsProvider] Alternative path: C:\Users\plachy\Documents\Dev\VSCplugins\AIAPI\dist\win\KeyWin.exe
+[WindowsFormsProvider] Found KeyWin.exe at: C:\Users\plachy\Documents\Dev\VSCplugins\AIAPI\dist\helpers\KeyWin.exe
+[WindowsFormsProvider] Using inject mode: direct
+[20:43:28] WARN [Security] Could not load advanced filters: TypeError: Cannot read properties of undefined (reading 'setSessionBaseDir')
+MCP Server started on http://127.0.0.1:3457
+✓ MCP server running on http://127.0.0.1:3457
+  Ready to accept automation requests
+
+=== Starting Dashboard ===
+[20:43:28] DEBUG [system] Dashboard will use the same AutomationEngine as MCP Server
+[20:43:28] INFO [dashboard] Loaded settings from C:\Users\plachy\Documents\Dev\VSCplugins\AIAPI\config\dashboard-settings.json
+[20:43:28] INFO [security] Loaded 1002 security audit entries from disk (total on disk: 1002)
+[20:43:28] INFO [AuthService] Auth mode: none | user store: json
+[20:43:28] INFO [auth] Authentication initialised (mode: none)
+
+[20:43:28] INFO [system] ✓ MCP Server and Dashboard are both running
+[20:43:28] INFO [system] ✓ JSON-RPC request/response logging is enabled
+[20:43:28] DEBUG [HelperDaemon] [BrowserWin.exe] persistent daemon started
+[20:43:28] INFO [HelperRegistry] Discovered: BrowserWin.exe v1.3.0 (28 commands)
+[20:43:28] DEBUG [HelperDaemon] [KeyWin.exe] persistent daemon started
+[20:43:28] INFO [HelperRegistry] Discovered: KeyWin.exe v1.1.0 (24 commands)
+[20:43:28] DEBUG [HelperDaemon] [LibreOfficeWin.exe] persistent daemon started
+[20:43:28] INFO [HelperRegistry] Discovered: LibreOfficeWin.exe v1.1.0 (11 commands)
+[20:43:28] DEBUG [HelperDaemon] [MSOfficeWin.exe] persistent daemon started
+[20:43:28] INFO [HelperRegistry] Discovered: MSOfficeWin.exe v1.0.0 (10 commands)
+
+Shutting down servers...

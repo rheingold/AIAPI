@@ -1,0 +1,151 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D6 KeyWin Notepad test scenarios — test/e2e/d6/scenarios.xml
+  app     : d6
+  helper  : KeyWin.exe
+  process : notepad.exe
+
+  ADR-009: KeyWin is app-agnostic — no app-specific hardcodes.
+  ADR-010: All assertions are inline ASSERTPATHEVAL steps — JS harness is bootstrap-only.
+  ADR-008: NO dashRest() — only scenario runner.
+
+  Design:
+    n0-pre-kill       — kill any running Notepad (ignore failure)
+    n1-launch-notepad — launch fresh Notepad, bind {{hwnd}}
+    n3-type-content   — CTRL+A (clear session restore) + type {{content}}, READ, ASSERTPATHEVAL includes {{content}}
+    n5-select-overwrite — CTRL+A, type {{newContent}}, READ, ASSERTPATHEVAL includes {{newContent}}
+    n6-undo           — CTRL+Z ×5, READ, ASSERTPATHEVAL: overwrite gone
+    n7-close-tab      — CTRL+W + ALT+N discard
+    d6-suite          — chains n1–n7 (n0 run separately by harness)
+
+  Wire protocol (CONVENTIONS.md §2):
+    proc = HANDLE:<hwnd>  (bound by LISTWINDOWS in n1)
+    proc = SYSTEM         = foreground window / process-name fallback
+-->
+<Scenarios app="d6" helper="KeyWin.exe" process="notepad.exe" xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d6">
+
+  <!-- ── N0 — Kill any running Notepad (idempotent cleanup) ── -->
+  <Scenario id="n0-pre-kill" effect="cleanup">
+    <Description lang="en">Kill any existing Notepad process. Call via runner.run(), not runner.runOk() — failure is expected when Notepad is not running.</Description>
+    <Steps>
+      <Step action="KILL" proc="notepad.exe" path="" note="kill existing Notepad (idempotent)"/>
+      <Step action="WAIT" proc="" value="1200" note="wait for process exit"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── N1 — Launch Notepad + bind {{hwnd}} ── -->
+  <Scenario id="n1-launch-notepad" effect="launches-app">
+    <Description lang="en">
+      Launch fresh Notepad (pre-kill handled by n0-pre-kill called separately).
+      Win11 UWP Notepad UIA bridge needs ~8 s to initialise.
+      Binds {{hwnd}} via LISTWINDOWS.
+    </Description>
+    <Steps>
+      <Step action="LAUNCH"      proc="notepad.exe" note="launch fresh Notepad"/>
+      <Step action="WAIT"        proc=""            value="8000" note="wait for Win11 Notepad UIA bridge"/>
+      <Step action="SENDKEYS"    proc="SYSTEM"      value="{ESC}" note="dismiss any first-launch settings panel"/>
+      <Step action="WAIT"        proc=""            value="500" note="settle"/>
+      <Step action="LISTWINDOWS" proc="SYSTEM"      path="notepad|pozn" note="bind {{hwnd}} to Notepad window"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── N3 — SENDKEYS: type content + verify ── -->
+  <Scenario id="n3-type-content" effect="modifies-doc">
+    <Description lang="en">
+      Type {{content}} into the document (replacing any session-restored content).
+      Win11 Notepad restores the last unsaved session on every launch, so CTRL+A
+      is sent first to select whatever was restored, then EM_REPLACESEL overwrites it.
+      READ document text into {{readVal}} and assert it contains {{content}}.
+    </Description>
+    <Steps>
+      <Step action="SENDKEYS"       proc="{{hwnd}}" value="{CTRL+A}"     note="select-all to clear any session-restored content (Win11 Notepad reopens last unsaved doc)"/>
+      <Step action="WAIT"           proc=""         value="300"           note="allow UIA select-all to settle"/>
+      <Step action="SENDKEYS"       proc="{{hwnd}}" value="{{content}}"  note="type test content — EM_REPLACESEL replaces selection"/>
+      <Step action="WAIT"           proc=""         value="800"          note="allow UWP Notepad to process input"/>
+      <Step action="ASSERT" proc="{{hwnd}}" path=""             value="{{content}}" op="contains" note="N3: path='' = whole-window READ (Notepad Document control has no AutomationId); content found in window text"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── N4 — READ: read document content (standalone) ── -->
+  <Scenario id="n4-read-content" effect="reads-doc">
+    <Description lang="en">READ document text and bind to {{readVal}}.</Description>
+    <Steps>
+      <Step action="READ" proc="{{hwnd}}" path="" bind="readVal" note="read document text"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── N5 — SENDKEYS {CTRL+A} + overwrite + verify ── -->
+  <Scenario id="n5-select-overwrite" effect="modifies-doc">
+    <Description lang="en">
+      Select all, type {{newContent}}, READ back, assert exclusively:
+      - newContent present (overwrite succeeded)
+      - original content absent (select-all replaced, not appended)
+      If CTRL+A does not reach the inner editor, the negative assertion exposes the bug.
+    </Description>
+    <Steps>
+      <Step action="SENDKEYS"       proc="{{hwnd}}" value="{CTRL+A}"       note="select all text in editor"/>
+      <Step action="WAIT"           proc=""         value="150"             note="settle"/>
+      <Step action="SENDKEYS"       proc="{{hwnd}}" value="{{newContent}}"  note="type replacement text (replaces selection if CTRL+A worked)"/>
+      <Step action="WAIT"           proc=""         value="300"             note="settle"/>
+      <Step action="READ"           proc="{{hwnd}}" path=""  bind="n5ReadVal" note="capture full window text"/>
+      <Step action="ASSERTPATHEVAL" path="'{{n5ReadVal}}'.includes('{{newContent}}')" note="N5 positive: new content present"/>
+      <Step action="ASSERTPATHEVAL" path="!'{{n5ReadVal}}'.includes('{{content}}')"   note="N5 negative: original content gone (proves CTRL+A actually selected all; fails if text was appended)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── N6 — SENDKEYS {CTRL+Z}: undo + verify ── -->
+  <Scenario id="n6-undo" effect="modifies-doc">
+    <Description lang="en">
+      Undo the overwrite via CTRL+Z ×1.
+      EM_REPLACESEL creates ONE undo entry for the entire newContent string,
+      so a single CTRL+Z restores content to {{content}} exactly.
+      Assert exclusively:
+      - original content present (undo restored it)
+      - overwrite content absent (undo actually reversed the change)
+      If CTRL+Z does not reach the inner editor, the negative assertion exposes the bug.
+    </Description>
+    <Steps>
+      <Step action="SENDKEYS"       proc="{{hwnd}}" value="{CTRL+Z}" note="undo overwrite (1 press; EM_REPLACESEL = 1 undo entry)"/>
+      <Step action="WAIT"           proc=""         value="400"  note="allow Notepad to process undo"/>
+      <Step action="READ"           proc="{{hwnd}}" path=""  bind="n6ReadVal" note="capture full window text after undo"/>
+      <Step action="ASSERTPATHEVAL" path="'{{n6ReadVal}}'.includes('{{content}}')"    note="N6 positive: original content restored"/>
+      <Step action="ASSERTPATHEVAL" path="!'{{n6ReadVal}}'.includes('{{newContent}}')" note="N6 negative: overwrite text gone (proves CTRL+Z actually undid; fails if undo had no effect)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── N7 — Close tab without saving ── -->
+  <Scenario id="n7-close-tab" effect="closes-tab">
+    <Description lang="en">
+      CTRL+W to close the tab; wait for the save-dialog; ALT+N to discard without saving.
+    </Description>
+    <Steps>
+      <Step action="SENDKEYS" proc="{{hwnd}}" value="{CTRL+W}" note="close tab (triggers save dialog)"/>
+      <Step action="WAIT"     proc=""         value="1500"      note="wait for save dialog to render"/>
+      <Step action="SENDKEYS" proc="SYSTEM"   value="{ALT+N}"   note="press Alt+N = Don't Save"/>
+      <Step action="WAIT"     proc=""         value="400"       note="settle"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── d6-suite — full D6 suite ── -->
+  <!--
+    n0-pre-kill is intentionally NOT included here: called via runner.run() in the harness
+    because its failure is expected and must not abort the suite.
+    Suite starts at n1. Pass params: content="Hello Dogfood" newContent="Overwrite Test"
+  -->
+  <Scenario id="d6-suite" effect="test-suite">
+    <Description lang="en">
+      Full D6 Notepad dogfood suite (ADR-008/ADR-010).
+      Launches Notepad, types content, overwrites, undoes, closes.
+      All assertions are inline ASSERTPATHEVAL steps.
+      Required params: {{content}}, {{newContent}}, {{hwnd}} (bound by n1).
+    </Description>
+    <Steps>
+      <ScenarioRef ref="n1-launch-notepad"/>
+      <ScenarioRef ref="n3-type-content"/>
+      <ScenarioRef ref="n5-select-overwrite"/>
+      <ScenarioRef ref="n6-undo"/>
+      <ScenarioRef ref="n7-close-tab"/>
+    </Steps>
+  </Scenario>
+
+</Scenarios>

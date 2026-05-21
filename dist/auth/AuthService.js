@@ -148,6 +148,22 @@ class AuthService {
     // ─── Helpers for AuthMiddleware ───────────────────────────────────────────
     /** Verify a JWT issued by any provider — used for session continuation */
     verifyJwt(token) { return this.jwt.verify(token); }
+    /**
+     * Issue a fresh JWT from a still-valid token (sliding-window refresh).
+     * Returns the new token string, or null if the old token is invalid/expired.
+     */
+    refreshToken(oldToken) {
+        const payload = this.jwt.verify(oldToken);
+        if (!payload)
+            return null;
+        return this.jwt.sign({
+            sub: payload.sub,
+            username: payload.username,
+            roles: payload.roles,
+            externalGroups: payload.externalGroups ?? [],
+            authMode: payload.authMode,
+        });
+    }
 }
 exports.AuthService = AuthService;
 //# sourceMappingURL=AuthService.js.map

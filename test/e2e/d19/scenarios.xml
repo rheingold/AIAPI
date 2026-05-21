@@ -1,0 +1,36 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D19 Users, Roles & Auth Backend — DB backend  test/e2e/d19/scenarios.xml
+  app  : d19
+  Layer: L3 (test — never shipped)
+
+  ── Scenarios ─────────────────────────────────────────────────────────────────────
+  d19-preflight   GET /api/auth/config → mode is a string (server is reachable
+                   and auth config parseable, before any DB switch)
+
+  All DB-dependent assertions (DB0–UR10) remain in JS: every assert()
+  there depends on runtime IDs returned by DB provision/create operations
+  (createdUserId, createdRoleId, createdKeyId) or DB provision result
+  booleans that cannot be expressed in sequential, static XML steps.
+  ─────────────────────────────────────────────────────────────────────
+-->
+<Scenarios app="d19" helper="BrowserWin.exe" process="chrome.exe"
+           xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d19">
+
+  <!-- ══ d19-preflight: GET /api/auth/config → mode is string ══════════════ -->
+  <Scenario id="d19-preflight" effect="read-only">
+    <Description lang="en">GET /api/auth/config — server reachable, mode field is a string. Runs before DB credential check.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/config" path="GET"
+            bind="d19AuthCfg" note="D19-pre: GET /api/auth/config"/>
+      <Step action="ASSERTPATHEVAL"
+            path="typeof JSON.parse($vars.d19AuthCfg)?.mode === 'string'"
+            note="D19-pre: auth config has mode string"/>
+    </Steps>
+  </Scenario>
+
+</Scenarios>
+

@@ -48,6 +48,7 @@ typedef struct {
     char helper[MAX_FIELD];   /* helper name glob, e.g. "KeyWin.exe" or "*"   */
     char command[MAX_FIELD];  /* command glob (braces stripped), e.g. "READ"  */
     char pattern[MAX_FIELD];  /* parameter/target glob, e.g. "num*Button"     */
+    char role[MAX_FIELD];     /* required caller role (empty = any role)       */
 } FilterRule;
 
 /* A binary hash record from config.json binaryHashes section */
@@ -389,6 +390,11 @@ static int parse_rule_object(const char* obj)
     if (v) json_read_string(&v, r->pattern, sizeof(r->pattern));
     if (!r->pattern[0]) { r->pattern[0] = '*'; r->pattern[1] = '\0'; }
 
+    /* role — optional; empty means any caller role is accepted */
+    v = json_find_key(obj, "role");
+    if (v) json_read_string(&v, r->role, sizeof(r->role));
+    /* (leave r->role empty string if key absent — means "no role requirement") */
+
     g.ruleCount++;
     return 1;
 }
@@ -632,7 +638,9 @@ SECLIB_API int sec_validate_action(
     const char* processName,
     const char* processPath,
     const char* processHash,
-    int         processId)
+    int         processId,
+    const char* callerUser,
+    const char* callerRoles)
 {
     if (!g.loaded) return SEC_ERROR_UNLOADED;
 
@@ -669,6 +677,31 @@ SECLIB_API int sec_validate_action(
 
         /* helper match — not applicable inside the DLL (we don't know caller name here)
          * Skip helper matching entirely; the MCP server already applies helper-level rules */
+
+        /* role match — if rule specifies a required role, caller must have it */
+        if (r->role[0] != '\0') {
+            /* callerRoles is a comma-separated list; check if r->role appears as a token */
+            const char* cr = callerRoles ? callerRoles : "";
+            int roleFound = 0;
+            char needRole[MAX_FIELD] = {0};
+            str_lower(needRole, r->role, (int)sizeof(needRole));
+            /* Scan tokens split by ',' */
+            const char* tok = cr;
+            while (*tok) {
+                const char* comma = tok;
+                while (*comma && *comma != ',') comma++;
+                int tokLen = (int)(comma - tok);
+                if (tokLen > 0 && tokLen < MAX_FIELD) {
+                    char tokLow[MAX_FIELD] = {0};
+                    str_lower(tokLow, tok, tokLen + 1);
+                    tokLow[tokLen] = '\0';
+                    if (strcmp(tokLow, needRole) == 0) { roleFound = 1; break; }
+                }
+                tok = comma;
+                if (*tok == ',') tok++;
+            }
+            if (!roleFound) continue;  /* caller lacks required role — skip rule */
+        }
 
         /* pattern match */
         if (!wildcard_match(r->pattern, param)) continue;

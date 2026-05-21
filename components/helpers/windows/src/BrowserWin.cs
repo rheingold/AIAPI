@@ -64,8 +64,8 @@ namespace BrowserWin
                 if (args[0] == "--listen-stdin")
                 {
                     // Auth handshake must happen before RunStdinListener.
-                    // When SKIP_SESSION_AUTH=true (dev default), RunAuthHandshake returns
-                    // immediately without reading any bytes from stdin.
+                    // Auth handshake must happen before RunPortListener.
+                    // Set SKIP_SESSION_AUTH=true explicitly to skip (dev/test only).
                     bool skipAuth = string.Equals(
                         System.Environment.GetEnvironmentVariable("SKIP_SESSION_AUTH"),
                         "true", StringComparison.OrdinalIgnoreCase);
@@ -200,6 +200,28 @@ namespace BrowserWin
         /// transport listeners (stdin, HTTP, named-pipe).  Avoids the overhead
         /// of re-invoking Main() for every command in daemon mode.
         /// </summary>
+        /// <summary>
+        /// Probe for a JavaScript dialog that may be blocking the CDP channel from a
+        /// previous command.  If a dialog is open, accept it and write a warning to
+        /// stderr so the server log reflects the auto-dismissal.
+        /// Uses a short receive timeout so it never adds more than ~1 s of latency.
+        /// </summary>
+        static void AutoClearBlockingDialog(int port, string targetId)
+        {
+            try
+            {
+                CdpSendCommand(port, targetId, "Page.enable", "", 800);
+                string resp = CdpSendCommand(port, targetId, "Page.handleJavaScriptDialog",
+                                             "\"accept\":true", 1200);
+                bool found = resp != null
+                          && !resp.Contains("\"error\"")
+                          && !resp.Contains("No dialog");
+                if (found)
+                    Console.Error.WriteLine("[BrowserWin] AUTO-DIALOG: blocking dialog auto-accepted before command");
+            }
+            catch { /* best-effort — never block the actual command */ }
+        }
+
         static void DispatchCommand(string target, string action)
         {
             string browser = target;
@@ -215,11 +237,38 @@ namespace BrowserWin
                     browser = target.Substring(0, colon);
                 }
             }
+
+            // Before every CDP command: transparently clear any JavaScript dialog that
+            // might have been triggered by the previous command and is now blocking.
+            // Skip for commands that don't go through CDP or that ARE dialog commands.
+            string cmdType = DetermineCommandType(action);
+            bool skipAutoDialog = cmdType == "DIALOG" || cmdType == "LAUNCH"
+                               || cmdType == "LISTBROWSERS" || cmdType == "LISTWINDOWS"
+                               || cmdType == "FOCUS" || cmdType == "KILL"
+                               || cmdType == "SENDKEYS" || cmdType == "PAGESOURCE"
+                               || cmdType == "UNKNOWN";
+            if (!skipAutoDialog)
+            {
+                string probeId;
+                if (TryGetActiveTarget(port, out probeId))
+                    AutoClearBlockingDialog(port, probeId);
+            }
+
             ExecuteCommand(browser, action, port);
         }
 
         static int ExecuteCommand(string browser, string command, int port)
         {
+            // When the action was prefixed with SCROLL_ by HelperCommon (opt-in scroll-into-view),
+            // strip the prefix back to the bare verb and set the scroll flag.
+            bool scroll = false;
+            if (command.Length > 8 &&
+                command.StartsWith("{SCROLL_", StringComparison.OrdinalIgnoreCase))
+            {
+                scroll  = true;
+                command = "{" + command.Substring(8); // e.g. "{SCROLL_CLICKID:...}" → "{CLICKID:...}"
+            }
+
             string cmdType = DetermineCommandType(command);
 
             // Commands that never need CDP
@@ -236,13 +285,21 @@ namespace BrowserWin
             // Handles its own CDP/UIA logic internally.
             if (cmdType == "LAUNCH") return CmdLaunch(browser, ExtractParam(command, "LAUNCH"), port);
 
-            // SENDKEYS / PAGESOURCE are UIA-only
-            if (cmdType == "SENDKEYS" || cmdType == "PAGESOURCE")
+            // SENDKEYS is always UIA-only (keyboard injection)
+            if (cmdType == "SENDKEYS")
                 return ExecuteCommandUIA(browser, command);
 
             // For all other commands: try CDP first, fall back to UIA when no debug port
             string targetId;
             bool hasCdp = TryGetActiveTarget(port, out targetId);
+
+            // PAGESOURCE: prefer CDP (avoids UIPI / SendKeys elevation issues);
+            // fall back to UIA keyboard trick only when no debug port is reachable.
+            if (cmdType == "PAGESOURCE")
+            {
+                if (hasCdp) return CmdPageSourceCdp(port);
+                return ExecuteCommandUIA(browser, command);
+            }
 
             if (!hasCdp)
             {
@@ -258,27 +315,44 @@ namespace BrowserWin
                     return CmdNavigate(ExtractParam(command, "NAVIGATE"), port);
 
                 case "QUERYTREE":
-                    string depthStr = ExtractParam(command, "QUERYTREE");
-                    int depth = string.IsNullOrEmpty(depthStr) ? 3 : int.Parse(depthStr);
-                    return CmdQueryTree(port, depth);
+                {
+                    string qa = ExtractParam(command, "QUERYTREE") ?? "";
+                    var qp   = qa.Split('|');
+                    // wire format: path="<css-root>" value="<depth>"  →  "<css-root>|<depth>"
+                    // backward compat: path="<depth>" (bare integer, no root) still accepted.
+                    string qtRoot;
+                    int    depth;
+                    int    qpTmp;
+                    if (qp.Length > 1) {
+                        qtRoot = qp[0];
+                        depth  = int.TryParse(qp[1], out qpTmp) ? qpTmp : 3;
+                    } else {
+                        qtRoot = "";
+                        depth  = int.TryParse(qa, out qpTmp) ? qpTmp : 3;
+                    }
+                    return CmdQueryTree(port, depth, qtRoot);
+                }
 
                 case "READ":
                     return CmdRead(port);
 
                 case "CLICKID":
-                    return CmdClickById(ExtractParam(command, "CLICKID"), port);
+                    return CmdClickById(ExtractParam(command, "CLICKID"), port, scroll);
 
                 case "CLICKNAME":
-                    return CmdClickByText(ExtractParam(command, "CLICKNAME"), port);
+                    return CmdClickByText(ExtractParam(command, "CLICKNAME"), port, scroll);
 
                 case "FILL":
-                    return CmdFill(ExtractDoubleParam(command, "FILL"), port);
+                    return CmdFill(ExtractDoubleParam(command, "FILL"), port, scroll);
 
                 case "READELEM":
-                    return CmdReadElem(ExtractParam(command, "READELEM"), port);
+                    return CmdReadElem(ExtractParam(command, "READELEM"), port, scroll);
 
                 case "EXEC":
                     return CmdExec(ExtractParam(command, "EXEC"), port);
+
+                case "CACHE_CLEAR":
+                    return CmdCacheClear(port);
 
                 case "SCREENSHOT":
                     return CmdScreenshot(ExtractParam(command, "SCREENSHOT"), port);
@@ -318,6 +392,9 @@ namespace BrowserWin
 
                 case "MOUSEUP":
                     return CmdMouseUp(ExtractParam(command, "MOUSEUP"), port);
+
+                case "DIALOG":
+                    return CmdDialog(ExtractParam(command, "DIALOG"), port);
 
                 default:
                     OutputError("Unknown command: " + command);
@@ -364,9 +441,17 @@ namespace BrowserWin
             {
                 case "QUERYTREE":
                 {
-                    string ds = ExtractParam(command, "QUERYTREE");
-                    int d = string.IsNullOrEmpty(ds) ? 3 : int.Parse(ds);
-                    // QueryUITree already returns a complete JSON envelope
+                    string qa2 = ExtractParam(command, "QUERYTREE") ?? "";
+                    var qp2    = qa2.Split('|');
+                    // wire format: "<css-root>|<depth>" or bare "<depth>" (backward compat)
+                    int    d;
+                    int    qpTmp2;
+                    if (qp2.Length > 1) {
+                        d = int.TryParse(qp2[1], out qpTmp2) ? qpTmp2 : 3;
+                    } else {
+                        d = int.TryParse(qa2, out qpTmp2) ? qpTmp2 : 3;
+                    }
+                    // UIA fallback does not use a CSS root — walk from the window root.
                     Console.WriteLine(WinUtils.QueryUITree(hwnd, d));
                     return 0;
                 }
@@ -837,7 +922,7 @@ namespace BrowserWin
                 if (headless)
                     args += " --headless=new";
                 else
-                    args += " --no-first-run --no-default-browser-check";
+                    args += " --no-first-run --no-default-browser-check --no-session-restore --disable-session-crashed-bubble";
                 args += " about:blank";
             }
 
@@ -1216,15 +1301,22 @@ namespace BrowserWin
         ///   actions   — ["click"] / ["setValue","readValue"] / ["navigate"] etc.
         ///   children  — recursive, up to `depth` levels, up to 12 per node
         /// </summary>
-        static int CmdQueryTree(int port, int depth)
+        /// <param name="rootSelector">
+        /// CSS selector for the element to start the tree walk from.
+        /// Empty string (default) means <c>document.body</c>.
+        /// </param>
+        static int CmdQueryTree(int port, int depth, string rootSelector = "")
         {
             string targetId;
             if (!TryGetActiveTarget(port, out targetId))
                 return OutputError("Cannot reach browser DevTools on port " + port);
 
+            // Escape rootSelector for embedding in a JS string literal.
+            string safeRoot = (rootSelector ?? "").Replace("\\", "\\\\").Replace("'", "\\'");
+
             string script = "(function(root,maxDepth){"
                 // ── helpers ──
-                + "function esc(s){return (s||'').replace(/\\\\/g,'\\\\\\\\').replace(/\"/g,'\\\\\"').replace(/\\n/g,'\\\\n').replace(/\\r/g,'');}" 
+                + "function esc(s){return (s||'').replace(/\\\\/g,'\\\\\\\\').replace(/\"/g,'\\\\\"').replace(/\\n/g,'\\\\n').replace(/\\r/g,'');}"
                 + "function name(el){"
                 +   "var a=el.getAttribute&&el.getAttribute('aria-label');"
                 +   "if(a&&a.trim())return a.trim().substring(0,80);"
@@ -1271,7 +1363,8 @@ namespace BrowserWin
                 +   "}"
                 +   "return o+'}';"
                 + "}"
-                + "return walk(root.body||root.documentElement,0,0);"
+                + "var startEl=" + (safeRoot.Length > 0 ? "root.querySelector('" + safeRoot + "')||root.body||root.documentElement" : "root.body||root.documentElement") + ";"
+                + "return walk(startEl,0,0);"
                 + "})(document," + depth + ");";
 
 
@@ -1281,12 +1374,43 @@ namespace BrowserWin
             Console.WriteLine("  \"success\": true,");
             Console.WriteLine("  \"command\": \"QUERYTREE\",");
             Console.WriteLine("  \"depth\": " + depth + ",");
+            if (rootSelector.Length > 0)
+                Console.WriteLine("  \"root\": \"" + rootSelector.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\",");
             Console.WriteLine("  \"tree\": " + (result ?? "null"));
             Console.WriteLine("}");
             return 0;
         }
 
         /// <summary>Read current page title, URL and basic meta.</summary>
+        /// <summary>Retrieve page source via CDP — no UIPI restrictions.</summary>
+        static int CmdPageSourceCdp(int port)
+        {
+            string targetId;
+            if (!TryGetActiveTarget(port, out targetId))
+                return OutputError("Cannot reach browser DevTools on port " + port);
+
+            // Use CDP to retrieve the full outer HTML — avoids UIPI issues when the
+            // calling process runs at a different integrity level than the browser.
+            // Get only a 1 KB prefix — the test assertion uses a separate CDP call for length.
+            // CdpRuntimeEvaluate returns the raw JSON-encoded value (already a JSON string literal).
+            string rawHtml = CdpRuntimeEvaluate(port, targetId,
+                "document.documentElement.outerHTML.substring(0,1024)");
+            if (rawHtml == null)
+                return OutputError("pagesource_empty: CDP returned null for document.documentElement.outerHTML");
+
+            // Approximate length: JSON-encoded length minus two surrounding quotes.
+            int approxLen = rawHtml.Length > 2 ? rawHtml.Length - 2 : rawHtml.Length;
+
+            // Truncate if enormous (keep within a single JSON line).
+            if (rawHtml.Length > 65540)
+                rawHtml = "\"" + rawHtml.Substring(1, 65536) + "...[truncated]\"";
+
+            Console.WriteLine("{\"success\":true,\"command\":\"PAGESOURCE\",\"mode\":\"cdp\""
+                + ",\"length\":" + approxLen
+                + ",\"html\":" + rawHtml + "}");
+            return 0;
+        }
+
         static int CmdRead(int port)
         {
             string targetId;
@@ -1306,7 +1430,7 @@ namespace BrowserWin
         }
 
         /// <summary>Click element matching CSS selector.</summary>
-        static int CmdClickById(string selector, int port)
+        static int CmdClickById(string selector, int port, bool scroll = false)
         {
             if (string.IsNullOrEmpty(selector))
                 return OutputError("CLICKID requires a CSS selector: {CLICKID:#myButton}");
@@ -1315,25 +1439,40 @@ namespace BrowserWin
             if (!TryGetActiveTarget(port, out targetId))
                 return OutputError("Cannot reach browser DevTools on port " + port);
 
+            // If the selector has no CSS prefix, treat it as a plain HTML id (#id).
+            // This keeps backward-compat for callers that pass bare ids like "myButton"
+            // instead of "#myButton".
+            string cssSelector = (!string.IsNullOrEmpty(selector) &&
+                                  selector[0] != '#' && selector[0] != '.' &&
+                                  selector[0] != '[' && selector[0] != ':' &&
+                                  selector[0] != '*')
+                                 ? "#" + selector : selector;
+
+            string scrollSnippet = scroll
+                ? "el.scrollIntoView({block:'nearest',inline:'nearest'});"
+                : "";
             string script = "(function(){"
-                          + "var el=document.querySelector('" + selector.Replace("'","\\'") + "');"
+                          + "var el=document.querySelector('" + cssSelector.Replace("'","\\'") + "');"
                           + "if(!el)return JSON.stringify({found:false});"
+                          + scrollSnippet
                           + "el.click();"
                           + "return JSON.stringify({found:true,tag:el.tagName,id:el.id});"
                           + "})()";
             string result = CdpRuntimeEvaluate(port, targetId, script);
+            bool foundClick = result != null &&
+                (result.Contains("\"found\":true") || result.Contains("\\\"found\\\":true"));
 
             Console.WriteLine("{");
-            Console.WriteLine("  \"success\": true,");
+            Console.WriteLine("  \"success\": " + (foundClick ? "true" : "false") + ",");
             Console.WriteLine("  \"command\": \"CLICKID\",");
             Console.WriteLine("  \"selector\": \"" + JsonEscape(selector) + "\",");
             Console.WriteLine("  \"result\": " + (result ?? "null"));
             Console.WriteLine("}");
-            return 0;
+            return foundClick ? 0 : 1;
         }
 
         /// <summary>Click element whose text content matches the given string.</summary>
-        static int CmdClickByText(string text, int port)
+        static int CmdClickByText(string text, int port, bool scroll = false)
         {
             if (string.IsNullOrEmpty(text))
                 return OutputError("CLICKNAME requires a text value: {CLICKNAME:Submit}");
@@ -1345,6 +1484,9 @@ namespace BrowserWin
             string safe = text.Replace("\\","\\\\").Replace("'","\\'");
             // Search order:
             // 1. Button/link/submit whose visible text matches
+            string scrollSnippetText = scroll
+                ? "all[i].scrollIntoView({block:'nearest',inline:'nearest'});"
+                : "";
             // 2. Label whose text matches → click the associated input (htmlFor / .control)
             // 3. Any element with aria-label matching
             string script = "(function(){"
@@ -1352,6 +1494,7 @@ namespace BrowserWin
                           + "var all=document.querySelectorAll('button,a,input[type=submit],[role=button]');"
                           + "for(var i=0;i<all.length;i++){"
                           + "  if((all[i].innerText||all[i].value||'').trim()===t){"
+                          + scrollSnippetText
                           + "    all[i].click();"
                           + "    return JSON.stringify({found:true,via:'text',tag:all[i].tagName});"
                           + "  }"
@@ -1375,18 +1518,20 @@ namespace BrowserWin
                           + "return JSON.stringify({found:false});"
                           + "})()";
             string result = CdpRuntimeEvaluate(port, targetId, script);
+            bool foundText = result != null &&
+                (result.Contains("\"found\":true") || result.Contains("\\\"found\\\":true"));
 
             Console.WriteLine("{");
-            Console.WriteLine("  \"success\": true,");
+            Console.WriteLine("  \"success\": " + (foundText ? "true" : "false") + ",");
             Console.WriteLine("  \"command\": \"CLICKNAME\",");
             Console.WriteLine("  \"text\": \"" + JsonEscape(text) + "\",");
             Console.WriteLine("  \"result\": " + (result ?? "null"));
             Console.WriteLine("}");
-            return 0;
+            return foundText ? 0 : 1;
         }
 
         /// <summary>Fill an input field — param format: "selector:value".</summary>
-        static int CmdFill(string[] parts, int port)
+        static int CmdFill(string[] parts, int port, bool scroll = false)
         {
             if (parts == null || parts.Length < 2)
                 return OutputError("FILL requires selector and value: {FILL:#email:user@example.com}");
@@ -1398,9 +1543,13 @@ namespace BrowserWin
             if (!TryGetActiveTarget(port, out targetId))
                 return OutputError("Cannot reach browser DevTools on port " + port);
 
+            string scrollSnippetFill = scroll
+                ? "el.scrollIntoView({block:'nearest',inline:'nearest'});"
+                : "";
             string script = "(function(){"
                           + "var el=document.querySelector('" + selector.Replace("'","\\'") + "');"
                           + "if(!el)return JSON.stringify({found:false});"
+                          + scrollSnippetFill
                           + "el.value='" + value.Replace("\\","\\\\").Replace("'","\\'") + "';"
                           + "el.dispatchEvent(new Event('input',{bubbles:true}));"
                           + "el.dispatchEvent(new Event('change',{bubbles:true}));"
@@ -1422,7 +1571,7 @@ namespace BrowserWin
         /// Selector can be a CSS selector (#id, [name=x], input[type=email]) or a label text
         /// (resolved via querySelectorAll('label') → htmlFor lookup).
         /// </summary>
-        static int CmdReadElem(string selector, int port)
+        static int CmdReadElem(string selector, int port, bool scroll = false)
         {
             if (string.IsNullOrEmpty(selector))
                 return OutputError("READELEM requires a selector: {READELEM:#custname}");
@@ -1432,6 +1581,9 @@ namespace BrowserWin
                 return OutputError("Cannot reach browser DevTools on port " + port);
 
             string safe = selector.Replace("\\","\\\\").Replace("'","\\'");
+            string scrollSnippetRE = scroll
+                ? "el.scrollIntoView({block:'nearest',inline:'nearest'});"
+                : "";
             // Try CSS selector first; fall back to label-text search
             string script = "(function(){"
                 + "var el=document.querySelector('" + safe + "');"
@@ -1447,14 +1599,18 @@ namespace BrowserWin
                 +   "}"
                 + "}"
                 + "if(!el)return JSON.stringify({found:false});"
+                + scrollSnippetRE
                 + "var v=el.value!==undefined?el.value:(el.textContent||el.innerText||'').trim();"
                 + "return JSON.stringify({found:true,tag:el.tagName,id:el.id,name:el.name||'',value:v});"
                 + "})()";
 
             string result = CdpRuntimeEvaluate(port, targetId, script);
 
-            // Unwrap the inner JSON so success reflects whether the element was found
-            bool found = result != null && result.Contains("\"found\":true");
+            // Unwrap the inner JSON so success reflects whether the element was found.
+            // CdpRuntimeEvaluate returns the raw JSON-encoded string value, so 'found:true'
+            // appears as \"found\":true (with literal backslash-quote) inside the outer quotes.
+            bool found = result != null &&
+                         (result.Contains("\"found\":true") || result.Contains("\\\"found\\\":true"));
             Console.WriteLine("{");
             Console.WriteLine("  \"success\": " + (found ? "true" : "false") + ",");
             Console.WriteLine("  \"command\": \"READELEM\",");
@@ -1465,6 +1621,212 @@ namespace BrowserWin
         }
 
         /// <summary>Execute arbitrary JavaScript and return the stringified result.</summary>
+        /// <summary>
+        /// Detect and handle a JavaScript dialog (alert / confirm / prompt) via CDP.
+        /// param: empty / "accept" → OK;  "dismiss" → Cancel;  "accept:TEXT" → fill prompt then OK.
+        /// Returns { success:true, dialogPresent:true|false, accepted:true|false }.
+        /// dialogPresent:false means no dialog was open — the call is always safe to make.
+        ///
+        /// Special "inject:" mode: DIALOG path=inject:&lt;js&gt;[:timeoutMs]
+        ///   Injects a JS expression (e.g. setTimeout(alert,200)) on a SINGLE
+        ///   persistent WebSocket session so Chrome can route the resulting
+        ///   Page.javascriptDialogOpening event back to the same session.
+        ///   This avoids the auto-dismiss behaviour that occurs when the triggering
+        ///   connection closes before the dialog appears.
+        /// </summary>
+        static int CmdDialog(string param, int port)
+        {
+            string targetId;
+            if (!TryGetActiveTarget(port, out targetId))
+                return OutputError("DIALOG: cannot reach browser DevTools on port " + port);
+
+            // ── inject: mode — inject JS and catch the resulting dialog on ONE session ──
+            if (!string.IsNullOrEmpty(param) &&
+                param.TrimStart().StartsWith("inject:", StringComparison.OrdinalIgnoreCase))
+            {
+                string rest        = param.TrimStart().Substring(7);   // after "inject:"
+                int    timeoutMs   = 3000;
+                string jsExpr      = rest;
+                // Optional trailing :timeoutMs  (e.g. "inject:alert('hi'):2000")
+                int lastColon = rest.LastIndexOf(':');
+                if (lastColon > 0)
+                {
+                    int t;
+                    if (int.TryParse(rest.Substring(lastColon + 1), out t) && t > 0)
+                    {
+                        timeoutMs = t;
+                        jsExpr    = rest.Substring(0, lastColon);
+                    }
+                }
+                string detail       = CdpInjectAndCatchDialog(jsExpr, timeoutMs, port, targetId);
+                bool   dialogCaught = detail == "caught";
+                Console.WriteLine("{\"success\":true,\"command\":\"DIALOG\""
+                    + ",\"dialogPresent\":" + (dialogCaught ? "true" : "false")
+                    + ",\"accepted\":"      + (dialogCaught ? "true" : "false")
+                    + ",\"detail\":\""      + JsonEscape(detail) + "\"}");
+                return 0;
+            }
+
+            bool   accept     = true;
+            string promptText = "";
+            if (!string.IsNullOrEmpty(param))
+            {
+                param = param.Trim();
+                if (param.ToLower() == "dismiss")
+                    accept = false;
+                else if (param.ToLower().StartsWith("accept:"))
+                    promptText = param.Substring(7);
+                // else: "accept" or empty → accept = true (default)
+            }
+
+            // Enable Page domain — idempotent, required before handleJavaScriptDialog.
+            CdpSendCommand(port, targetId, "Page.enable", "");
+
+            // Attempt to handle the dialog.
+            string paramsJson = "\"accept\":" + (accept ? "true" : "false");
+            if (promptText.Length > 0)
+                paramsJson += ",\"promptText\":\"" + JsonEscape(promptText) + "\"";
+            string resp = CdpSendCommand(port, targetId, "Page.handleJavaScriptDialog", paramsJson);
+
+            // CDP returns an error object when no dialog is currently showing.
+            bool dialogPresent = resp != null
+                              && !resp.Contains("\"error\"")
+                              && !resp.Contains("No dialog");
+
+            Console.WriteLine("{\"success\":true,\"command\":\"DIALOG\""
+                + ",\"dialogPresent\":" + (dialogPresent ? "true" : "false")
+                + ",\"accepted\":"      + (accept        ? "true" : "false")
+                + "}");
+            return 0;
+        }
+
+        /// <summary>
+        /// Open ONE persistent WebSocket session to the target, enable Page events,
+        /// evaluate &lt;jsExpr&gt; (which must schedule an alert/confirm/prompt via
+        /// setTimeout or similar), then wait up to &lt;timeoutMs&gt; ms for the
+        /// Page.javascriptDialogOpening event.  On receipt, handle the dialog
+        /// (accept) on the SAME session and return "caught".
+        /// Returns "timeout" or "error:&lt;msg&gt;" on failure.
+        ///
+        /// Because Page.enable AND the dialog are all handled on the same connection,
+        /// Chrome routes the event correctly and does NOT auto-dismiss.
+        /// </summary>
+        static string CdpInjectAndCatchDialog(string jsExpr, int timeoutMs, int port, string targetId)
+        {
+            try
+            {
+                using (var tcp    = new TcpClient("127.0.0.1", port))
+                using (var stream = tcp.GetStream())
+                using (var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false)) { AutoFlush = true })
+                {
+                    tcp.SendTimeout    = 5000;
+                    tcp.ReceiveTimeout = timeoutMs + 4000; // generous margin for the overall session
+
+                    // ── WebSocket upgrade ────────────────────────────────────────────
+                    string wsKey = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
+                    writer.Write("GET /devtools/page/" + targetId + " HTTP/1.1\r\n");
+                    writer.Write("Host: 127.0.0.1:" + port + "\r\n");
+                    writer.Write("Upgrade: websocket\r\n");
+                    writer.Write("Connection: Upgrade\r\n");
+                    writer.Write("Sec-WebSocket-Key: " + wsKey + "\r\n");
+                    writer.Write("Sec-WebSocket-Version: 13\r\n");
+                    writer.Write("\r\n");
+
+                    // Read HTTP upgrade response
+                    byte[] hdr   = new byte[4096];
+                    int    hRead = 0;
+                    try
+                    {
+                        tcp.ReceiveTimeout = 3000;
+                        while (hRead < hdr.Length)
+                        {
+                            int n = stream.Read(hdr, hRead, hdr.Length - hRead);
+                            if (n == 0) break;
+                            hRead += n;
+                            if (Encoding.ASCII.GetString(hdr, 0, hRead).Contains("\r\n\r\n")) break;
+                        }
+                    }
+                    catch (System.IO.IOException) { return "error:upgrade-timeout"; }
+
+                    int cmdId = 1;
+
+                    // ── Page.enable (id=1) — subscribe to Page events on THIS session ──
+                    SendWsJson(stream, "{\"id\":" + cmdId++ + ",\"method\":\"Page.enable\",\"params\":{}}");
+                    tcp.ReceiveTimeout = 2000;
+                    ReadOneWsFrame(stream, 2000); // consume the Page.enable ack (may also deliver buffered events)
+
+                    // ── Runtime.evaluate to schedule the dialog trigger (id=2) ─────────
+                    string escapedJs = jsExpr
+                        .Replace("\\", "\\\\")
+                        .Replace("\"", "\\\"")
+                        .Replace("\n", "\\n");
+                    SendWsJson(stream, "{\"id\":" + cmdId++ + ",\"method\":\"Runtime.evaluate\","
+                        + "\"params\":{\"expression\":\"" + escapedJs + "\",\"returnByValue\":true}}");
+                    tcp.ReceiveTimeout = 3000;
+                    ReadOneWsFrame(stream, 3000); // consume the Runtime.evaluate ack (timer Id)
+
+                    // ── Listen for Page.javascriptDialogOpening event ──────────────────
+                    var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+                    while (DateTime.UtcNow < deadline)
+                    {
+                        int remaining = (int)(deadline - DateTime.UtcNow).TotalMilliseconds;
+                        if (remaining <= 0) break;
+                        tcp.ReceiveTimeout = Math.Max(remaining, 50);
+                        string frame = ReadOneWsFrame(stream, Math.Max(remaining, 50));
+                        if (frame == null) break; // timeout or disconnect
+                        if (frame.Contains("javascriptDialogOpening"))
+                        {
+                            // Dialog is now showing — handle it on the same session.
+                            SendWsJson(stream, "{\"id\":" + cmdId++ + ",\"method\":\"Page.handleJavaScriptDialog\","
+                                + "\"params\":{\"accept\":true}}");
+                            tcp.ReceiveTimeout = 3000;
+                            string handleResp = ReadOneWsFrame(stream, 3000);
+                            if (handleResp != null && !handleResp.Contains("\"error\""))
+                                return "caught";
+                            return "handle-error";
+                        }
+                    }
+                    return "timeout";
+                }
+            }
+            catch (Exception ex) { return "error:" + ex.Message.Replace("\"", "'"); }
+        }
+
+        /// <summary>Send a UTF-8 WebSocket text frame (unmasked, FIN=1).</summary>
+        static void SendWsJson(System.Net.Sockets.NetworkStream stream, string json)
+        {
+            byte[] payload = Encoding.UTF8.GetBytes(json);
+            byte[] frame   = BuildWsFrame(payload);
+            stream.Write(frame, 0, frame.Length);
+        }
+
+        /// <summary>Read one complete WebSocket frame; returns decoded text or null on timeout/error.</summary>
+        static string ReadOneWsFrame(System.Net.Sockets.NetworkStream stream, int timeoutMs)
+        {
+            byte[] buf   = new byte[65536];
+            int    bRead = 0;
+            try
+            {
+                // Use stream.Socket.ReceiveTimeout to avoid touching the TcpClient property mid-session.
+                // Fallback: rely on the TcpClient timeout already set by the caller.
+                while (bRead < buf.Length)
+                {
+                    int n = stream.Read(buf, bRead, buf.Length - bRead);
+                    if (n == 0) break;
+                    bRead += n;
+                    if (bRead >= 2)
+                    {
+                        int plen = buf[1] & 0x7F;
+                        if (plen < 126 && bRead >= 2 + plen) break;
+                        if (plen == 126 && bRead >= 4) { int l = (buf[2] << 8) | buf[3]; if (bRead >= 4 + l) break; }
+                        if (plen == 127 && bRead >= 10) { int l = (int)(((uint)buf[6]<<24)|((uint)buf[7]<<16)|((uint)buf[8]<<8)|(uint)buf[9]); if (bRead >= 10 + l) break; }
+                    }
+                }
+            }
+            catch (System.IO.IOException) { /* timeout — return partial */ }
+            return DecodeWsFrame(buf, bRead);
+        }
+
         static int CmdExec(string script, int port)
         {
             if (string.IsNullOrEmpty(script))
@@ -1675,6 +2037,30 @@ namespace BrowserWin
             return 0;
         }
 
+        /// <summary>
+        /// Clears the browser's HTTP cache via CDP Network.clearBrowserCache.
+        /// Requires Network domain to be enabled first; if it is not, we enable it inline.
+        /// </summary>
+        static int CmdCacheClear(int port)
+        {
+            string targetId;
+            if (!TryGetActiveTarget(port, out targetId))
+                return OutputError("Cannot reach browser DevTools on port " + port);
+
+            // Enable Network domain (idempotent — safe to call even if already enabled)
+            CdpSendCommand(port, targetId, "Network.enable", "{}");
+
+            string result = CdpSendCommand(port, targetId, "Network.clearBrowserCache", "{}");
+            if (result == null)
+                return OutputError("CACHE_CLEAR: no response from browser DevTools on port " + port);
+
+            Console.WriteLine("{");
+            Console.WriteLine("  \"success\": true,");
+            Console.WriteLine("  \"command\": \"CACHE_CLEAR\"");
+            Console.WriteLine("}");
+            return 0;
+        }
+
         /// <summary>Terminate the target browser process.</summary>
         static int CmdKill(string browser)
         {
@@ -1716,8 +2102,10 @@ namespace BrowserWin
         /// <summary>
         /// Send any CDP command (e.g. Input.dispatchKeyEvent) using the same
         /// WebSocket transport as CdpRuntimeEvaluate.
+        /// receiveTimeoutMs: set lower (e.g. 800-1200) for fast probes like dialog detection.
         /// </summary>
-        static string CdpSendCommand(int port, string targetId, string method, string paramsJson)
+        static string CdpSendCommand(int port, string targetId, string method, string paramsJson,
+                                     int receiveTimeoutMs = 3000)
         {
             try
             {
@@ -1727,8 +2115,8 @@ namespace BrowserWin
                 using (var stream = tcp.GetStream())
                 using (var writer = new StreamWriter(stream, new UTF8Encoding(false)) { AutoFlush = true })
                 {
-                    tcp.ReceiveTimeout = 5000;
-                    tcp.SendTimeout    = 5000;
+                    tcp.ReceiveTimeout = receiveTimeoutMs;
+                    tcp.SendTimeout    = Math.Min(receiveTimeoutMs, 5000);
                     string key = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
                     writer.Write("GET " + wsPath + " HTTP/1.1\r\n");
                     writer.Write("Host: " + host + "\r\n");
@@ -1756,7 +2144,7 @@ namespace BrowserWin
                     byte[] framed  = BuildWsFrame(pl);
                     stream.Write(framed, 0, framed.Length);
 
-                    tcp.ReceiveTimeout = 3000;
+                    tcp.ReceiveTimeout = receiveTimeoutMs;
                     byte[] buf = new byte[16384];
                     int bRead  = 0;
                     try
@@ -2069,7 +2457,8 @@ namespace BrowserWin
                     + "return JSON.stringify({found:true,tag:el.tagName,checked:el.checked});"
                     + "})()";
                 string result = CdpRuntimeEvaluate(port, targetId, js);
-                bool found = result != null && result.Contains("\"found\":true");
+                bool found = result != null &&
+                             (result.Contains("\"found\":true") || result.Contains("\\\"found\\\":true"));
                 Console.WriteLine("{\"success\":" + (found ? "true" : "false") + ",\"command\":\"" + cmd
                     + "\",\"mode\":\"cdp\",\"selector\":\"" + JsonEscape(selector)
                     + "\",\"result\":" + (result != null ? result : "null") + "}");
@@ -2442,6 +2831,8 @@ namespace BrowserWin
             if (Regex.IsMatch(cmd, @"^\{UNCHECK:",    RegexOptions.IgnoreCase)) return "UNCHECK";
             if (Regex.IsMatch(cmd, @"^\{MOUSEDOWN:",  RegexOptions.IgnoreCase)) return "MOUSEDOWN";
             if (Regex.IsMatch(cmd, @"^\{MOUSEUP:",    RegexOptions.IgnoreCase)) return "MOUSEUP";
+            if (cmd.Equals("{DIALOG}",      StringComparison.OrdinalIgnoreCase)) return "DIALOG";
+            if (Regex.IsMatch(cmd, @"^\{DIALOG:",     RegexOptions.IgnoreCase)) return "DIALOG";
 
             return "UNKNOWN";
         }
@@ -2457,9 +2848,12 @@ namespace BrowserWin
         {
             string raw = ExtractParam(cmd, command);
             if (raw == null) return null;
-            int idx = raw.IndexOf(':');
-            if (idx < 0) return new[] { raw };
-            return new[] { raw.Substring(0, idx), raw.Substring(idx + 1) };
+            // Prefer '|' (path|value encoding from HelperCommon JSON protocol) over ':' (legacy inline format).
+            int pipeIdx = raw.IndexOf('|');
+            if (pipeIdx >= 0) return new[] { raw.Substring(0, pipeIdx), raw.Substring(pipeIdx + 1) };
+            int colonIdx = raw.IndexOf(':');
+            if (colonIdx < 0) return new[] { raw };
+            return new[] { raw.Substring(0, colonIdx), raw.Substring(colonIdx + 1) };
         }
 
         // ──────────────────────────────────────────────────────────────────────
@@ -2487,7 +2881,7 @@ namespace BrowserWin
             var sb = new StringBuilder();
             sb.AppendLine("{");
             sb.AppendLine("  \"helper\": \"BrowserWin.exe\",");
-            sb.AppendLine("  \"version\": \"1.2.0\",");
+            sb.AppendLine("  \"version\": \"1.3.0\",");
             sb.AppendLine("  \"description\": \"Browser automation via Chrome DevTools Protocol (CDP).\\n    Window mode: MULTI-SESSION - the browser holds many tabs/pages.\\n    Workflow: LISTBROWSERS -> LAUNCH (if needed) -> NEWPAGE -> NAVIGATE -> READ/QUERYTREE -> interact.\\n    Reuse the existing browser window and open a NEWPAGE instead of relaunching.\\n    Teardown policy (default: leave_open): leave_open (default), discard_tab (EXEC:window.close()), close_app (KILL).\\n    Requires browser started with --remote-debugging-port=<port>. Call LAUNCH to start with debug port automatically.\",");
             sb.AppendLine("  \"targetDescription\": \"Browser + CDP port: 'brave:9222', 'msedge:9223', 'chrome:9224'. First call LISTBROWSERS to see what is running. Default port 9222.\",");
             sb.AppendLine("  \"protocol\": \"CDP\",");
@@ -2525,6 +2919,7 @@ namespace BrowserWin
             sb.AppendLine("    { \"name\": \"UNCHECK\", \"description\": \"Uncheck a checkbox by CSS selector (CDP JS el.checked=false + change event). Falls back to UIA TogglePattern when no CDP.\", \"parameters\": [ { \"name\": \"selector\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"action=UNCHECK path=#newsletter\"] },");
             sb.AppendLine("    { \"name\": \"MOUSEDOWN\", \"description\": \"Press and hold left mouse button at screen coordinates (x,y) via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Use with MOUSEUP for drag operations.\", \"parameters\": [ { \"name\": \"coords\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"action=MOUSEDOWN path=100,200\"] },");
             sb.AppendLine("    { \"name\": \"MOUSEUP\", \"description\": \"Release left mouse button at screen coordinates (x,y) via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Completes a drag started with MOUSEDOWN.\", \"parameters\": [ { \"name\": \"coords\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"action=MOUSEUP path=300,400\"] },");
+            sb.AppendLine("    { \"name\": \"DIALOG\", \"description\": \"Detect and handle a JavaScript dialog (alert/confirm/prompt) via CDP Page.handleJavaScriptDialog. param: empty or 'accept' (click OK), 'dismiss' (click Cancel), 'accept:TEXT' (fill prompt then OK). Returns dialogPresent:true when a dialog was open and was handled; dialogPresent:false when no dialog was showing (safe to call speculatively after any action that might produce a dialog).\", \"parameters\": [ { \"name\": \"action\", \"type\": \"string\", \"required\": false, \"default\": \"accept\", \"enum\": [\"accept\", \"dismiss\"] } ], \"examples\": [\"action=DIALOG\", \"action=DIALOG path=accept\", \"action=DIALOG path=dismiss\", \"action=DIALOG path=accept:my text\"] },");
             sb.AppendLine("    { \"name\": \"FOCUS\", \"description\": \"Bring the browser window to the foreground. Call before any visible interaction in cooperative/showcase mode so the user can see what the AI is doing. Finds the browser window by process name and brings it to front via ShowWindow(SW_RESTORE) + SetForegroundWindow.\", \"parameters\": [], \"examples\": [\"action=FOCUS\"] }");
             sb.AppendLine("  ]");
             sb.AppendLine("}");

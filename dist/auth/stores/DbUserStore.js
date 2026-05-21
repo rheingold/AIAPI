@@ -74,6 +74,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DbUserStore = void 0;
 const crypto = __importStar(require("crypto"));
+const DbProvisioner_1 = require("../../db/DbProvisioner");
 const Logger_1 = require("../../utils/Logger");
 const TAG = 'DbUserStore';
 async function openConn(cfg) {
@@ -153,7 +154,10 @@ function makePool(type, mssql, mysql, pg, oracle) {
             return rows;
         }
         if (type === 'postgresql') {
-            const r = await pg.query(sql, params);
+            // pg uses $1 $2 … style params; transform ? placeholders
+            let pidx = 0;
+            const pgSql = sql.replace(/\?/g, () => `$${++pidx}`);
+            const r = await pg.query(pgSql, params);
             return r.rows;
         }
         // oracle
@@ -184,6 +188,12 @@ class DbUserStore {
         this.cfg = cfg;
     }
     async initialize() {
+        // Apply pending schema migrations (idempotent — safe to call on every startup)
+        const migResult = await DbProvisioner_1.DbProvisioner.ensureSchema(this.cfg);
+        if (migResult.status === 'error') {
+            throw new Error(`DbUserStore schema migration failed: ${migResult.error}`);
+        }
+        Logger_1.globalLogger.info(TAG, `Schema: ${migResult.detail}`);
         this.conn = await openDriverConn(this.cfg);
         Logger_1.globalLogger.info(TAG, `Connected to ${this.cfg.type} for user store`);
     }
@@ -194,14 +204,14 @@ class DbUserStore {
     // ─── IUserStore ──────────────────────────────────────────────────────────
     async findByUsername(username) {
         this.ensure();
-        const rows = await this.conn.query('SELECT * FROM aiapi_users WHERE username=? AND enabled=1', [username]);
+        const rows = await this.conn.query('SELECT * FROM aiapi_users WHERE username=? AND enabled=TRUE', [username]);
         if (!rows.length)
             return null;
         return this.hydrateUser(rows[0]);
     }
     async findByApiKeyHash(keyHash) {
         this.ensure();
-        const rows = await this.conn.query('SELECT u.* FROM aiapi_users u JOIN aiapi_apikeys k ON k.user_id=u.id WHERE k.key_hash=? AND u.enabled=1', [keyHash]);
+        const rows = await this.conn.query('SELECT u.* FROM aiapi_users u JOIN aiapi_apikeys k ON k.user_id=u.id WHERE k.key_hash=? AND u.enabled=TRUE', [keyHash]);
         if (!rows.length)
             return null;
         return this.hydrateUser(rows[0]);
@@ -215,7 +225,7 @@ class DbUserStore {
         this.ensure();
         const id = crypto.randomUUID();
         const now = new Date().toISOString();
-        await this.conn.execute('INSERT INTO aiapi_users (id, username, password_hash, enabled, created_at) VALUES (?,?,?,?,?)', [id, draft.username, draft.passwordHash ?? null, draft.enabled ? 1 : 0, now]);
+        await this.conn.execute('INSERT INTO aiapi_users (id, username, password_hash, enabled, created_at) VALUES (?,?,?,?,?)', [id, draft.username, draft.passwordHash ?? null, draft.enabled, now]);
         for (const role of draft.roles) {
             await this.conn.execute('INSERT INTO aiapi_user_roles (user_id, role_name) VALUES (?,?)', [id, role]);
         }
@@ -228,12 +238,18 @@ class DbUserStore {
             await this.conn.execute('UPDATE aiapi_users SET password_hash=?, updated_at=? WHERE id=?', [patch.passwordHash, now, id]);
         }
         if (patch.enabled !== undefined) {
-            await this.conn.execute('UPDATE aiapi_users SET enabled=?, updated_at=? WHERE id=?', [patch.enabled ? 1 : 0, now, id]);
+            await this.conn.execute('UPDATE aiapi_users SET enabled=?, updated_at=? WHERE id=?', [patch.enabled, now, id]);
         }
         if (patch.roles) {
             await this.conn.execute('DELETE FROM aiapi_user_roles WHERE user_id=?', [id]);
             for (const role of patch.roles) {
                 await this.conn.execute('INSERT INTO aiapi_user_roles (user_id, role_name) VALUES (?,?)', [id, role]);
+            }
+        }
+        if (patch.apiKeys) {
+            await this.conn.execute('DELETE FROM aiapi_apikeys WHERE user_id=?', [id]);
+            for (const k of patch.apiKeys) {
+                await this.conn.execute('INSERT INTO aiapi_apikeys (id, user_id, key_hash, label, created_at) VALUES (?,?,?,?,?)', [k.id, id, k.keyHash, k.label ?? '', k.createdAt]);
             }
         }
         const rows = await this.conn.query('SELECT * FROM aiapi_users WHERE id=?', [id]);

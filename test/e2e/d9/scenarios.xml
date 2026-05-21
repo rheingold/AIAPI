@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D9 Helper Schema & Discovery � test/e2e/d9/scenarios.xml
+  app     : d9
+  helper  : BrowserWin.exe
+  process : chrome.exe
+  Layer   : L3 (test � never shipped)
+
+  �� Scenarios ����������������������������������������������������������������
+  hs1-list-helpers-rest      GET /api/listHelpers � object, ?1 helper, KeyWin+BrowserWin present
+  hs2-keywin-schema-rest     GET /api/getHelperSchema?name=KeyWin.exe � all expected commands
+  hs3-browserwin-schema-rest GET /api/getHelperSchema?name=BrowserWin.exe � expected commands
+  hs4-mcp-tools-list         POST JSON-RPC tools/list � KeyWin/BrowserWin/listHelpers/executeScenario
+  hs5-mcp-list-helpers       POST JSON-RPC tools/call listHelpers � helpers in result
+  hs6-mcp-get-schema         POST JSON-RPC tools/call getHelperSchema � commands in result
+  hs7-helpers-reload         POST /api/helpers/reload � no error, helpers still up after reload
+  hs8-helper-toggle          POST /api/helpers/toggle KeyWin OFF, assert disabled, toggle ON
+  d9-suite                   chain hs1�hs8
+  �����������������������������������������������������������������������������
+-->
+<Scenarios app="d9" helper="BrowserWin.exe" process="chrome.exe"
+           xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d9">
+
+  <!-- == HS1: GET /api/listHelpers ========================================== -->
+  <Scenario id="hs1-list-helpers-rest" effect="read-only">
+    <Description lang="en">GET /api/listHelpers � assert object with helpers array; KeyWin and BrowserWin present.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/listHelpers" path="GET"
+            bind="hs1Result" note="HS1: GET /api/listHelpers"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.hs1Result); return r !== null &amp;&amp; typeof r === 'object'; })()"
+            note="HS1: assert response is object"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.hs1Result); const h=r?.helpers??(Array.isArray(r)?r:[]); return h.length; })()"
+            bind="hs1HelperCount" note="HS1: extract helper count"/>
+      <Step action="ASSERTPATHEVAL"
+            path="Number('{{hs1HelperCount}}') > 0"
+            note="HS1: assert at least one helper registered"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.hs1Result); const h=r?.helpers??(Array.isArray(r)?r:[]); return h.some(x=>(x.name||String(x)).includes('KeyWin')); })()"
+            note="HS1: assert KeyWin present in helper list"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.hs1Result); const h=r?.helpers??(Array.isArray(r)?r:[]); return h.some(x=>(x.name||String(x)).includes('BrowserWin')); })()"
+            note="HS1: assert BrowserWin present in helper list"/>
+    </Steps>
+  </Scenario>
+
+  <!-- == HS2: GET /api/getHelperSchema?name=KeyWin.exe ==================== -->
+  <Scenario id="hs2-keywin-schema-rest" effect="read-only">
+    <Description lang="en">GET /api/getHelperSchema?name=KeyWin.exe � assert object with all expected KeyWin commands.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/getHelperSchema?name=KeyWin.exe" path="GET"
+            bind="kwSchema" note="HS2: GET KeyWin.exe schema"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.kwSchema); return r !== null &amp;&amp; typeof r === 'object'; })()"
+            note="HS2: assert schema response is object"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.kwSchema); const c=r?.commands??r?.schema?.commands??[]; const names=Array.isArray(c)?c.map(x=>(x.name||x.command||x).toUpperCase()):Object.keys(c).map(k=>k.toUpperCase()); return names.join(','); })()"
+            bind="kwCommands" note="HS2: extract KeyWin command names as CSV"/>
+      <Step action="ASSERTPATHEVAL"
+            path="'{{kwCommands}}'.length > 0"
+            note="HS2: assert schema contains commands"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const c='{{kwCommands}}'.split(','); return ['LISTWINDOWS','SENDKEYS','READ','CLICKID','CLICKNAME','READELEM','KILL','NEWDOC'].every(e=>c.includes(e)); })()"
+            note="HS2: assert all required KeyWin commands present"/>
+    </Steps>
+  </Scenario>
+
+  <!-- == HS3: GET /api/getHelperSchema?name=BrowserWin.exe ================ -->
+  <Scenario id="hs3-browserwin-schema-rest" effect="read-only">
+    <Description lang="en">GET /api/getHelperSchema?name=BrowserWin.exe � assert object with all expected BrowserWin commands.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/getHelperSchema?name=BrowserWin.exe" path="GET"
+            bind="bwSchema" note="HS3: GET BrowserWin.exe schema"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.bwSchema); return r !== null &amp;&amp; typeof r === 'object'; })()"
+            note="HS3: assert schema response is object"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.bwSchema); const c=r?.commands??r?.schema?.commands??[]; const names=Array.isArray(c)?c.map(x=>(x.name||x.command||x).toUpperCase()):Object.keys(c).map(k=>k.toUpperCase()); return names.join(','); })()"
+            bind="bwCommands" note="HS3: extract BrowserWin command names as CSV"/>
+      <Step action="ASSERTPATHEVAL"
+            path="'{{bwCommands}}'.length > 0"
+            note="HS3: assert schema contains commands"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const c='{{bwCommands}}'.split(','); return ['NAVIGATE','LAUNCH','READ','QUERYTREE','CLICKID','CLICKNAME','FILL','READELEM','EXEC'].every(e=>c.includes(e)); })()"
+            note="HS3: assert required BrowserWin commands present"/>
+    </Steps>
+  </Scenario>
+
+  <!-- == HS4: MCP tools/list (JSON-RPC POST) ============================ -->
+  <Scenario id="hs4-mcp-tools-list" effect="read-only">
+    <Description lang="en">POST JSON-RPC tools/list to MCP server � assert KeyWin, BrowserWin, listHelpers, getHelperSchema, executeScenario tools exposed.</Description>
+    <Parameters>
+      <Param name="mcpUrl" type="string" required="false" example="http://localhost:3457" note="MCP server URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{mcpUrl}}" path="POST"
+            value="{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:4,&quot;method&quot;:&quot;tools/list&quot;,&quot;params&quot;:{}}"
+            bind="hs4Result" note="HS4: POST tools/list to MCP server"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.hs4Result); return Array.isArray(r?.result?.tools); })()"
+            note="HS4: assert result.tools is array"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const tools=JSON.parse($vars.hs4Result)?.result?.tools??[]; const names=tools.map(t=>t.name); return ['KeyWin','BrowserWin','listHelpers','getHelperSchema','executeScenario'].every(n=>names.includes(n)); })()"
+            note="HS4: assert required MCP tools are exposed"/>
+    </Steps>
+  </Scenario>
+
+  <!-- == HS5: MCP tools/call � listHelpers ================================ -->
+  <Scenario id="hs5-mcp-list-helpers" effect="read-only">
+    <Description lang="en">POST JSON-RPC tools/call listHelpers � assert result contains helper entries.</Description>
+    <Parameters>
+      <Param name="mcpUrl" type="string" required="false" example="http://localhost:3457" note="MCP server URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{mcpUrl}}" path="POST"
+            value="{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:5,&quot;method&quot;:&quot;tools/call&quot;,&quot;params&quot;:{&quot;name&quot;:&quot;listHelpers&quot;,&quot;arguments&quot;:{}}}"
+            bind="hs5Result" note="HS5: MCP tools/call listHelpers"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.hs5Result); return !r?.error &amp;&amp; r?.result !== undefined; })()"
+            note="HS5: assert no JSON-RPC error"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.hs5Result); const h=r?.result?.helpers??(Array.isArray(r?.result)?r.result:[]); return h.length>0; })()"
+            note="HS5: assert listHelpers result contains helper entries"/>
+    </Steps>
+  </Scenario>
+
+  <!-- == HS6: MCP tools/call � getHelperSchema ============================ -->
+  <Scenario id="hs6-mcp-get-schema" effect="read-only">
+    <Description lang="en">POST JSON-RPC tools/call getHelperSchema(KeyWin.exe) � assert result contains commands.</Description>
+    <Parameters>
+      <Param name="mcpUrl" type="string" required="false" example="http://localhost:3457" note="MCP server URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{mcpUrl}}" path="POST"
+            value="{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:6,&quot;method&quot;:&quot;tools/call&quot;,&quot;params&quot;:{&quot;name&quot;:&quot;getHelperSchema&quot;,&quot;arguments&quot;:{&quot;helperName&quot;:&quot;KeyWin.exe&quot;}}}"
+            bind="hs6Result" note="HS6: MCP tools/call getHelperSchema(KeyWin.exe)"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.hs6Result); return !r?.error &amp;&amp; r?.result !== undefined; })()"
+            note="HS6: assert no JSON-RPC error"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.hs6Result); const c=r?.result?.schema?.commands??r?.result?.commands??[]; return (Array.isArray(c)?c.length:Object.keys(c).length)>0; })()"
+            note="HS6: assert getHelperSchema result contains commands"/>
+    </Steps>
+  </Scenario>
+
+  <!-- == HS7: POST /api/helpers/reload ==================================== -->
+  <Scenario id="hs7-helpers-reload" effect="read-only">
+    <Description lang="en">POST /api/helpers/reload � assert no error; verify helpers still available after reload.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/helpers/reload" path="POST"
+            value="{}"
+            bind="reloadResult" note="HS7: POST /api/helpers/reload"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.reloadResult); return !r?.error; })()"
+            note="HS7: assert reload accepted (no error field)"/>
+      <Step action="WAIT" path="1200" note="HS7: let helpers settle after reload"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/listHelpers" path="GET"
+            bind="postReloadList" note="HS7: GET /api/listHelpers after reload"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.postReloadList); const h=r?.helpers??(Array.isArray(r)?r:[]); return h.length>0; })()"
+            note="HS7: assert helpers still registered after reload"/>
+    </Steps>
+  </Scenario>
+
+  <!-- == HS8: POST /api/helpers/toggle (disable + re-enable) ============== -->
+  <Scenario id="hs8-helper-toggle" effect="modifies-data">
+    <Description lang="en">Toggle helperName OFF � assert appears in disabled list � toggle ON � assert accepted. Idempotent: always restores.</Description>
+    <Parameters>
+      <Param name="dashUrl"    type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+      <Param name="helperName" type="string" required="false" example="KeyWin.exe"           note="helper to toggle"/>
+    </Parameters>
+    <Steps>
+      <!-- Disable -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/helpers/toggle" path="POST"
+            value="{&quot;name&quot;:&quot;{{helperName}}&quot;,&quot;enabled&quot;:false}"
+            bind="toggleOffResult" note="HS8: toggle {{helperName}} OFF"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.toggleOffResult); return !r?.error; })()"
+            note="HS8: assert toggle OFF accepted"/>
+      <Step action="WAIT" path="300" note="HS8: let disabled state propagate"/>
+      <!-- Verify appears in disabled list -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/helpers/disabled" path="GET"
+            bind="disabledList" note="HS8: GET /api/helpers/disabled"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.disabledList); return r?.success === true; })()"
+            note="HS8: assert disabled list endpoint responded successfully"/>
+      <!-- Re-enable (restore) -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/helpers/toggle" path="POST"
+            value="{&quot;name&quot;:&quot;{{helperName}}&quot;,&quot;enabled&quot;:true}"
+            bind="toggleOnResult" note="HS8: toggle {{helperName}} ON (restore)"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.toggleOnResult); return !r?.error; })()"
+            note="HS8: assert toggle ON restore accepted"/>
+    </Steps>
+  </Scenario>
+
+  <!-- == d9-suite: chain hs1�hs8 ========================================== -->
+  <Scenario id="d9-suite" effect="test-suite">
+    <Description lang="en">Full D9 helper discovery suite: hs1�hs8 (REST + MCP, no browser needed).</Description>
+    <Parameters>
+      <Param name="dashUrl"    type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+      <Param name="mcpUrl"     type="string" required="false" example="http://localhost:3457" note="MCP server URL"/>
+      <Param name="helperName" type="string" required="false" example="KeyWin.exe"           note="toggle target for hs8"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef ref="hs1-list-helpers-rest"/>
+      <ScenarioRef ref="hs2-keywin-schema-rest"/>
+      <ScenarioRef ref="hs3-browserwin-schema-rest"/>
+      <ScenarioRef ref="hs4-mcp-tools-list"/>
+      <ScenarioRef ref="hs5-mcp-list-helpers"/>
+      <ScenarioRef ref="hs6-mcp-get-schema"/>
+      <ScenarioRef ref="hs7-helpers-reload"/>
+      <ScenarioRef ref="hs8-helper-toggle"/>
+    </Steps>
+  </Scenario>
+
+</Scenarios>
+

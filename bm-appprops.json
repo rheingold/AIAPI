@@ -1,0 +1,1 @@
+﻿{"jsonrpc":"2.0","id":108,"result":{"id":"1300","success":true,"command":"EXEC","result":"[\"isUpdatePending\",\"hasUpdated\",\"enableUpdating\",\"renderOptions\",\"$\",\"willUpdatePending_\",\"findShortcutListenOnAttach\",\"eventTracker_\",\"dndManager_\",\"router_\",\"renderRoot\"]"}}

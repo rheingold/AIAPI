@@ -245,7 +245,7 @@ describe('HelperDaemon – call() HMAC signing', () => {
     const daemon = new HelperDaemon(FAKE_EXE, skipAuthEnv);
     daemon.start();
 
-    const callPromise = daemon.call('target', '{LISTWINDOWS}', 2000);
+    const callPromise = daemon.call('target', '{LISTWINDOWS}', '', '', 2000);
     await new Promise<void>(r => setImmediate(r));
 
     const written: string = (fakeProc.stdin.write as jest.Mock).mock.calls[0][0];
@@ -263,7 +263,7 @@ describe('HelperDaemon – call() HMAC signing', () => {
     (daemon as any).sessionKey = sessionKey;
     daemon.start();
 
-    const callPromise = daemon.call('browser:9222', '{QUERYTREE}', 2000);
+    const callPromise = daemon.call('browser:9222', '{QUERYTREE}', '', '', 2000);
     await new Promise<void>(r => setImmediate(r));
 
     const written: string = (fakeProc.stdin.write as jest.Mock).mock.calls[0][0];
@@ -296,7 +296,7 @@ describe('HelperDaemon – dispatchResponse() HMAC verification', () => {
     const daemon = new HelperDaemon(FAKE_EXE, skipAuthEnv);
     daemon.start();
 
-    const callPromise = daemon.call('', '_ping', 2000);
+    const callPromise = daemon.call('', '_ping', '', '', 2000);
     await new Promise<void>(r => setImmediate(r));
 
     feed(daemon, JSON.stringify({ success: true, pong: true }));
@@ -309,7 +309,7 @@ describe('HelperDaemon – dispatchResponse() HMAC verification', () => {
     (daemon as any).sessionKey = crypto.randomBytes(32);
     daemon.start();
 
-    const callPromise = daemon.call('', '_ping', 2000);
+    const callPromise = daemon.call('', '_ping', '', '', 2000);
     await new Promise<void>(r => setImmediate(r));
 
     // Plain response (no hmac field) — still accepted
@@ -324,7 +324,7 @@ describe('HelperDaemon – dispatchResponse() HMAC verification', () => {
     (daemon as any).sessionKey = sessionKey;
     daemon.start();
 
-    const callPromise = daemon.call('', '_ping', 2000);
+    const callPromise = daemon.call('', '_ping', '', '', 2000);
     await new Promise<void>(r => setImmediate(r));
 
     // Build a response with valid HMAC
@@ -342,7 +342,7 @@ describe('HelperDaemon – dispatchResponse() HMAC verification', () => {
     (daemon as any).sessionKey = crypto.randomBytes(32);
     daemon.start();
 
-    const callPromise = daemon.call('', '_ping', 2000);
+    const callPromise = daemon.call('', '_ping', '', '', 2000);
     await new Promise<void>(r => setImmediate(r));
 
     // Build a response with a BAD HMAC (64 zero hex chars)

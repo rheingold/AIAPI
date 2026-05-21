@@ -281,7 +281,8 @@ public sealed class IdInjectingWriter : System.IO.TextWriter
 /// Holds authentication state produced by the _auth_hello → _auth → _auth_ok
 /// handshake between a helper .exe and the MCP server.
 ///
-/// When SKIP_SESSION_AUTH=true (current dev default), only SkippedAuth is set.
+/// When SKIP_SESSION_AUTH=true (must be explicitly set by the operator; not the default),
+/// only SkippedAuth is set.
 /// Full crypto (HKDF session key) requires SecurityLib — set SessionKey to null
 /// until that integration is complete.
 /// </summary>
@@ -563,12 +564,13 @@ public static class HelperCommon
                     }
                     catch { /* treat as empty */ }
 
-                    string id     = HcJson.GetString(body, "id")     ?? "";
-                    string action = HcJson.GetString(body, "action") ?? "";
-                    string target = HcJson.GetString(body, "target") ?? "";
-                    string hProc  = HcJson.GetString(body, "proc")   ?? "";
-                    string hPath  = HcJson.GetString(body, "path")   ?? "";
-                    string hValue = HcJson.GetString(body, "value")  ?? "";
+                    string id      = HcJson.GetString(body, "id")     ?? "";
+                    string action  = HcJson.GetString(body, "action") ?? "";
+                    string target  = HcJson.GetString(body, "target") ?? "";
+                    string hProc   = HcJson.GetString(body, "proc")   ?? "";
+                    string hPath   = HcJson.GetString(body, "path")   ?? "";
+                    string hValue  = HcJson.GetString(body, "value")  ?? "";
+                    string hScroll = HcJson.GetString(body, "scroll") ?? "";
                     if (hProc.Length > 0) target = hProc;
 
                     // ── Built-in actions ────────────────────────────────────────
@@ -617,13 +619,16 @@ public static class HelperCommon
                                 goto skipDispatch;
                             }
                             // Assemble {CMD:param} token for internal dispatch
+                            // When scroll=true, prefix the verb with SCROLL_ so individual helpers
+                            // can scroll the element into view before acting on it (opt-in only).
                             {
                                 string param;
                                 if (hPath.Length > 0 && hValue.Length > 0)  param = hPath + "|" + hValue;
                                 else if (hPath.Length > 0)                  param = hPath;
                                 else if (hValue.Length > 0)                 param = hValue;
                                 else                                        param = "";
-                                action = param.Length > 0 ? "{" + action + ":" + param + "}" : "{" + action + "}";
+                                string actionVerb = hScroll == "true" ? "SCROLL_" + action : action;
+                                action = param.Length > 0 ? "{" + actionVerb + ":" + param + "}" : "{" + actionVerb + "}";
                             }
                             dispatch(target, action);
                             skipDispatch:;
@@ -763,12 +768,13 @@ public static class HelperCommon
                     line = line.Trim();
                     if (line.Length == 0) continue;
 
-                    string id     = HcJson.GetString(line, "id")     ?? "";
-                    string action = HcJson.GetString(line, "action") ?? "";
-                    string target = HcJson.GetString(line, "target") ?? "";
-                    string hProc  = HcJson.GetString(line, "proc")   ?? "";
-                    string hPath  = HcJson.GetString(line, "path")   ?? "";
-                    string hValue = HcJson.GetString(line, "value")  ?? "";
+                    string id      = HcJson.GetString(line, "id")     ?? "";
+                    string action  = HcJson.GetString(line, "action") ?? "";
+                    string target  = HcJson.GetString(line, "target") ?? "";
+                    string hProc   = HcJson.GetString(line, "proc")   ?? "";
+                    string hPath   = HcJson.GetString(line, "path")   ?? "";
+                    string hValue  = HcJson.GetString(line, "value")  ?? "";
+                    string hScroll = HcJson.GetString(line, "scroll") ?? "";
                     if (hProc.Length > 0) target = hProc;
 
                     injectWr.CurrentId = id;
@@ -802,12 +808,15 @@ public static class HelperCommon
                         else
                         {
                             // Assemble {CMD:param} token for internal dispatch
+                            // When scroll=true, prefix the verb with SCROLL_ so individual helpers
+                            // can scroll the element into view before acting on it (opt-in only).
                             string param;
                             if (hPath.Length > 0 && hValue.Length > 0)  param = hPath + "|" + hValue;
                             else if (hPath.Length > 0)                  param = hPath;
                             else if (hValue.Length > 0)                 param = hValue;
                             else                                        param = "";
-                            action = param.Length > 0 ? "{" + action + ":" + param + "}" : "{" + action + "}";
+                            string actionVerb = hScroll == "true" ? "SCROLL_" + action : action;
+                            action = param.Length > 0 ? "{" + actionVerb + ":" + param + "}" : "{" + actionVerb + "}";
                             try   { dispatch(target, action); }
                             catch (Exception ex) { Console.WriteLine(HcJson.Err(id, ex.Message)); }
                         }
@@ -887,8 +896,9 @@ public static class HelperCommon
             string action = HcJson.GetString(line, "action") ?? "";
             string target = HcJson.GetString(line, "target") ?? "";
             string hProc  = HcJson.GetString(line, "proc")   ?? "";
-            string hPath  = HcJson.GetString(line, "path")   ?? "";
-            string hValue = HcJson.GetString(line, "value")  ?? "";
+            string hPath   = HcJson.GetString(line, "path")   ?? "";
+            string hValue  = HcJson.GetString(line, "value")  ?? "";
+            string hScroll = HcJson.GetString(line, "scroll") ?? "";
             if (hProc.Length > 0) target = hProc;
 
             // ── HMAC verification (if session key established) ──────────────
@@ -963,14 +973,39 @@ public static class HelperCommon
                 continue;
             }
             // Assemble {CMD:param} token for internal dispatch
+            // When scroll=true, prefix the verb with SCROLL_ so individual helpers
+            // can scroll the element into view before acting on it (opt-in only).
             {
                 string param;
                 if (hPath.Length > 0 && hValue.Length > 0)  param = hPath + "|" + hValue;
                 else if (hPath.Length > 0)                  param = hPath;
                 else if (hValue.Length > 0)                 param = hValue;
                 else                                        param = "";
-                action = param.Length > 0 ? "{" + action + ":" + param + "}" : "{" + action + "}";
+                string actionVerb = hScroll == "true" ? "SCROLL_" + action : action;
+                action = param.Length > 0 ? "{" + actionVerb + ":" + param + "}" : "{" + actionVerb + "}";
             }
+
+            // ── SecurityLib filter gate ──────────────────────────────────────
+            // Extract caller identity forwarded by the MCP server (may be empty
+            // when SecurityLib handshake is not in use or caller is anonymous).
+            string callerUser  = HcJson.GetString(line, "_caller_user")  ?? "";
+            string callerRoles = HcJson.GetString(line, "_caller_roles") ?? "";
+            try
+            {
+                int verdict = SecurityLib.sec_validate_action(
+                    action, target, target, "", "", 0, callerUser, callerRoles);
+                if (verdict == SecurityLib.SEC_DENY || verdict == SecurityLib.SEC_ASK)
+                {
+                    Console.WriteLine(HcJson.Err(id, "security_filter_deny:" + action));
+                    if (!persistent) break;
+                    continue;
+                }
+                // SEC_ALLOW (1), SEC_ERROR_UNLOADED (-3), or other negative codes
+                // all fall through — only explicit DENY/ASK blocks the command.
+            }
+            catch (DllNotFoundException)  { /* SecurityLib not built — skip */ }
+            catch (BadImageFormatException) { /* arch mismatch — skip */    }
+
             try
             {
                 dispatch(target, action);
@@ -1033,7 +1068,8 @@ public static class SecurityLib
     public static extern int sec_validate_action(
         string action, string target,
         string processName, string processPath,
-        string processHash, int processId);
+        string processHash, int processId,
+        string callerUser, string callerRoles);
 
     [DllImport("SecurityLib.dll", EntryPoint = "sec_hkdf_sha256",
                CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]

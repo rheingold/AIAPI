@@ -1,76 +1,88 @@
-{
-  "version": "1.0",
-  "security": {
-    "defaultPolicy": "DENY_UNLISTED",
-    "requireTargetSignature": true,
-    "requireOSEnforcement": false,
-    "expectedCertThumbprint": null
-  },
-  "processes": {
-    "whitelist": [
-      "notepad.exe",
-      "calc.exe"
-    ],
-    "blacklist": [
-      "cmd.exe",
-      "powershell.exe"
-    ]
-  },
-  "developmentMode": {
-    "enabled": false
-  },
-  "filterRules": [
-    {
-      "action": "ALLOW",
-      "process": "notepad.exe",
-      "helper": "*",
-      "command": "*",
-      "pattern": "*",
-      "description": "Allow all actions on Notepad"
-    },
-    {
-      "action": "ALLOW",
-      "process": "calc.exe",
-      "helper": "*",
-      "command": "*",
-      "pattern": "*",
-      "description": "Allow all actions on Calculator"
-    },
-    {
-      "action": "DENY",
-      "process": "*",
-      "helper": "*",
-      "command": "LAUNCH",
-      "pattern": "*",
-      "description": "Block LAUNCH for all unlisted processes"
-    },
-    {
-      "action": "DENY",
-      "process": "*",
-      "helper": "*",
-      "command": "KILL",
-      "pattern": "*",
-      "description": "Block KILL for all unlisted processes"
-    }
-  ],
-  "binaryHashes": {
-    "keywin": {
-      "path": "dist\\win\\KeyWin.exe",
-      "sha256": "D75F3C0B1702558FAD7F2CFA2BD2366803F1CDA1290B5725AE4ACEC7F897DA6A",
-      "size": 32276,
-      "lastModified": "2026-02-17T20:35:36.432Z"
-    },
-    "mcpServer": {
-      "path": "dist\\server\\mcpServer.js",
-      "sha256": "3B189DE9FFA2269D37A9D1A46834023DA5816205F5FC44CA636601CD66377ABE",
-      "size": 25427,
-      "lastModified": "2026-02-17T20:37:14.017Z"
-    },
-    "automationEngine": {
-      "path": "dist\\engine\\automationEngine.js",
-      "sha256": "FA5443E9A91B6462EBFAC81AB0091DD646B9479F5ADD23FBF9F7344C8D0F29C0",
-      "size": 6111,
-      "lastModified": "2026-02-17T20:37:13.969Z"
-    }
-  }
+﻿{
+    "version":  "1.0",
+    "security":  {
+                     "defaultPolicy":  "DENY_UNLISTED",
+                     "requireTargetSignature":  true,
+                     "requireOSEnforcement":  false,
+                     "expectedCertThumbprint":  null
+                 },
+    "processes":  {
+                      "whitelist":  [
+                                        "notepad.exe",
+                                        "calc.exe"
+                                    ],
+                      "blacklist":  [
+                                        "cmd.exe",
+                                        "powershell.exe"
+                                    ]
+                  },
+    "developmentMode":  {
+                            "enabled":  false
+                        },
+    "filterRules":  [
+                        {
+                            "action":  "ALLOW",
+                            "process":  "notepad.exe",
+                            "helper":  "*",
+                            "command":  "*",
+                            "pattern":  "*",
+                            "description":  "Allow all actions on Notepad"
+                        },
+                        {
+                            "action":  "ALLOW",
+                            "process":  "calc.exe",
+                            "helper":  "*",
+                            "command":  "*",
+                            "pattern":  "*",
+                            "description":  "Allow all actions on Calculator"
+                        },
+                        {
+                            "action":  "DENY",
+                            "process":  "*",
+                            "helper":  "*",
+                            "command":  "LAUNCH",
+                            "pattern":  "*",
+                            "description":  "Block LAUNCH for all unlisted processes"
+                        },
+                        {
+                            "action":  "DENY",
+                            "process":  "*",
+                            "helper":  "*",
+                            "command":  "KILL",
+                            "pattern":  "*",
+                            "description":  "Block KILL for all unlisted processes"
+                        }
+                    ],
+    "binaryHashes":  {
+                         "keyWin":  {
+                                        "path":  "dist\\helpers\\KeyWin.exe",
+                                        "sha256":  "6734a027c682a65fd14a86e5dda84800060677b361c92bc0fce1ee8ce21ef51c",
+                                        "size":  125440,
+                                        "lastModified":  "2026-05-21T14:14:25.0402911Z"
+                                    },
+                         "securityLib":  {
+                                             "path":  "dist\\helpers\\SecurityLib.dll",
+                                             "sha256":  "b32e058303f7bcb7755c192c6a5e49ece5eb48de39de380a03e4a72fde25b31f",
+                                             "size":  122089,
+                                             "lastModified":  "2026-05-21T14:14:29.1471304Z"
+                                         },
+                         "browserWin":  {
+                                            "path":  "dist\\helpers\\BrowserWin.exe",
+                                            "sha256":  "83f146e2946c6fa091c9bc6badd183d4e59e86c89cbfc32a86caec5c7833a584",
+                                            "size":  132608,
+                                            "lastModified":  "2026-05-21T14:14:25.2606412Z"
+                                        },
+                         "msOfficeWin":  {
+                                             "path":  "dist\\helpers\\MSOfficeWin.exe",
+                                             "sha256":  "7b3714b980f59ff2a399f9e543192045231e17f5c7b2a38b627f6a4073d2ca79",
+                                             "size":  99328,
+                                             "lastModified":  "2026-05-21T14:14:25.4112051Z"
+                                         },
+                         "libreOfficeWin":  {
+                                                "path":  "dist\\helpers\\LibreOfficeWin.exe",
+                                                "sha256":  "6b9b04a738e5bdc6cf51188f05a576cec54b5db997159f7869036dd65752ca52",
+                                                "size":  105472,
+                                                "lastModified":  "2026-05-21T14:14:25.5694366Z"
+                                            }
+                     }
 }

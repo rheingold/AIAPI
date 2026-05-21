@@ -150,6 +150,12 @@ namespace MSOfficeWin
 
         static void DispatchCommand(string target, string action)
         {
+            // Strip optional SCROLL_ prefix added by HelperCommon when scroll=true.
+            // Office helpers work via COM and don't have a screen-scroll concept,
+            // so the flag is silently consumed here.
+            if (action.Length > 8 && action.StartsWith("{SCROLL_", StringComparison.OrdinalIgnoreCase))
+                action = "{" + action.Substring(8);
+
             string cmdType = DetermineCommandType(action);
 
             // Commands that don't need a resolved document
@@ -1371,7 +1377,7 @@ namespace MSOfficeWin
                 dynamic para  = doc.Paragraphs.Item(n);
                 dynamic range = para.Range;
                 dynamic font  = range.Font;
-                dynamic pf    = para.ParagraphFormat;
+                dynamic pf    = para.Format;   // Paragraph.Format → ParagraphFormat (not .ParagraphFormat)
                 const double CM_TO_PT = 28.3465;
 
                 string styleName = null;

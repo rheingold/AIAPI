@@ -247,6 +247,153 @@ const request = {
 - Query UI tree
 - Close without saving
 
+## Authentication Configuration
+
+AIAPI's dashboard includes a built-in **Auth** panel (`🔑 Auth` in the sidebar) and a
+REST API for configuring authentication.
+
+### Quick Setup via Dashboard
+
+1. Open the dashboard: `http://localhost:3458`
+2. Click **🔑 Auth** in the sidebar
+3. Select an **Authentication Mode** from the dropdown
+4. Fill in the mode-specific settings (JWT secret, OAuth URLs, etc.)
+5. Click **💾 Save Auth Config**
+
+Changes take effect immediately — no server restart required.
+
+### REST API: `GET /api/auth/config`
+
+Returns the current auth configuration. Secrets are masked (`"***"`) in the response.
+
+```http
+GET http://localhost:3458/api/auth/config
+```
+
+```json
+{
+  "mode": "password",
+  "debugExternalAuth": false,
+  "jwt": { "enabled": true, "expiryMinutes": 60, "secret": "***" },
+  "password": { "bcryptRounds": 10 },
+  "users": { "storeSource": "json", "jsonPath": "./config/users.json" }
+}
+```
+
+### REST API: `POST /api/auth/config`
+
+Saves the auth configuration and re-initialises the auth service.
+Omit secret fields (or send `"***"`) to preserve the existing value.
+
+```http
+POST http://localhost:3458/api/auth/config
+Content-Type: application/json
+```
+
+#### Example — enable password auth with JWT
+
+```json
+{
+  "mode": "password",
+  "jwt": {
+    "enabled": true,
+    "expiryMinutes": 480,
+    "secret": "change-this-to-a-random-64-char-hex-string"
+  },
+  "password": { "bcryptRounds": 10 },
+  "users": {
+    "storeSource": "json",
+    "jsonPath": "./config/users.json"
+  }
+}
+```
+
+#### Example — OAuth 2.0 / OIDC (e.g. Entra ID)
+
+```json
+{
+  "mode": "oauth",
+  "jwt": { "enabled": true, "expiryMinutes": 60 },
+  "oauth": {
+    "clientId": "your-app-client-id",
+    "clientSecret": "your-client-secret",
+    "authorizationUrl": "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize",
+    "tokenUrl":         "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
+    "userInfoUrl":      "https://graph.microsoft.com/oidc/userinfo",
+    "scope": "openid profile email",
+    "callbackUrl": "http://localhost:3458/api/auth/oauth/callback",
+    "usernamePath": "preferred_username",
+    "groupsPath": "groups",
+    "pkce": true
+  },
+  "users": { "storeSource": "json", "jsonPath": "./config/users.json" }
+}
+```
+
+#### Example — SAML 2.0
+
+```json
+{
+  "mode": "saml",
+  "jwt": { "enabled": true, "expiryMinutes": 480 },
+  "saml": {
+    "entryPoint": "https://idp.example.com/sso/saml",
+    "issuer": "https://your-aiapi-server.com",
+    "cert": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
+    "callbackUrl": "http://localhost:3458/api/auth/saml/callback",
+    "usernamePath": "nameID",
+    "groupsPath": "memberOf",
+    "signatureAlgorithm": "sha256"
+  },
+  "users": { "storeSource": "json", "jsonPath": "./config/users.json" }
+}
+```
+
+#### Example — Database user store (PostgreSQL)
+
+```json
+{
+  "mode": "password",
+  "jwt": { "enabled": true, "expiryMinutes": 60 },
+  "users": {
+    "storeSource": "db",
+    "db": {
+      "type": "postgresql",
+      "authMethod": "password",
+      "host": "localhost",
+      "port": 5432,
+      "database": "aiapi",
+      "username": "aiapi_user",
+      "password": "secret"
+    }
+  }
+}
+```
+
+On first run with `storeSource: "db"`, AIAPI automatically creates the required
+tables: `aiapi_users`, `aiapi_roles`, `aiapi_user_roles`, `aiapi_apikeys`.
+
+### Managing Users & Roles
+
+Once auth mode is enabled, use the **👥 Users & Roles** sub-tab in the Auth panel, or
+call the `_internal` REST endpoints directly:
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/_internal/users` | GET | List all users |
+| `/api/_internal/users` | POST | Create user (`username`, `password`, `roles`, `enabled`) |
+| `/api/_internal/users/{id}` | PUT | Update user |
+| `/api/_internal/users/{id}` | DELETE | Delete user |
+| `/api/_internal/users/{id}/apikeys` | POST | Generate new API key |
+| `/api/_internal/roles` | GET | List all roles |
+| `/api/_internal/roles` | POST | Create role (`name`, `description`) |
+| `/api/_internal/roles/{name}` | DELETE | Delete role |
+
+All `_internal` endpoints respect security filter rules (add `_internal` → `access` /
+`settings_change` rules in the **🛡️ Security Filters** panel to restrict access).
+
+---
+
 ## Error Handling
 
 All errors return JSON with:

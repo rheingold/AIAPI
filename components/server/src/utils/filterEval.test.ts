@@ -263,3 +263,64 @@ describe('evaluateFilterRules — real-world scenarios', () => {
     expect(evaluateFilterRules(calcRules, 'calc.exe', '', 'CLICKID', 'clearButton').verdict).toBeNull();
   });
 });
+
+// ── _internal pseudo-helper (U2: REST admin endpoint filter enforcement) ──────
+
+describe('evaluateFilterRules — _internal pseudo-helper', () => {
+  const internalAllow = allow('_internal', '*', '*', { helper: '_internal' });
+  const internalDenyLogs = deny('_internal', 'access_logs', '*', { helper: '_internal' });
+  const internalDenyMutate = deny('_internal', 'settings_change', '*', { helper: '_internal' });
+
+  it('ALLOW rule with helper=_internal matches _internal access command', () => {
+    const { verdict } = evaluateFilterRules([internalAllow], '_internal', '_internal', 'access', '/api/_internal/users');
+    expect(verdict).toBe('ALLOW');
+  });
+
+  it('DENY rule for access_logs blocks log-read commands', () => {
+    const rules = [internalAllow, internalDenyLogs];
+    const { verdict } = evaluateFilterRules(rules, '_internal', '_internal', 'access_logs', '/api/security/log');
+    expect(verdict).toBe('DENY');
+  });
+
+  it('DENY rule for settings_change blocks mutating commands', () => {
+    const rules = [internalAllow, internalDenyMutate];
+    const { verdict } = evaluateFilterRules(rules, '_internal', '_internal', 'settings_change', '/api/_internal/users');
+    expect(verdict).toBe('DENY');
+  });
+
+  it('no _internal rules → null verdict (fallthrough to RBAC)', () => {
+    const { verdict } = evaluateFilterRules([], '_internal', '_internal', 'access', '/api/_internal/roles');
+    expect(verdict).toBeNull();
+  });
+
+  it('wildcard rule (helper=*, process=*) still matches _internal', () => {
+    const wildcardAllow = allow('*', '*', '*');
+    const { verdict } = evaluateFilterRules([wildcardAllow], '_internal', '_internal', 'access_logs', '/api/_internal/logs');
+    expect(verdict).toBe('ALLOW');
+  });
+
+  it('_internal DENY does not affect unrelated helpers', () => {
+    const rules = [internalDenyMutate];
+    // KeyWin.exe CLICKID should not be denied by an _internal rule
+    const { verdict } = evaluateFilterRules(rules, 'calc.exe', 'KeyWin.exe', 'settings_change', '*');
+    expect(verdict).toBeNull();
+  });
+});
+
+// ── Role-aware rule evaluation (U3) ──────────────────────────────────────────
+
+describe('evaluateFilterRules — role-restricted rules', () => {
+  it('rule with role="admin" is SKIPPED when caller has no roles', () => {
+    // A DENY rule that only activates for admins should not fire for an anonymous caller.
+    const rules = [deny('*', 'KILL', '*', { role: 'admin' })];
+    const { verdict } = evaluateFilterRules(rules, 'calc.exe', 'KeyWin.exe', 'KILL', '*', '');
+    expect(verdict).toBeNull(); // rule skipped → no match → null
+  });
+
+  it('rule with role="admin" is APPLIED when caller carries that role', () => {
+    // The same DENY rule must fire when the caller has the admin role.
+    const rules = [deny('*', 'KILL', '*', { role: 'admin' })];
+    const { verdict } = evaluateFilterRules(rules, 'calc.exe', 'KeyWin.exe', 'KILL', '*', 'admin,operator');
+    expect(verdict).toBe('DENY');
+  });
+});

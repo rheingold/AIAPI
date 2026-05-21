@@ -17,6 +17,8 @@ import { AuthService } from '../auth/AuthService';
 import { AuthMiddleware, AuthedRequest, AUTH_CONTEXT_KEY } from '../auth/AuthMiddleware';
 import { User, AuthCredentials } from '../auth/types';
 import { generateApiKey } from '../auth/stores/JsonUserStore';
+import { DbProvisioner } from '../db/DbProvisioner';
+import { DbConfig } from '../settings/types';
 import { globalLogger } from '../utils/Logger';
 
 const TAG = 'InternalHandlers';
@@ -81,6 +83,34 @@ export function handleAuthLogout(
 ): void {
   res.setHeader('Set-Cookie', 'aiapi_session=; Max-Age=0; Path=/');
   json(res, 200, { ok: true });
+}
+
+/** POST /api/auth/refresh — body: { token } OR Authorization: Bearer <token> OR aiapi_session cookie */
+export async function handleAuthRefresh(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  authService: AuthService,
+): Promise<void> {
+  // Accept token from JSON body, Authorization header, or existing session cookie
+  const body = await readBody(req) as { token?: string };
+  const headerToken = String(req.headers['authorization'] ?? '').replace(/^Bearer\s+/i, '');
+  const cookieToken = (req.headers['cookie'] ?? '')
+    .split(';')
+    .map((c) => c.trim())
+    .find((c) => c.startsWith('aiapi_session='))
+    ?.slice('aiapi_session='.length);
+  const oldToken = body.token || headerToken || cookieToken;
+  if (!oldToken) {
+    json(res, 400, { error: 'token required in body, Authorization header, or session cookie' });
+    return;
+  }
+  const newToken = authService.refreshToken(oldToken);
+  if (!newToken) {
+    json(res, 401, { error: 'Token invalid or expired — please log in again' });
+    return;
+  }
+  res.setHeader('Set-Cookie', `aiapi_session=${newToken}; HttpOnly; SameSite=Strict; Path=/`);
+  json(res, 200, { token: newToken });
 }
 
 /** GET /api/auth/status */
@@ -416,6 +446,64 @@ export function handleInternalClearLogs(
   }
   logs.splice(0);
   json(res, 200, { ok: true });
+}
+
+/**
+ * POST /api/_internal/db/provision
+ *
+ * Request body:
+ * {
+ *   adminDb?: DbConfig,    // DDL/admin connection (for createDb=true)
+ *   targetDb:  DbConfig,   // AIAPI application database
+ *   createDb?: boolean,    // create DB if it doesn't exist (requires adminDb)
+ *   seed?:     boolean     // seed default roles + admin user if users table empty
+ * }
+ *
+ * Requires `_internal / settings_change` permission.
+ * Can be called during initial setup or at any time from the dashboard
+ * "Auth Backend" panel to apply schema migrations or re-seed.
+ */
+export async function handleInternalDbProvision(
+  req: AuthedRequest,
+  res: http.ServerResponse,
+): Promise<void> {
+  const ctx = req[AUTH_CONTEXT_KEY];
+  if (!AuthMiddleware.hasInternalPermission(ctx, 'settings_change')) {
+    forbidden(res, 'settings_change'); return;
+  }
+
+  let body: {
+    adminDb?: DbConfig;
+    targetDb?: DbConfig;
+    createDb?: boolean;
+    seed?: boolean;
+  };
+  try {
+    const raw = await readRawBody(req);
+    body = raw ? JSON.parse(raw) : {};
+  } catch {
+    json(res, 400, { error: 'Invalid JSON body' }); return;
+  }
+
+  if (!body.targetDb) {
+    json(res, 400, { error: 'targetDb is required' }); return;
+  }
+
+  try {
+    const result = await DbProvisioner.provision({
+      adminCfg: body.adminDb,
+      targetCfg: body.targetDb,
+      createDb: body.createDb ?? false,
+      seed: body.seed ?? false,
+    });
+    globalLogger.info('DbProvision',
+      `Provision ${result.ok ? 'succeeded' : 'had errors'}: ` +
+      result.steps.map(s => `${s.step}=${s.status}`).join(', '));
+    json(res, result.ok ? 200 : 500, result);
+  } catch (e: unknown) {
+    globalLogger.error('DbProvision', `Unexpected error: ${e}`);
+    json(res, 500, { error: 'Provision failed', detail: String(e) });
+  }
 }
 
 // ─── Private utility ──────────────────────────────────────────────────────────

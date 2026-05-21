@@ -1,0 +1,2682 @@
+
+=== Security Initialization ===
+⚠ No security configuration found - running in INSECURE mode
+  Run security setup to enable protection
+[1G[0JEnter private key password (press Enter to skip): [51G**********************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+[15:20:05] WARN [Security] Password incorrect — Unsupported state or unable to authenticate data; running without HMAC
+
+=== Starting MCP Server ===
+[WindowsFormsProvider] Checking for KeyWin.exe at: C:\Users\plachy\Documents\Dev\VSCplugins\AIAPI\dist\win\KeyWin.exe
+[WindowsFormsProvider] Alternative path: C:\Users\plachy\Documents\Dev\VSCplugins\AIAPI\dist\win\KeyWin.exe
+[WindowsFormsProvider] Found KeyWin.exe at: C:\Users\plachy\Documents\Dev\VSCplugins\AIAPI\dist\helpers\KeyWin.exe
+[WindowsFormsProvider] Using inject mode: direct
+[15:20:05] WARN [Security] Could not load advanced filters: TypeError: Cannot read properties of undefined (reading 'setSessionBaseDir')
+MCP Server started on http://127.0.0.1:3457
+✓ MCP server running on http://127.0.0.1:3457
+  Ready to accept automation requests
+
+=== Starting Dashboard ===
+[15:20:05] DEBUG [system] Dashboard will use the same AutomationEngine as MCP Server
+[15:20:05] INFO [dashboard] Loaded settings from C:\Users\plachy\Documents\Dev\VSCplugins\AIAPI\config\dashboard-settings.json
+[15:20:05] INFO [security] Loaded 303 security audit entries from disk
+[15:20:05] INFO [AuthService] Auth mode: none | user store: json
+[15:20:05] INFO [auth] Authentication initialised (mode: none)
+
+[15:20:05] INFO [system] ✓ MCP Server and Dashboard are both running
+[15:20:05] INFO [system] ✓ JSON-RPC request/response logging is enabled
+[15:20:05] DEBUG [HelperDaemon] [BrowserWin.exe] persistent daemon started
+[15:20:05] INFO [HelperRegistry] Discovered: BrowserWin.exe v1.3.0 (28 commands)
+[15:20:06] DEBUG [HelperDaemon] [KeyWin.exe] persistent daemon started
+[15:20:06] INFO [HelperRegistry] Discovered: KeyWin.exe v1.1.0 (24 commands)
+[15:20:06] DEBUG [HelperDaemon] [LibreOfficeWin.exe] persistent daemon started
+[15:20:06] INFO [HelperRegistry] Discovered: LibreOfficeWin.exe v1.1.0 (11 commands)
+[15:20:06] DEBUG [HelperDaemon] [MSOfficeWin.exe] persistent daemon started
+[15:20:06] INFO [HelperRegistry] Discovered: MSOfficeWin.exe v1.0.0 (10 commands)
+[15:20:19] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:20:19] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:20:19] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:20:19] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 0,
+  "method": "tools/list",
+  "params": {}
+}
+[15:20:19] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:20:19] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 0,
+  "result": {
+    "tools": [
+      {
+        "name": "queryTree",
+        "description": "Query UI element tree from a provider",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "providerName": {
+              "type": "string",
+              "description": "Provider name (e.g., \"windowsForms\", \"webUI\", \"office\")"
+            },
+            "targetId": {
+              "type": "string",
+              "description": "Target window/document identifier"
+            },
+            "options": {
+              "type": "object",
+              "description": "Query options",
+              "properties": {
+                "depth": {
+                  "type": "number"
+                },
+                "includeHidden": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "required": [
+            "providerName",
+            "targetId"
+          ]
+        }
+      },
+      {
+        "name": "clickElement",
+        "description": "Click a UI element",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "providerName": {
+              "type": "string",
+              "description": "Provider name"
+            },
+            "elementId": {
+              "type": "string",
+              "description": "Element identifier to click"
+            }
+          },
+          "required": [
+            "providerName",
+            "elementId"
+          ]
+        }
+      },
+      {
+        "name": "setProperty",
+        "description": "Set a property on a UI element",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "providerName": {
+              "type": "string"
+            },
+            "elementId": {
+              "type": "string"
+            },
+            "propertyName": {
+              "type": "string"
+            },
+            "value": {
+              "description": "Property value"
+            }
+          },
+          "required": [
+            "providerName",
+            "elementId",
+            "propertyName",
+            "value"
+          ]
+        }
+      },
+      {
+        "name": "readProperty",
+        "description": "Read a property from a UI element",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "providerName": {
+              "type": "string"
+            },
+            "elementId": {
+              "type": "string"
+            },
+            "propertyName": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "providerName",
+            "elementId",
+            "propertyName"
+          ]
+        }
+      },
+      {
+        "name": "getProviders",
+        "description": "Get list of available automation providers",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "listWindows",
+        "description": "List all visible windows with titles and process information",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "launchProcess",
+        "description": "Launch an application process",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "executable": {
+              "type": "string",
+              "description": "Executable name or path (e.g., \"calc.exe\", \"notepad.exe\")"
+            },
+            "args": {
+              "type": "array",
+              "description": "Optional command-line arguments",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "executable"
+          ]
+        }
+      },
+      {
+        "name": "terminateProcess",
+        "description": "Terminate a running process by name or PID",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "process": {
+              "type": "string",
+              "description": "Process name (e.g., \"calc\", \"CalculatorApp\") or PID (e.g., \"PID:12345\")"
+            }
+          },
+          "required": [
+            "process"
+          ]
+        }
+      },
+      {
+        "name": "executeScenario",
+        "description": "Execute a scenario from the app template library (XML) or a legacy JSON scenario file.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "app": {
+              "type": "string",
+              "description": "App name as it appears in apptemplates/ (e.g., \"calculator\", \"notepad\", \"chrome\"). Use with scenarioId."
+            },
+            "scenarioId": {
+              "type": "string",
+              "description": "Scenario id within apptemplates/{app}/scenarios.xml (e.g., \"compute\", \"intro\")."
+            },
+            "params": {
+              "type": "object",
+              "description": "Runtime parameter substitutions for {{placeholder}} variables in the scenario, e.g. { \"expression\": \"7 * 6\" }."
+            },
+            "scenarioPath": {
+              "type": "string",
+              "description": "Path to JSON scenario file (e.g., \"config/scenarios/calculator-basic.json\")"
+            },
+            "scenarioJson": {
+              "type": "object",
+              "description": "Inline scenario JSON object (alternative to scenarioPath)"
+            },
+            "verbose": {
+              "type": "boolean",
+              "description": "Enable verbose output",
+              "default": false
+            }
+          }
+        }
+      },
+      {
+        "name": "BrowserWin",
+        "description": "[BrowserWin.exe v1.3.0] Browser automation via Chrome DevTools Protocol (CDP).\n    Window mode: MULTI-SESSION - the browser holds many tabs/pages.\n    Workflow: LISTBROWSERS -> LAUNCH (if needed) -> NEWPAGE -> NAVIGATE -> READ/QUERYTREE -> interact.\n    Reuse the existing browser window and open a NEWPAGE instead of relaunching.\n    Teardown policy (default: leave_open): leave_open (default), discard_tab (EXEC:window.close()), close_app (KILL).\n    Requires browser started with --remote-debugging-port=<port>. Call LAUNCH to start with debug port automatically. Available commands: LISTBROWSERS, LAUNCH, NAVIGATE, READ, QUERYTREE, CLICKID, CLICKNAME, FILL, EXEC, READELEM, SENDKEYS, PAGESOURCE, SCREENSHOT, NEWPAGE, COOKIES, KILL, KEYDOWN, KEYUP, KEYPRESS, RIGHTCLICK, DBLCLICK, HOVER, CHECK, UNCHECK, MOUSEDOWN, MOUSEUP, DIALOG, FOCUS. CROSS-TOOL USAGE: For OS-level browser dialogs (file upload pickers, certificate warnings, HTTP auth prompts, download confirmations) that CDP cannot reach, use the KeyWin tool.  KeyWin LISTWINDOWS shows the dialog HWND; target it with proc=\"HANDLE:<hwnd>\".  KeyWin SENDKEYS, CLICKID, and QUERYTREE work on any visible Win32 dialog, including browser-spawned ones.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helper": {
+              "type": "string",
+              "description": "Which C# helper binary processes this call. Normally implicit in the tool name and can be omitted. This tool maps to helper \"BrowserWin.exe\"."
+            },
+            "proc": {
+              "type": "string",
+              "description": "Container hierarchy: L1 OS process // L2 sub-window // L3 document/tab. Levels are separated by \"//\"; each level is a [key:val;key:val] bracket. Omit to target the active/foreground instance. Single level examples: \"[pid:1234]\"  \"[procname:WINWORD*]\"  \"[handle:0xABCD]\"  \"[sha256:hex]\". Multi-level: \"[procname:WINWORD.EXE]//[docname:Budget.xlsx]\" \"[pid:8800]//[url:https://github.com/pulls]\" \"[pid:123]//[subwindowhandle:0x2A4]//[tabid:3]\". L3 doc/tab keys: docname url tabid page. L2 sub-window keys: subwindowhandle frame pane. L1 OS keys: pid handle hwnd procname sha256 sha512 title."
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "LISTBROWSERS",
+                "LAUNCH",
+                "NAVIGATE",
+                "READ",
+                "QUERYTREE",
+                "CLICKID",
+                "CLICKNAME",
+                "FILL",
+                "EXEC",
+                "READELEM",
+                "SENDKEYS",
+                "PAGESOURCE",
+                "SCREENSHOT",
+                "NEWPAGE",
+                "COOKIES",
+                "KILL",
+                "KEYDOWN",
+                "KEYUP",
+                "KEYPRESS",
+                "RIGHTCLICK",
+                "DBLCLICK",
+                "HOVER",
+                "CHECK",
+                "UNCHECK",
+                "MOUSEDOWN",
+                "MOUSEUP",
+                "DIALOG",
+                "FOCUS"
+              ],
+              "description": "Command to execute. LISTBROWSERS: List all running Chromium-family browser processes (Chrome, Edge, Brave, Opera); LAUNCH: Start a browser with --remote-debugging-port so CDP commands work, or reuse an existing debug window. target='brave'/'chrome'/'msedge'/'firefox'. Optional mode param: 'visible' (default) or 'headless'. Returns port number and whether it was reused or newly launched. Call this FIRST if NEWPAGE/NAVIGATE/FILL/EXEC return CDP errors.; NAVIGATE: Navigate the active page to a URL; READ: Read the current page title, URL and meta-description; QUERYTREE: Query the DOM tree up to the specified depth (default 3); CLICKID: Click a DOM element matching a CSS selector; CLICKNAME: Click a button/link whose visible text matches the given string; FILL: Set the value of an input field.; EXEC: Evaluate a JavaScript expression and return its string result; READELEM: Read the visible text or value of a specific DOM element via CSS selector (CDP) or UIA fallback.; SENDKEYS: Send keyboard input to the browser window (UIA). Supports special keys: {ENTER}, {TAB}, {ESC}, {CTRL+C}, etc.; PAGESOURCE: Retrieve the raw HTML source of the current page via Ctrl+U/Ctrl+A/Ctrl+C clipboard trick (UIA; works on every browser, no debug port required).; SCREENSHOT: Capture a PNG screenshot of the current browser page via CDP Page.captureScreenshot. Optional parameter: file path to save (default: %TEMP%\\aiapi_screenshot_<timestamp>.png). Returns the saved file path and byte size.; NEWPAGE: Open a new browser tab; optionally navigate it to a URL; COOKIES: Manage browser cookies. Actions: get | clear | set:<name=value;domain=...>; KILL: Terminate the target browser process; KEYDOWN: Hold a modifier key down via CDP Input.dispatchKeyEvent (or SendInput UIA fallback). Use with KEYUP to build chords. Param: Ctrl | Alt | Shift | Win.; KEYUP: Release a held modifier key. Always pair with a prior KEYDOWN for the same key.; KEYPRESS: Atomic keydown+keyup for function or navigation keys. Supported: F1-F12, HOME, END, PAGEUP, PAGEDOWN, INSERT, DELETE, ENTER, TAB, ESC, BACK, LEFT, RIGHT, UP, DOWN, APPS.; RIGHTCLICK: Right-click at screen coordinates via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Param: x,y.; DBLCLICK: Double left-click at screen coordinates via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Param: x,y.; HOVER: Move the cursor to screen coordinates without clicking, via CDP Input.dispatchMouseEvent (or SetCursorPos UIA fallback). Param: x,y.; CHECK: Check a checkbox by CSS selector (CDP JS el.checked=true + change event). Falls back to UIA TogglePattern when no CDP.; UNCHECK: Uncheck a checkbox by CSS selector (CDP JS el.checked=false + change event). Falls back to UIA TogglePattern when no CDP.; MOUSEDOWN: Press and hold left mouse button at screen coordinates (x,y) via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Use with MOUSEUP for drag operations.; MOUSEUP: Release left mouse button at screen coordinates (x,y) via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Completes a drag started with MOUSEDOWN.; DIALOG: Detect and handle a JavaScript dialog (alert/confirm/prompt) via CDP Page.handleJavaScriptDialog. param: empty or 'accept' (click OK), 'dismiss' (click Cancel), 'accept:TEXT' (fill prompt then OK). Returns dialogPresent:true when a dialog was open and was handled; dialogPresent:false when no dialog was showing (safe to call speculatively after any action that might produce a dialog).; FOCUS: Bring the browser window to the foreground. Call before any visible interaction in cooperative/showcase mode so the user can see what the AI is doing. Finds the browser window by process name and brings it to front via ShowWindow(SW_RESTORE) + SetForegroundWindow."
+            },
+            "path": {
+              "type": "string",
+              "description": "XPath-style element address (L4+). Pure element path — no container info. Container levels (process, sub-window, document) belong in `proc`. Leading \"//\" optional. Word:       \"//body/para[20]\"  \"//body/bookmark[@name='Summary']\" Excel:      \"//sheet[@name='Q1']/cell[@addr='B2:D5']\" PowerPoint: \"//slide[2]/shape[@name='Title']\" UIA Win32:  \"//Button[@id='num1Button']\" Browser:    \"//*[@id='compose']\""
+            },
+            "value": {
+              "type": "string",
+              "description": "Payload / value to write, apply, or send to the addressed element. Examples: \"Heading 2\"  \"=SUM(A1:A10)\"  \"hello world\"."
+            }
+          },
+          "required": [
+            "action"
+          ]
+        }
+      },
+      {
+        "name": "KeyWin",
+        "description": "[KeyWin.exe v1.1.0] Windows UI automation via UIA/HWND. Supports two window modes:\n    SINGLE-SESSION apps (Calculator, Paint, Minesweeper): only one window exists at a time.\n    Use RESET to clear state before reuse instead of closing.\n    MULTI-DOCUMENT apps (Notepad, Word, Excel, browser via UIA): can hold many open documents.\n    Use NEWDOC to open a new document/tab within the existing window instead of relaunching.\n    Teardown policy (default: leave_open): leave_open (window stays open), discard_doc (close active doc/tab), close_app (terminate app).\n    Before automating, call LISTWINDOWS to discover existing instances and reuse them. Window modes: single_session (One window; use RESET to clear state; e.g. calc.exe, mspaint.exe) | multi_document (Many documents/tabs; use NEWDOC or open new windows; e.g. notepad.exe, winword.exe). Teardown policies: leave_open, discard_doc, close_app. Default is leave_open (non-destructive). Ask the user before using discard_doc/discard_tab or close_app. Available commands: LISTWINDOWS, QUERYTREE, READ, CLICKID, CLICKNAME, CLICK, SENDKEYS, SET, RESET, NEWDOC, KILL, KEYDOWN, KEYUP, KEYPRESS, RIGHTCLICK, DBLCLICK, HOVER, FILL, READELEM, CHECK, UNCHECK, MOUSEDOWN, MOUSEUP, FOCUS. CROSS-TOOL USAGE: KeyWin is the universal Win32/UIA automation layer. Combine it with BrowserWin, MSOfficeWin, or LibreOfficeWin to handle any OS-level dialog, popup, file-picker, security prompt, or unexpected window that the app-specific helper cannot reach directly. Target office/browser dialogs with proc=\"HANDLE:<hwnd>\" (get <hwnd> from KeyWin LISTWINDOWS), or proc=\"soffice.exe\" / proc=\"WINWORD.EXE\" / proc=\"chrome.exe\".  Use SENDKEYS to dismiss, QUERYTREE to inspect, CLICKID/CLICKNAME to click buttons in any visible window.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helper": {
+              "type": "string",
+              "description": "Which C# helper binary processes this call. Normally implicit in the tool name and can be omitted. This tool maps to helper \"KeyWin.exe\"."
+            },
+            "proc": {
+              "type": "string",
+              "description": "Container hierarchy: L1 OS process // L2 sub-window // L3 document/tab. Levels are separated by \"//\"; each level is a [key:val;key:val] bracket. Omit to target the active/foreground instance. Single level examples: \"[pid:1234]\"  \"[procname:WINWORD*]\"  \"[handle:0xABCD]\"  \"[sha256:hex]\". Multi-level: \"[procname:WINWORD.EXE]//[docname:Budget.xlsx]\" \"[pid:8800]//[url:https://github.com/pulls]\" \"[pid:123]//[subwindowhandle:0x2A4]//[tabid:3]\". L3 doc/tab keys: docname url tabid page. L2 sub-window keys: subwindowhandle frame pane. L1 OS keys: pid handle hwnd procname sha256 sha512 title."
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "LISTWINDOWS",
+                "QUERYTREE",
+                "READ",
+                "CLICKID",
+                "CLICKNAME",
+                "CLICK",
+                "SENDKEYS",
+                "SET",
+                "RESET",
+                "NEWDOC",
+                "KILL",
+                "KEYDOWN",
+                "KEYUP",
+                "KEYPRESS",
+                "RIGHTCLICK",
+                "DBLCLICK",
+                "HOVER",
+                "FILL",
+                "READELEM",
+                "CHECK",
+                "UNCHECK",
+                "MOUSEDOWN",
+                "MOUSEUP",
+                "FOCUS"
+              ],
+              "description": "Command to execute. LISTWINDOWS: List all visible top-level windows with title, handle and PID. Always call first to discover existing instances before launching new ones.; QUERYTREE: Return the UIA element tree for the target window (depth 1-8). Use to discover AutomationIds and control names before clicking.; READ: Read the current value/text from the target window (document body, selected value, etc.).; CLICKID: Click a UI element by AutomationId (from QUERYTREE). Preferred over CLICKNAME when IDs are stable.; CLICKNAME: Click a UI element by its visible Name property. Use when no stable AutomationId is available.; CLICK: Click at absolute screen coordinates (x,y). Use only when element IDs and names are unavailable.; SENDKEYS: Send keystrokes to the target window. Supports literal text and special tokens: {ENTER}, {TAB}, {ESC}, {CTRL+A}, {CTRL+C} (copy), {CTRL+V} (paste), {CTRL+Z} (undo), {CTRL+S} (save), {DELETE}, {BACK}. Use for typing, editing, and clipboard operations.; SET: Set a property on a UI element via ValuePattern (direct value injection, bypasses keyboard).; RESET: Reset a SINGLE-SESSION app to a clean state without closing it. For Calculator: clicks the AC/Clear button. For other apps: application-specific reset. Prefer over close+relaunch to minimise side effects.; NEWDOC: Open a new document in the target MULTI-DOCUMENT app (Ctrl+N). Use instead of launching a second process when the application already exists.; KILL: Terminate the target process. Use only when teardown_policy=close_app and explicitly confirmed.; KEYDOWN: Hold a modifier key (SendInput KEYEVENTF_KEYDOWN). Use before other keys for chords that SENDKEYS cannot express. Always pair with KEYUP.; KEYUP: Release a held modifier key (SendInput KEYEVENTF_KEYUP). Always use after a matching KEYDOWN.; KEYPRESS: Atomic keydown+keyup for function/navigation keys (F1-F12, HOME, END, PAGEUP, PAGEDOWN, INSERT, DELETE, ENTER, TAB, ESC, APPS, arrow keys). Not for typing printable text — use SENDKEYS for that.; RIGHTCLICK: Right-click at absolute screen coordinates (x,y). Opens context menus.; DBLCLICK: Double left-click at absolute screen coordinates (x,y). Opens items and triggers default actions.; HOVER: Move mouse cursor to screen coordinates (x,y) without clicking. Triggers hover effects and tooltips.; FILL: Set value of a UI element by AutomationId or Name (ValuePattern). Fires UIA value-change so JS frameworks see the change.; READELEM: Read the current value of a UI element by AutomationId or Name (ValuePattern or Name fallback).; CHECK: Check a checkbox or radio button by AutomationId or Name. Uses TogglePattern. Idempotent: no-op if already checked.; UNCHECK: Uncheck a checkbox by AutomationId or Name. Uses TogglePattern. Idempotent: no-op if already unchecked.; MOUSEDOWN: Press and hold left mouse button at screen coordinates (x,y). Use with MOUSEUP for drag-and-drop. SendInput MOUSEEVENTF_LEFTDOWN.; MOUSEUP: Release left mouse button at screen coordinates (x,y). Completes a drag started with MOUSEDOWN. SendInput MOUSEEVENTF_LEFTUP.; FOCUS: Bring the target window to the foreground. Call before any visible UI interaction in cooperative/showcase mode so the user can see what the AI is doing. Uses ShowWindow(SW_RESTORE) + SetForegroundWindow."
+            },
+            "path": {
+              "type": "string",
+              "description": "XPath-style element address (L4+). Pure element path — no container info. Container levels (process, sub-window, document) belong in `proc`. Leading \"//\" optional. Word:       \"//body/para[20]\"  \"//body/bookmark[@name='Summary']\" Excel:      \"//sheet[@name='Q1']/cell[@addr='B2:D5']\" PowerPoint: \"//slide[2]/shape[@name='Title']\" UIA Win32:  \"//Button[@id='num1Button']\" Browser:    \"//*[@id='compose']\""
+            },
+            "value": {
+              "type": "string",
+              "description": "Payload / value to write, apply, or send to the addressed element. Examples: \"Heading 2\"  \"=SUM(A1:A10)\"  \"hello world\"."
+            }
+          },
+          "required": [
+            "action"
+          ]
+        }
+      },
+      {
+        "name": "LibreOfficeWin",
+        "description": "[LibreOfficeWin.exe v1.1.0] LibreOffice / Apache OpenOffice automation via UNO COM bridge (LO < 24) or UNO socket (LO 24+).\n    Controls Writer, Calc, Impress. Works with LibreOffice 5+ and OpenOffice 4+.\n    Office must be running. Workflow: LISTDOCS -> QUERYTREE -> READ/WRITE -> SAVE.\n    officeNote: If LibreOffice is open but unreachable (LO 24+ removed COM bridge),\n    call {RELAUNCH} or {LAUNCH:<app>} to restart with the UNO socket enabled, then retry. Available commands: LISTDOCS, QUERYTREE, READ, WRITE, SAVE, EXPORT, NEWDOC, FORMAT, RELAUNCH, LAUNCH, FOCUS. CROSS-TOOL USAGE: For Office/LibreOffice dialogs (Save As, security prompts, macro warnings, unexpected popups) that LibreOfficeWin.exe cannot reach directly, switch to the KeyWin tool.  Use KeyWin LISTWINDOWS to find the dialog HWND, then target it with proc=\"HANDLE:<hwnd>\".  KeyWin SENDKEYS/CLICKID/CLICKNAME can dismiss or fully interact with any dialog regardless of locale.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helper": {
+              "type": "string",
+              "description": "Which C# helper binary processes this call. Normally implicit in the tool name and can be omitted. This tool maps to helper \"LibreOfficeWin.exe\"."
+            },
+            "proc": {
+              "type": "string",
+              "description": "Container hierarchy: L1 OS process // L2 sub-window // L3 document/tab. Levels are separated by \"//\"; each level is a [key:val;key:val] bracket. Omit to target the active/foreground instance. Single level examples: \"[pid:1234]\"  \"[procname:WINWORD*]\"  \"[handle:0xABCD]\"  \"[sha256:hex]\". Multi-level: \"[procname:WINWORD.EXE]//[docname:Budget.xlsx]\" \"[pid:8800]//[url:https://github.com/pulls]\" \"[pid:123]//[subwindowhandle:0x2A4]//[tabid:3]\". L3 doc/tab keys: docname url tabid page. L2 sub-window keys: subwindowhandle frame pane. L1 OS keys: pid handle hwnd procname sha256 sha512 title."
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "LISTDOCS",
+                "QUERYTREE",
+                "READ",
+                "WRITE",
+                "SAVE",
+                "EXPORT",
+                "NEWDOC",
+                "FORMAT",
+                "RELAUNCH",
+                "LAUNCH",
+                "FOCUS"
+              ],
+              "description": "Command to execute. LISTDOCS: List all open documents across Writer, Calc, Impress.; QUERYTREE: Return the document structure as a JSON tree.; READ: Read a value from the document.\n    Calc: cell[@addr='A1'] or sheet[@name='Q1']/cell[@addr='B2:C5'].\n    Writer: 'body' (full text), body/para[N], bookmark[@name='X'].\n    Impress: slide[N] (all text), slide[N]/shape[@name='Title'].; WRITE: Write a value to the document.\n    Calc: cell[@addr='A1'] (formula if value starts with =).\n    Writer: body (full replace), body/para[N] (auto-extends), bookmark[@name='X'].\n    Impress: slide[N]/shape[@name='Title'] or slide[N]/shape[1] (auto-extends slides).; SAVE: Save the active document (to its current location, or Documents folder if new).; EXPORT: Export the document to PDF. Optionally provide a full output path.; NEWDOC: Create a new document. Starts LibreOffice if not already running.; FORMAT: Apply formatting to a paragraph in a Writer document. Path must be body/para[N].\n    Style name form (backward compat): path=body/para[1] value=Heading 1\n    Key=value form: path=body/para[1] value=bold=true|italic=false|fontSize=14\n    Mixed: path=body/para[1] value=style=Normal|bold=true|alignment=center\n    Character keys: bold italic underline strikethrough allCaps smallCaps fontName fontSize color(#RRGGBB) charSpacingPt\n    Paragraph keys: style alignment(left/center/right/justify) spaceBeforePt spaceAfterPt indentLeftCm indentRightCm indentFirstLineCm\n    Style names: Normal Title Subtitle Heading1..6 Quote ListBullet ListNumber Caption; RELAUNCH: Saves all open documents, kills LibreOffice, restarts with UNO socket --accept on port (default 2002).\n    Required for LibreOffice 24+ which removed the COM bridge. After RELAUNCH subsequent commands\n    use the COM bridge (LO < 24) or report socket_reachable status (LO 24+).\n    Use {RELAUNCH:2002} to specify a port.; LAUNCH: Start LibreOffice with UNO socket if not already reachable. No-op if COM bridge or socket already active.\n    Format: {LAUNCH:app} or {LAUNCH:app:port}. App: writer/calc/impress.; FOCUS: Bring the LibreOffice window to the foreground."
+            },
+            "path": {
+              "type": "string",
+              "description": "XPath-style element address (L4+). Pure element path — no container info. Container levels (process, sub-window, document) belong in `proc`. Leading \"//\" optional. Word:       \"//body/para[20]\"  \"//body/bookmark[@name='Summary']\" Excel:      \"//sheet[@name='Q1']/cell[@addr='B2:D5']\" PowerPoint: \"//slide[2]/shape[@name='Title']\" UIA Win32:  \"//Button[@id='num1Button']\" Browser:    \"//*[@id='compose']\""
+            },
+            "value": {
+              "type": "string",
+              "description": "Payload / value to write, apply, or send to the addressed element. Examples: \"Heading 2\"  \"=SUM(A1:A10)\"  \"hello world\"."
+            }
+          },
+          "required": [
+            "action"
+          ]
+        }
+      },
+      {
+        "name": "MSOfficeWin",
+        "description": "[MSOfficeWin.exe v1.0.0] MS Office automation via COM late-binding. Controls Word, Excel, PowerPoint.\n    Office must be running with at least one document open for most commands.\n    Workflow: LISTDOCS -> identify target -> QUERYTREE -> READ/WRITE -> SAVE. Available commands: LISTDOCS, QUERYTREE, READ, WRITE, SAVE, EXPORT, NEWDOC, EXEC_MACRO, FORMAT, FOCUS. CROSS-TOOL USAGE: For Office/LibreOffice dialogs (Save As, security prompts, macro warnings, unexpected popups) that MSOfficeWin.exe cannot reach directly, switch to the KeyWin tool.  Use KeyWin LISTWINDOWS to find the dialog HWND, then target it with proc=\"HANDLE:<hwnd>\".  KeyWin SENDKEYS/CLICKID/CLICKNAME can dismiss or fully interact with any dialog regardless of locale.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helper": {
+              "type": "string",
+              "description": "Which C# helper binary processes this call. Normally implicit in the tool name and can be omitted. This tool maps to helper \"MSOfficeWin.exe\"."
+            },
+            "proc": {
+              "type": "string",
+              "description": "Container hierarchy: L1 OS process // L2 sub-window // L3 document/tab. Levels are separated by \"//\"; each level is a [key:val;key:val] bracket. Omit to target the active/foreground instance. Single level examples: \"[pid:1234]\"  \"[procname:WINWORD*]\"  \"[handle:0xABCD]\"  \"[sha256:hex]\". Multi-level: \"[procname:WINWORD.EXE]//[docname:Budget.xlsx]\" \"[pid:8800]//[url:https://github.com/pulls]\" \"[pid:123]//[subwindowhandle:0x2A4]//[tabid:3]\". L3 doc/tab keys: docname url tabid page. L2 sub-window keys: subwindowhandle frame pane. L1 OS keys: pid handle hwnd procname sha256 sha512 title."
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "LISTDOCS",
+                "QUERYTREE",
+                "READ",
+                "WRITE",
+                "SAVE",
+                "EXPORT",
+                "NEWDOC",
+                "EXEC_MACRO",
+                "FORMAT",
+                "FOCUS"
+              ],
+              "description": "Command to execute. LISTDOCS: List all open documents across Word, Excel, PowerPoint. Target can be any value (e.g. 'excel').; QUERYTREE: Return the document structure as a JSON tree. Depth 2=sheets/paragraphs, depth 3=cells/shapes (Excel: capped at 200 cells).; READ: Read a value from the document.\n    Excel: cell[@addr'A1'] or sheet[@name'Q1']/cell[@addr'B2:C5'].\n    Word: \"body\" (full text), body/para[N] (Nth paragraph), bookmark[@name'X'].\n    PowerPoint: slide[N] (all text on slide), slide[N]/shape[@name'Title'].; WRITE: Write a value to the document.\n    Excel: cell[@addr'A1'] or sheet[@name'Q1']/cell[@addr'B2'] (formula if value starts with =).\n    Word: body (full replace), body/para[N] (auto-extends), bookmark[@name'X'].\n    PowerPoint: slide[N]/shape[@name'Title'] or slide[N]/shape[1].; SAVE: Save the active document/workbook/presentation.; EXPORT: Export the document to another format. Currently supported: 'pdf'. Optionally provide a full output path.; NEWDOC: Create a new document/workbook/presentation. Starts Office if not already running.; EXEC_MACRO: Run a named VBA macro (Excel only). The macro must already exist in the workbook.; FORMAT: Apply a named paragraph style to a paragraph in a Word document. Use after WRITE to style headings and body text. Path must be a paragraph address such as body/para[N] or para[N]. StyleName is a built-in Word style: 'Normal', 'Title', 'Heading 1'..'Heading 9', 'Subtitle', 'Quote', 'Intense Quote', 'List Bullet', 'List Number', 'Caption'.; FOCUS: Bring the Office application window to the foreground. Call after NEWDOC or before any visible interaction in cooperative/showcase mode so the user can see what the AI is doing. Uses ShowWindow(SW_RESTORE) + SetForegroundWindow."
+            },
+            "path": {
+              "type": "string",
+              "description": "XPath-style element address (L4+). Pure element path — no container info. Container levels (process, sub-window, document) belong in `proc`. Leading \"//\" optional. Word:       \"//body/para[20]\"  \"//body/bookmark[@name='Summary']\" Excel:      \"//sheet[@name='Q1']/cell[@addr='B2:D5']\" PowerPoint: \"//slide[2]/shape[@name='Title']\" UIA Win32:  \"//Button[@id='num1Button']\" Browser:    \"//*[@id='compose']\""
+            },
+            "value": {
+              "type": "string",
+              "description": "Payload / value to write, apply, or send to the addressed element. Examples: \"Heading 2\"  \"=SUM(A1:A10)\"  \"hello world\"."
+            }
+          },
+          "required": [
+            "action"
+          ]
+        }
+      },
+      {
+        "name": "listHelpers",
+        "description": "List all discovered helper executables and their supported commands",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "getHelperSchema",
+        "description": "Get the full API schema for a specific helper executable",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helperName": {
+              "type": "string",
+              "description": "Helper name (e.g. \"KeyWin.exe\")"
+            }
+          },
+          "required": [
+            "helperName"
+          ]
+        }
+      },
+      {
+        "name": "fetch_webpage",
+        "description": "Fetch content from a webpage with security filtering",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "URL to fetch (HTTP/HTTPS)"
+            },
+            "options": {
+              "type": "object",
+              "description": "Fetch options",
+              "properties": {
+                "method": {
+                  "type": "string",
+                  "default": "GET"
+                },
+                "headers": {
+                  "type": "object"
+                },
+                "timeout": {
+                  "type": "number",
+                  "default": 30000
+                },
+                "extractText": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "extractElements": {
+                  "type": "string",
+                  "description": "CSS selector to extract specific elements"
+                },
+                "maxResponseSize": {
+                  "type": "number",
+                  "default": 10485760
+                },
+                "allowRedirects": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "userAgent": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "required": [
+            "url"
+          ]
+        }
+      }
+    ]
+  }
+}
+[15:20:19] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:20:19] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:20:19] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:20:19] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:20:19] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 0,
+  "method": "tools/list",
+  "params": {}
+}
+[15:20:19] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:20:19] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 0,
+  "result": {
+    "tools": [
+      {
+        "name": "queryTree",
+        "description": "Query UI element tree from a provider",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "providerName": {
+              "type": "string",
+              "description": "Provider name (e.g., \"windowsForms\", \"webUI\", \"office\")"
+            },
+            "targetId": {
+              "type": "string",
+              "description": "Target window/document identifier"
+            },
+            "options": {
+              "type": "object",
+              "description": "Query options",
+              "properties": {
+                "depth": {
+                  "type": "number"
+                },
+                "includeHidden": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "required": [
+            "providerName",
+            "targetId"
+          ]
+        }
+      },
+      {
+        "name": "clickElement",
+        "description": "Click a UI element",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "providerName": {
+              "type": "string",
+              "description": "Provider name"
+            },
+            "elementId": {
+              "type": "string",
+              "description": "Element identifier to click"
+            }
+          },
+          "required": [
+            "providerName",
+            "elementId"
+          ]
+        }
+      },
+      {
+        "name": "setProperty",
+        "description": "Set a property on a UI element",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "providerName": {
+              "type": "string"
+            },
+            "elementId": {
+              "type": "string"
+            },
+            "propertyName": {
+              "type": "string"
+            },
+            "value": {
+              "description": "Property value"
+            }
+          },
+          "required": [
+            "providerName",
+            "elementId",
+            "propertyName",
+            "value"
+          ]
+        }
+      },
+      {
+        "name": "readProperty",
+        "description": "Read a property from a UI element",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "providerName": {
+              "type": "string"
+            },
+            "elementId": {
+              "type": "string"
+            },
+            "propertyName": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "providerName",
+            "elementId",
+            "propertyName"
+          ]
+        }
+      },
+      {
+        "name": "getProviders",
+        "description": "Get list of available automation providers",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "listWindows",
+        "description": "List all visible windows with titles and process information",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "launchProcess",
+        "description": "Launch an application process",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "executable": {
+              "type": "string",
+              "description": "Executable name or path (e.g., \"calc.exe\", \"notepad.exe\")"
+            },
+            "args": {
+              "type": "array",
+              "description": "Optional command-line arguments",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "executable"
+          ]
+        }
+      },
+      {
+        "name": "terminateProcess",
+        "description": "Terminate a running process by name or PID",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "process": {
+              "type": "string",
+              "description": "Process name (e.g., \"calc\", \"CalculatorApp\") or PID (e.g., \"PID:12345\")"
+            }
+          },
+          "required": [
+            "process"
+          ]
+        }
+      },
+      {
+        "name": "executeScenario",
+        "description": "Execute a scenario from the app template library (XML) or a legacy JSON scenario file.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "app": {
+              "type": "string",
+              "description": "App name as it appears in apptemplates/ (e.g., \"calculator\", \"notepad\", \"chrome\"). Use with scenarioId."
+            },
+            "scenarioId": {
+              "type": "string",
+              "description": "Scenario id within apptemplates/{app}/scenarios.xml (e.g., \"compute\", \"intro\")."
+            },
+            "params": {
+              "type": "object",
+              "description": "Runtime parameter substitutions for {{placeholder}} variables in the scenario, e.g. { \"expression\": \"7 * 6\" }."
+            },
+            "scenarioPath": {
+              "type": "string",
+              "description": "Path to JSON scenario file (e.g., \"config/scenarios/calculator-basic.json\")"
+            },
+            "scenarioJson": {
+              "type": "object",
+              "description": "Inline scenario JSON object (alternative to scenarioPath)"
+            },
+            "verbose": {
+              "type": "boolean",
+              "description": "Enable verbose output",
+              "default": false
+            }
+          }
+        }
+      },
+      {
+        "name": "BrowserWin",
+        "description": "[BrowserWin.exe v1.3.0] Browser automation via Chrome DevTools Protocol (CDP).\n    Window mode: MULTI-SESSION - the browser holds many tabs/pages.\n    Workflow: LISTBROWSERS -> LAUNCH (if needed) -> NEWPAGE -> NAVIGATE -> READ/QUERYTREE -> interact.\n    Reuse the existing browser window and open a NEWPAGE instead of relaunching.\n    Teardown policy (default: leave_open): leave_open (default), discard_tab (EXEC:window.close()), close_app (KILL).\n    Requires browser started with --remote-debugging-port=<port>. Call LAUNCH to start with debug port automatically. Available commands: LISTBROWSERS, LAUNCH, NAVIGATE, READ, QUERYTREE, CLICKID, CLICKNAME, FILL, EXEC, READELEM, SENDKEYS, PAGESOURCE, SCREENSHOT, NEWPAGE, COOKIES, KILL, KEYDOWN, KEYUP, KEYPRESS, RIGHTCLICK, DBLCLICK, HOVER, CHECK, UNCHECK, MOUSEDOWN, MOUSEUP, DIALOG, FOCUS. CROSS-TOOL USAGE: For OS-level browser dialogs (file upload pickers, certificate warnings, HTTP auth prompts, download confirmations) that CDP cannot reach, use the KeyWin tool.  KeyWin LISTWINDOWS shows the dialog HWND; target it with proc=\"HANDLE:<hwnd>\".  KeyWin SENDKEYS, CLICKID, and QUERYTREE work on any visible Win32 dialog, including browser-spawned ones.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helper": {
+              "type": "string",
+              "description": "Which C# helper binary processes this call. Normally implicit in the tool name and can be omitted. This tool maps to helper \"BrowserWin.exe\"."
+            },
+            "proc": {
+              "type": "string",
+              "description": "Container hierarchy: L1 OS process // L2 sub-window // L3 document/tab. Levels are separated by \"//\"; each level is a [key:val;key:val] bracket. Omit to target the active/foreground instance. Single level examples: \"[pid:1234]\"  \"[procname:WINWORD*]\"  \"[handle:0xABCD]\"  \"[sha256:hex]\". Multi-level: \"[procname:WINWORD.EXE]//[docname:Budget.xlsx]\" \"[pid:8800]//[url:https://github.com/pulls]\" \"[pid:123]//[subwindowhandle:0x2A4]//[tabid:3]\". L3 doc/tab keys: docname url tabid page. L2 sub-window keys: subwindowhandle frame pane. L1 OS keys: pid handle hwnd procname sha256 sha512 title."
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "LISTBROWSERS",
+                "LAUNCH",
+                "NAVIGATE",
+                "READ",
+                "QUERYTREE",
+                "CLICKID",
+                "CLICKNAME",
+                "FILL",
+                "EXEC",
+                "READELEM",
+                "SENDKEYS",
+                "PAGESOURCE",
+                "SCREENSHOT",
+                "NEWPAGE",
+                "COOKIES",
+                "KILL",
+                "KEYDOWN",
+                "KEYUP",
+                "KEYPRESS",
+                "RIGHTCLICK",
+                "DBLCLICK",
+                "HOVER",
+                "CHECK",
+                "UNCHECK",
+                "MOUSEDOWN",
+                "MOUSEUP",
+                "DIALOG",
+                "FOCUS"
+              ],
+              "description": "Command to execute. LISTBROWSERS: List all running Chromium-family browser processes (Chrome, Edge, Brave, Opera); LAUNCH: Start a browser with --remote-debugging-port so CDP commands work, or reuse an existing debug window. target='brave'/'chrome'/'msedge'/'firefox'. Optional mode param: 'visible' (default) or 'headless'. Returns port number and whether it was reused or newly launched. Call this FIRST if NEWPAGE/NAVIGATE/FILL/EXEC return CDP errors.; NAVIGATE: Navigate the active page to a URL; READ: Read the current page title, URL and meta-description; QUERYTREE: Query the DOM tree up to the specified depth (default 3); CLICKID: Click a DOM element matching a CSS selector; CLICKNAME: Click a button/link whose visible text matches the given string; FILL: Set the value of an input field.; EXEC: Evaluate a JavaScript expression and return its string result; READELEM: Read the visible text or value of a specific DOM element via CSS selector (CDP) or UIA fallback.; SENDKEYS: Send keyboard input to the browser window (UIA). Supports special keys: {ENTER}, {TAB}, {ESC}, {CTRL+C}, etc.; PAGESOURCE: Retrieve the raw HTML source of the current page via Ctrl+U/Ctrl+A/Ctrl+C clipboard trick (UIA; works on every browser, no debug port required).; SCREENSHOT: Capture a PNG screenshot of the current browser page via CDP Page.captureScreenshot. Optional parameter: file path to save (default: %TEMP%\\aiapi_screenshot_<timestamp>.png). Returns the saved file path and byte size.; NEWPAGE: Open a new browser tab; optionally navigate it to a URL; COOKIES: Manage browser cookies. Actions: get | clear | set:<name=value;domain=...>; KILL: Terminate the target browser process; KEYDOWN: Hold a modifier key down via CDP Input.dispatchKeyEvent (or SendInput UIA fallback). Use with KEYUP to build chords. Param: Ctrl | Alt | Shift | Win.; KEYUP: Release a held modifier key. Always pair with a prior KEYDOWN for the same key.; KEYPRESS: Atomic keydown+keyup for function or navigation keys. Supported: F1-F12, HOME, END, PAGEUP, PAGEDOWN, INSERT, DELETE, ENTER, TAB, ESC, BACK, LEFT, RIGHT, UP, DOWN, APPS.; RIGHTCLICK: Right-click at screen coordinates via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Param: x,y.; DBLCLICK: Double left-click at screen coordinates via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Param: x,y.; HOVER: Move the cursor to screen coordinates without clicking, via CDP Input.dispatchMouseEvent (or SetCursorPos UIA fallback). Param: x,y.; CHECK: Check a checkbox by CSS selector (CDP JS el.checked=true + change event). Falls back to UIA TogglePattern when no CDP.; UNCHECK: Uncheck a checkbox by CSS selector (CDP JS el.checked=false + change event). Falls back to UIA TogglePattern when no CDP.; MOUSEDOWN: Press and hold left mouse button at screen coordinates (x,y) via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Use with MOUSEUP for drag operations.; MOUSEUP: Release left mouse button at screen coordinates (x,y) via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Completes a drag started with MOUSEDOWN.; DIALOG: Detect and handle a JavaScript dialog (alert/confirm/prompt) via CDP Page.handleJavaScriptDialog. param: empty or 'accept' (click OK), 'dismiss' (click Cancel), 'accept:TEXT' (fill prompt then OK). Returns dialogPresent:true when a dialog was open and was handled; dialogPresent:false when no dialog was showing (safe to call speculatively after any action that might produce a dialog).; FOCUS: Bring the browser window to the foreground. Call before any visible interaction in cooperative/showcase mode so the user can see what the AI is doing. Finds the browser window by process name and brings it to front via ShowWindow(SW_RESTORE) + SetForegroundWindow."
+            },
+            "path": {
+              "type": "string",
+              "description": "XPath-style element address (L4+). Pure element path — no container info. Container levels (process, sub-window, document) belong in `proc`. Leading \"//\" optional. Word:       \"//body/para[20]\"  \"//body/bookmark[@name='Summary']\" Excel:      \"//sheet[@name='Q1']/cell[@addr='B2:D5']\" PowerPoint: \"//slide[2]/shape[@name='Title']\" UIA Win32:  \"//Button[@id='num1Button']\" Browser:    \"//*[@id='compose']\""
+            },
+            "value": {
+              "type": "string",
+              "description": "Payload / value to write, apply, or send to the addressed element. Examples: \"Heading 2\"  \"=SUM(A1:A10)\"  \"hello world\"."
+            }
+          },
+          "required": [
+            "action"
+          ]
+        }
+      },
+      {
+        "name": "KeyWin",
+        "description": "[KeyWin.exe v1.1.0] Windows UI automation via UIA/HWND. Supports two window modes:\n    SINGLE-SESSION apps (Calculator, Paint, Minesweeper): only one window exists at a time.\n    Use RESET to clear state before reuse instead of closing.\n    MULTI-DOCUMENT apps (Notepad, Word, Excel, browser via UIA): can hold many open documents.\n    Use NEWDOC to open a new document/tab within the existing window instead of relaunching.\n    Teardown policy (default: leave_open): leave_open (window stays open), discard_doc (close active doc/tab), close_app (terminate app).\n    Before automating, call LISTWINDOWS to discover existing instances and reuse them. Window modes: single_session (One window; use RESET to clear state; e.g. calc.exe, mspaint.exe) | multi_document (Many documents/tabs; use NEWDOC or open new windows; e.g. notepad.exe, winword.exe). Teardown policies: leave_open, discard_doc, close_app. Default is leave_open (non-destructive). Ask the user before using discard_doc/discard_tab or close_app. Available commands: LISTWINDOWS, QUERYTREE, READ, CLICKID, CLICKNAME, CLICK, SENDKEYS, SET, RESET, NEWDOC, KILL, KEYDOWN, KEYUP, KEYPRESS, RIGHTCLICK, DBLCLICK, HOVER, FILL, READELEM, CHECK, UNCHECK, MOUSEDOWN, MOUSEUP, FOCUS. CROSS-TOOL USAGE: KeyWin is the universal Win32/UIA automation layer. Combine it with BrowserWin, MSOfficeWin, or LibreOfficeWin to handle any OS-level dialog, popup, file-picker, security prompt, or unexpected window that the app-specific helper cannot reach directly. Target office/browser dialogs with proc=\"HANDLE:<hwnd>\" (get <hwnd> from KeyWin LISTWINDOWS), or proc=\"soffice.exe\" / proc=\"WINWORD.EXE\" / proc=\"chrome.exe\".  Use SENDKEYS to dismiss, QUERYTREE to inspect, CLICKID/CLICKNAME to click buttons in any visible window.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helper": {
+              "type": "string",
+              "description": "Which C# helper binary processes this call. Normally implicit in the tool name and can be omitted. This tool maps to helper \"KeyWin.exe\"."
+            },
+            "proc": {
+              "type": "string",
+              "description": "Container hierarchy: L1 OS process // L2 sub-window // L3 document/tab. Levels are separated by \"//\"; each level is a [key:val;key:val] bracket. Omit to target the active/foreground instance. Single level examples: \"[pid:1234]\"  \"[procname:WINWORD*]\"  \"[handle:0xABCD]\"  \"[sha256:hex]\". Multi-level: \"[procname:WINWORD.EXE]//[docname:Budget.xlsx]\" \"[pid:8800]//[url:https://github.com/pulls]\" \"[pid:123]//[subwindowhandle:0x2A4]//[tabid:3]\". L3 doc/tab keys: docname url tabid page. L2 sub-window keys: subwindowhandle frame pane. L1 OS keys: pid handle hwnd procname sha256 sha512 title."
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "LISTWINDOWS",
+                "QUERYTREE",
+                "READ",
+                "CLICKID",
+                "CLICKNAME",
+                "CLICK",
+                "SENDKEYS",
+                "SET",
+                "RESET",
+                "NEWDOC",
+                "KILL",
+                "KEYDOWN",
+                "KEYUP",
+                "KEYPRESS",
+                "RIGHTCLICK",
+                "DBLCLICK",
+                "HOVER",
+                "FILL",
+                "READELEM",
+                "CHECK",
+                "UNCHECK",
+                "MOUSEDOWN",
+                "MOUSEUP",
+                "FOCUS"
+              ],
+              "description": "Command to execute. LISTWINDOWS: List all visible top-level windows with title, handle and PID. Always call first to discover existing instances before launching new ones.; QUERYTREE: Return the UIA element tree for the target window (depth 1-8). Use to discover AutomationIds and control names before clicking.; READ: Read the current value/text from the target window (document body, selected value, etc.).; CLICKID: Click a UI element by AutomationId (from QUERYTREE). Preferred over CLICKNAME when IDs are stable.; CLICKNAME: Click a UI element by its visible Name property. Use when no stable AutomationId is available.; CLICK: Click at absolute screen coordinates (x,y). Use only when element IDs and names are unavailable.; SENDKEYS: Send keystrokes to the target window. Supports literal text and special tokens: {ENTER}, {TAB}, {ESC}, {CTRL+A}, {CTRL+C} (copy), {CTRL+V} (paste), {CTRL+Z} (undo), {CTRL+S} (save), {DELETE}, {BACK}. Use for typing, editing, and clipboard operations.; SET: Set a property on a UI element via ValuePattern (direct value injection, bypasses keyboard).; RESET: Reset a SINGLE-SESSION app to a clean state without closing it. For Calculator: clicks the AC/Clear button. For other apps: application-specific reset. Prefer over close+relaunch to minimise side effects.; NEWDOC: Open a new document in the target MULTI-DOCUMENT app (Ctrl+N). Use instead of launching a second process when the application already exists.; KILL: Terminate the target process. Use only when teardown_policy=close_app and explicitly confirmed.; KEYDOWN: Hold a modifier key (SendInput KEYEVENTF_KEYDOWN). Use before other keys for chords that SENDKEYS cannot express. Always pair with KEYUP.; KEYUP: Release a held modifier key (SendInput KEYEVENTF_KEYUP). Always use after a matching KEYDOWN.; KEYPRESS: Atomic keydown+keyup for function/navigation keys (F1-F12, HOME, END, PAGEUP, PAGEDOWN, INSERT, DELETE, ENTER, TAB, ESC, APPS, arrow keys). Not for typing printable text — use SENDKEYS for that.; RIGHTCLICK: Right-click at absolute screen coordinates (x,y). Opens context menus.; DBLCLICK: Double left-click at absolute screen coordinates (x,y). Opens items and triggers default actions.; HOVER: Move mouse cursor to screen coordinates (x,y) without clicking. Triggers hover effects and tooltips.; FILL: Set value of a UI element by AutomationId or Name (ValuePattern). Fires UIA value-change so JS frameworks see the change.; READELEM: Read the current value of a UI element by AutomationId or Name (ValuePattern or Name fallback).; CHECK: Check a checkbox or radio button by AutomationId or Name. Uses TogglePattern. Idempotent: no-op if already checked.; UNCHECK: Uncheck a checkbox by AutomationId or Name. Uses TogglePattern. Idempotent: no-op if already unchecked.; MOUSEDOWN: Press and hold left mouse button at screen coordinates (x,y). Use with MOUSEUP for drag-and-drop. SendInput MOUSEEVENTF_LEFTDOWN.; MOUSEUP: Release left mouse button at screen coordinates (x,y). Completes a drag started with MOUSEDOWN. SendInput MOUSEEVENTF_LEFTUP.; FOCUS: Bring the target window to the foreground. Call before any visible UI interaction in cooperative/showcase mode so the user can see what the AI is doing. Uses ShowWindow(SW_RESTORE) + SetForegroundWindow."
+            },
+            "path": {
+              "type": "string",
+              "description": "XPath-style element address (L4+). Pure element path — no container info. Container levels (process, sub-window, document) belong in `proc`. Leading \"//\" optional. Word:       \"//body/para[20]\"  \"//body/bookmark[@name='Summary']\" Excel:      \"//sheet[@name='Q1']/cell[@addr='B2:D5']\" PowerPoint: \"//slide[2]/shape[@name='Title']\" UIA Win32:  \"//Button[@id='num1Button']\" Browser:    \"//*[@id='compose']\""
+            },
+            "value": {
+              "type": "string",
+              "description": "Payload / value to write, apply, or send to the addressed element. Examples: \"Heading 2\"  \"=SUM(A1:A10)\"  \"hello world\"."
+            }
+          },
+          "required": [
+            "action"
+          ]
+        }
+      },
+      {
+        "name": "LibreOfficeWin",
+        "description": "[LibreOfficeWin.exe v1.1.0] LibreOffice / Apache OpenOffice automation via UNO COM bridge (LO < 24) or UNO socket (LO 24+).\n    Controls Writer, Calc, Impress. Works with LibreOffice 5+ and OpenOffice 4+.\n    Office must be running. Workflow: LISTDOCS -> QUERYTREE -> READ/WRITE -> SAVE.\n    officeNote: If LibreOffice is open but unreachable (LO 24+ removed COM bridge),\n    call {RELAUNCH} or {LAUNCH:<app>} to restart with the UNO socket enabled, then retry. Available commands: LISTDOCS, QUERYTREE, READ, WRITE, SAVE, EXPORT, NEWDOC, FORMAT, RELAUNCH, LAUNCH, FOCUS. CROSS-TOOL USAGE: For Office/LibreOffice dialogs (Save As, security prompts, macro warnings, unexpected popups) that LibreOfficeWin.exe cannot reach directly, switch to the KeyWin tool.  Use KeyWin LISTWINDOWS to find the dialog HWND, then target it with proc=\"HANDLE:<hwnd>\".  KeyWin SENDKEYS/CLICKID/CLICKNAME can dismiss or fully interact with any dialog regardless of locale.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helper": {
+              "type": "string",
+              "description": "Which C# helper binary processes this call. Normally implicit in the tool name and can be omitted. This tool maps to helper \"LibreOfficeWin.exe\"."
+            },
+            "proc": {
+              "type": "string",
+              "description": "Container hierarchy: L1 OS process // L2 sub-window // L3 document/tab. Levels are separated by \"//\"; each level is a [key:val;key:val] bracket. Omit to target the active/foreground instance. Single level examples: \"[pid:1234]\"  \"[procname:WINWORD*]\"  \"[handle:0xABCD]\"  \"[sha256:hex]\". Multi-level: \"[procname:WINWORD.EXE]//[docname:Budget.xlsx]\" \"[pid:8800]//[url:https://github.com/pulls]\" \"[pid:123]//[subwindowhandle:0x2A4]//[tabid:3]\". L3 doc/tab keys: docname url tabid page. L2 sub-window keys: subwindowhandle frame pane. L1 OS keys: pid handle hwnd procname sha256 sha512 title."
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "LISTDOCS",
+                "QUERYTREE",
+                "READ",
+                "WRITE",
+                "SAVE",
+                "EXPORT",
+                "NEWDOC",
+                "FORMAT",
+                "RELAUNCH",
+                "LAUNCH",
+                "FOCUS"
+              ],
+              "description": "Command to execute. LISTDOCS: List all open documents across Writer, Calc, Impress.; QUERYTREE: Return the document structure as a JSON tree.; READ: Read a value from the document.\n    Calc: cell[@addr='A1'] or sheet[@name='Q1']/cell[@addr='B2:C5'].\n    Writer: 'body' (full text), body/para[N], bookmark[@name='X'].\n    Impress: slide[N] (all text), slide[N]/shape[@name='Title'].; WRITE: Write a value to the document.\n    Calc: cell[@addr='A1'] (formula if value starts with =).\n    Writer: body (full replace), body/para[N] (auto-extends), bookmark[@name='X'].\n    Impress: slide[N]/shape[@name='Title'] or slide[N]/shape[1] (auto-extends slides).; SAVE: Save the active document (to its current location, or Documents folder if new).; EXPORT: Export the document to PDF. Optionally provide a full output path.; NEWDOC: Create a new document. Starts LibreOffice if not already running.; FORMAT: Apply formatting to a paragraph in a Writer document. Path must be body/para[N].\n    Style name form (backward compat): path=body/para[1] value=Heading 1\n    Key=value form: path=body/para[1] value=bold=true|italic=false|fontSize=14\n    Mixed: path=body/para[1] value=style=Normal|bold=true|alignment=center\n    Character keys: bold italic underline strikethrough allCaps smallCaps fontName fontSize color(#RRGGBB) charSpacingPt\n    Paragraph keys: style alignment(left/center/right/justify) spaceBeforePt spaceAfterPt indentLeftCm indentRightCm indentFirstLineCm\n    Style names: Normal Title Subtitle Heading1..6 Quote ListBullet ListNumber Caption; RELAUNCH: Saves all open documents, kills LibreOffice, restarts with UNO socket --accept on port (default 2002).\n    Required for LibreOffice 24+ which removed the COM bridge. After RELAUNCH subsequent commands\n    use the COM bridge (LO < 24) or report socket_reachable status (LO 24+).\n    Use {RELAUNCH:2002} to specify a port.; LAUNCH: Start LibreOffice with UNO socket if not already reachable. No-op if COM bridge or socket already active.\n    Format: {LAUNCH:app} or {LAUNCH:app:port}. App: writer/calc/impress.; FOCUS: Bring the LibreOffice window to the foreground."
+            },
+            "path": {
+              "type": "string",
+              "description": "XPath-style element address (L4+). Pure element path — no container info. Container levels (process, sub-window, document) belong in `proc`. Leading \"//\" optional. Word:       \"//body/para[20]\"  \"//body/bookmark[@name='Summary']\" Excel:      \"//sheet[@name='Q1']/cell[@addr='B2:D5']\" PowerPoint: \"//slide[2]/shape[@name='Title']\" UIA Win32:  \"//Button[@id='num1Button']\" Browser:    \"//*[@id='compose']\""
+            },
+            "value": {
+              "type": "string",
+              "description": "Payload / value to write, apply, or send to the addressed element. Examples: \"Heading 2\"  \"=SUM(A1:A10)\"  \"hello world\"."
+            }
+          },
+          "required": [
+            "action"
+          ]
+        }
+      },
+      {
+        "name": "MSOfficeWin",
+        "description": "[MSOfficeWin.exe v1.0.0] MS Office automation via COM late-binding. Controls Word, Excel, PowerPoint.\n    Office must be running with at least one document open for most commands.\n    Workflow: LISTDOCS -> identify target -> QUERYTREE -> READ/WRITE -> SAVE. Available commands: LISTDOCS, QUERYTREE, READ, WRITE, SAVE, EXPORT, NEWDOC, EXEC_MACRO, FORMAT, FOCUS. CROSS-TOOL USAGE: For Office/LibreOffice dialogs (Save As, security prompts, macro warnings, unexpected popups) that MSOfficeWin.exe cannot reach directly, switch to the KeyWin tool.  Use KeyWin LISTWINDOWS to find the dialog HWND, then target it with proc=\"HANDLE:<hwnd>\".  KeyWin SENDKEYS/CLICKID/CLICKNAME can dismiss or fully interact with any dialog regardless of locale.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helper": {
+              "type": "string",
+              "description": "Which C# helper binary processes this call. Normally implicit in the tool name and can be omitted. This tool maps to helper \"MSOfficeWin.exe\"."
+            },
+            "proc": {
+              "type": "string",
+              "description": "Container hierarchy: L1 OS process // L2 sub-window // L3 document/tab. Levels are separated by \"//\"; each level is a [key:val;key:val] bracket. Omit to target the active/foreground instance. Single level examples: \"[pid:1234]\"  \"[procname:WINWORD*]\"  \"[handle:0xABCD]\"  \"[sha256:hex]\". Multi-level: \"[procname:WINWORD.EXE]//[docname:Budget.xlsx]\" \"[pid:8800]//[url:https://github.com/pulls]\" \"[pid:123]//[subwindowhandle:0x2A4]//[tabid:3]\". L3 doc/tab keys: docname url tabid page. L2 sub-window keys: subwindowhandle frame pane. L1 OS keys: pid handle hwnd procname sha256 sha512 title."
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "LISTDOCS",
+                "QUERYTREE",
+                "READ",
+                "WRITE",
+                "SAVE",
+                "EXPORT",
+                "NEWDOC",
+                "EXEC_MACRO",
+                "FORMAT",
+                "FOCUS"
+              ],
+              "description": "Command to execute. LISTDOCS: List all open documents across Word, Excel, PowerPoint. Target can be any value (e.g. 'excel').; QUERYTREE: Return the document structure as a JSON tree. Depth 2=sheets/paragraphs, depth 3=cells/shapes (Excel: capped at 200 cells).; READ: Read a value from the document.\n    Excel: cell[@addr'A1'] or sheet[@name'Q1']/cell[@addr'B2:C5'].\n    Word: \"body\" (full text), body/para[N] (Nth paragraph), bookmark[@name'X'].\n    PowerPoint: slide[N] (all text on slide), slide[N]/shape[@name'Title'].; WRITE: Write a value to the document.\n    Excel: cell[@addr'A1'] or sheet[@name'Q1']/cell[@addr'B2'] (formula if value starts with =).\n    Word: body (full replace), body/para[N] (auto-extends), bookmark[@name'X'].\n    PowerPoint: slide[N]/shape[@name'Title'] or slide[N]/shape[1].; SAVE: Save the active document/workbook/presentation.; EXPORT: Export the document to another format. Currently supported: 'pdf'. Optionally provide a full output path.; NEWDOC: Create a new document/workbook/presentation. Starts Office if not already running.; EXEC_MACRO: Run a named VBA macro (Excel only). The macro must already exist in the workbook.; FORMAT: Apply a named paragraph style to a paragraph in a Word document. Use after WRITE to style headings and body text. Path must be a paragraph address such as body/para[N] or para[N]. StyleName is a built-in Word style: 'Normal', 'Title', 'Heading 1'..'Heading 9', 'Subtitle', 'Quote', 'Intense Quote', 'List Bullet', 'List Number', 'Caption'.; FOCUS: Bring the Office application window to the foreground. Call after NEWDOC or before any visible interaction in cooperative/showcase mode so the user can see what the AI is doing. Uses ShowWindow(SW_RESTORE) + SetForegroundWindow."
+            },
+            "path": {
+              "type": "string",
+              "description": "XPath-style element address (L4+). Pure element path — no container info. Container levels (process, sub-window, document) belong in `proc`. Leading \"//\" optional. Word:       \"//body/para[20]\"  \"//body/bookmark[@name='Summary']\" Excel:      \"//sheet[@name='Q1']/cell[@addr='B2:D5']\" PowerPoint: \"//slide[2]/shape[@name='Title']\" UIA Win32:  \"//Button[@id='num1Button']\" Browser:    \"//*[@id='compose']\""
+            },
+            "value": {
+              "type": "string",
+              "description": "Payload / value to write, apply, or send to the addressed element. Examples: \"Heading 2\"  \"=SUM(A1:A10)\"  \"hello world\"."
+            }
+          },
+          "required": [
+            "action"
+          ]
+        }
+      },
+      {
+        "name": "listHelpers",
+        "description": "List all discovered helper executables and their supported commands",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "getHelperSchema",
+        "description": "Get the full API schema for a specific helper executable",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helperName": {
+              "type": "string",
+              "description": "Helper name (e.g. \"KeyWin.exe\")"
+            }
+          },
+          "required": [
+            "helperName"
+          ]
+        }
+      },
+      {
+        "name": "fetch_webpage",
+        "description": "Fetch content from a webpage with security filtering",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "URL to fetch (HTTP/HTTPS)"
+            },
+            "options": {
+              "type": "object",
+              "description": "Fetch options",
+              "properties": {
+                "method": {
+                  "type": "string",
+                  "default": "GET"
+                },
+                "headers": {
+                  "type": "object"
+                },
+                "timeout": {
+                  "type": "number",
+                  "default": 30000
+                },
+                "extractText": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "extractElements": {
+                  "type": "string",
+                  "description": "CSS selector to extract specific elements"
+                },
+                "maxResponseSize": {
+                  "type": "number",
+                  "default": 10485760
+                },
+                "allowRedirects": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "userAgent": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "required": [
+            "url"
+          ]
+        }
+      }
+    ]
+  }
+}
+[15:20:19] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:20:19] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:20:19] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:20:19] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:20:19] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259219300,
+  "method": "tools/call",
+  "params": {
+    "name": "LibreOfficeWin",
+    "arguments": {
+      "proc": "writer",
+      "action": "LISTDOCS"
+    }
+  }
+}
+[15:20:19] INFO [keywin] >> LibreOfficeWin.exe  proc="writer"  action=LISTDOCS  path=  value=
+[15:20:31] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:20:31] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:20:31] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:20:31] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259231315,
+  "method": "tools/call",
+  "params": {
+    "name": "LibreOfficeWin",
+    "arguments": {
+      "proc": "writer",
+      "action": "NEWDOC"
+    }
+  }
+}
+[15:20:31] INFO [keywin] >> LibreOfficeWin.exe  proc="writer"  action=NEWDOC  path=  value=
+[15:20:39] INFO [keywin] << LibreOfficeWin.exe  success=false
+[15:20:39] DEBUG [keywin] Response:
+{
+  "success": false,
+  "error": "helper_timeout: no response after 20000ms"
+}
+[15:20:39] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:20:39] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259219300,
+  "error": {
+    "code": -32603,
+    "message": "LISTDOCS failed: helper_timeout: no response after 20000ms"
+  }
+}
+[15:20:39] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:20:49] INFO [keywin] << LibreOfficeWin.exe  success=true
+[15:20:49] DEBUG [keywin] Response:
+{
+  "id": "1",
+  "success": true,
+  "result": []
+}
+[15:20:49] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:20:49] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259231315,
+  "result": {
+    "id": "1",
+    "success": true,
+    "result": []
+  }
+}
+[15:20:49] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:20:49] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:20:49] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:20:49] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:20:49] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259249782,
+  "method": "tools/call",
+  "params": {
+    "name": "LibreOfficeWin",
+    "arguments": {
+      "proc": "writer",
+      "action": "QUERYTREE",
+      "path": "2"
+    }
+  }
+}
+[15:20:49] INFO [keywin] >> LibreOfficeWin.exe  proc="writer"  action=QUERYTREE  path=2  value=
+[15:20:50] INFO [keywin] << LibreOfficeWin.exe  success=true
+[15:20:50] DEBUG [keywin] Response:
+{
+  "id": "2",
+  "success": true,
+  "result": "created",
+  "name": "Zpráva o pádu"
+}
+[15:20:50] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:20:50] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259249782,
+  "result": {
+    "id": "2",
+    "success": true,
+    "result": "created",
+    "name": "Zpráva o pádu"
+  }
+}
+[15:20:50] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:20:50] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:20:50] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:20:50] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:20:50] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259250334,
+  "method": "tools/call",
+  "params": {
+    "name": "LibreOfficeWin",
+    "arguments": {
+      "proc": "writer",
+      "action": "READ",
+      "path": "body"
+    }
+  }
+}
+[15:20:50] INFO [keywin] >> LibreOfficeWin.exe  proc="writer"  action=READ  path=body  value=
+[15:21:00] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:21:00] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:21:00] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:21:00] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259260346,
+  "method": "tools/call",
+  "params": {
+    "name": "LibreOfficeWin",
+    "arguments": {
+      "proc": "writer",
+      "action": "WRITE",
+      "path": "body/para[1]",
+      "value": "AIAPI dogfood dogfood_1776259219270"
+    }
+  }
+}
+[15:21:00] INFO [keywin] >> LibreOfficeWin.exe  proc="writer"  action=WRITE  path=body/para[1]  value=AIAPI dogfood dogfood_1776259219270
+[15:21:10] INFO [keywin] << LibreOfficeWin.exe  success=false
+[15:21:10] DEBUG [keywin] Response:
+{
+  "success": false,
+  "error": "helper_timeout: no response after 20000ms"
+}
+[15:21:10] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:21:10] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259250334,
+  "error": {
+    "code": -32603,
+    "message": "READ failed: helper_timeout: no response after 20000ms"
+  }
+}
+[15:21:10] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:21:12] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:21:12] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:21:12] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:21:12] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259272364,
+  "method": "tools/call",
+  "params": {
+    "name": "LibreOfficeWin",
+    "arguments": {
+      "proc": "writer",
+      "action": "FORMAT",
+      "path": "body/para[1]",
+      "value": "bold=true|fontSize=14"
+    }
+  }
+}
+[15:21:12] INFO [keywin] >> LibreOfficeWin.exe  proc="writer"  action=FORMAT  path=body/para[1]  value=bold=true|fontSize=14
+[15:21:20] INFO [keywin] << LibreOfficeWin.exe  success=false
+[15:21:20] DEBUG [keywin] Response:
+{
+  "id": "3",
+  "success": false,
+  "error": "No open document found for target: writer"
+}
+[15:21:20] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:21:20] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259260346,
+  "error": {
+    "code": -32603,
+    "message": "WRITE failed: No open document found for target: writer"
+  }
+}
+[15:21:20] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:21:22] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:21:22] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:21:22] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:21:22] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259282378,
+  "method": "tools/call",
+  "params": {
+    "name": "LibreOfficeWin",
+    "arguments": {
+      "proc": "calc",
+      "action": "NEWDOC"
+    }
+  }
+}
+[15:21:22] INFO [keywin] >> LibreOfficeWin.exe  proc="calc"  action=NEWDOC  path=  value=
+[15:21:40] INFO [keywin] << LibreOfficeWin.exe  success=false
+[15:21:40] DEBUG [keywin] Response:
+{
+  "success": false,
+  "error": "helper_timeout: no response after 20000ms"
+}
+[15:21:40] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:21:40] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259272364,
+  "error": {
+    "code": -32603,
+    "message": "FORMAT failed: helper_timeout: no response after 20000ms"
+  }
+}
+[15:21:40] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:21:47] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:21:47] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:21:47] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:21:47] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259307393,
+  "method": "tools/call",
+  "params": {
+    "name": "LibreOfficeWin",
+    "arguments": {
+      "proc": "impress",
+      "action": "NEWDOC"
+    }
+  }
+}
+[15:21:47] INFO [keywin] >> LibreOfficeWin.exe  proc="impress"  action=NEWDOC  path=  value=
+[15:21:50] INFO [keywin] << LibreOfficeWin.exe  success=false
+[15:21:50] DEBUG [keywin] Response:
+{
+  "id": "4",
+  "success": false,
+  "error": "No open document found for target: writer"
+}
+[15:21:50] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:21:50] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259282378,
+  "error": {
+    "code": -32603,
+    "message": "NEWDOC failed: No open document found for target: writer"
+  }
+}
+[15:21:50] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:22:10] INFO [keywin] << LibreOfficeWin.exe  success=false
+[15:22:10] DEBUG [keywin] Response:
+{
+  "success": false,
+  "error": "helper_timeout: no response after 20000ms"
+}
+[15:22:10] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:22:10] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259307393,
+  "error": {
+    "code": -32603,
+    "message": "NEWDOC failed: helper_timeout: no response after 20000ms"
+  }
+}
+[15:22:10] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:22:10] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:22:10] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:22:10] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:22:10] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259330819,
+  "method": "tools/call",
+  "params": {
+    "name": "KeyWin",
+    "arguments": {
+      "proc": "soffice.exe",
+      "action": "KILL"
+    }
+  }
+}
+[15:22:10] INFO [keywin] >> KeyWin.exe  proc="soffice.exe"  action=KILL  path=  value=
+[15:22:10] WARN [HelperDaemon] [KeyWin.exe] stderr: DEBUG: Using inject-mode: direct
+[15:22:10] WARN [HelperDaemon] [KeyWin.exe] stderr: DEBUG: Command=KILL, Parameter=*
+[15:22:10] INFO [keywin] << KeyWin.exe  success=false
+[15:22:10] DEBUG [keywin] Response:
+{
+  "id": "1",
+  "success": false,
+  "error": "process_not_found",
+  "target": "soffice.exe"
+}
+[15:22:10] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:22:10] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259330819,
+  "error": {
+    "code": -32603,
+    "message": "KILL failed: process_not_found"
+  }
+}
+[15:22:10] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:24:47] DEBUG [HelperDaemon] [LibreOfficeWin.exe] exited code=4294967295
+[15:24:47] INFO [HelperDaemon] [LibreOfficeWin.exe] restarting daemon...
+[15:24:48] DEBUG [HelperDaemon] [LibreOfficeWin.exe] persistent daemon started
+[15:24:50] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:24:50] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:24:50] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:24:50] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 0,
+  "method": "tools/list",
+  "params": {}
+}
+[15:24:50] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:24:50] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 0,
+  "result": {
+    "tools": [
+      {
+        "name": "queryTree",
+        "description": "Query UI element tree from a provider",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "providerName": {
+              "type": "string",
+              "description": "Provider name (e.g., \"windowsForms\", \"webUI\", \"office\")"
+            },
+            "targetId": {
+              "type": "string",
+              "description": "Target window/document identifier"
+            },
+            "options": {
+              "type": "object",
+              "description": "Query options",
+              "properties": {
+                "depth": {
+                  "type": "number"
+                },
+                "includeHidden": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "required": [
+            "providerName",
+            "targetId"
+          ]
+        }
+      },
+      {
+        "name": "clickElement",
+        "description": "Click a UI element",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "providerName": {
+              "type": "string",
+              "description": "Provider name"
+            },
+            "elementId": {
+              "type": "string",
+              "description": "Element identifier to click"
+            }
+          },
+          "required": [
+            "providerName",
+            "elementId"
+          ]
+        }
+      },
+      {
+        "name": "setProperty",
+        "description": "Set a property on a UI element",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "providerName": {
+              "type": "string"
+            },
+            "elementId": {
+              "type": "string"
+            },
+            "propertyName": {
+              "type": "string"
+            },
+            "value": {
+              "description": "Property value"
+            }
+          },
+          "required": [
+            "providerName",
+            "elementId",
+            "propertyName",
+            "value"
+          ]
+        }
+      },
+      {
+        "name": "readProperty",
+        "description": "Read a property from a UI element",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "providerName": {
+              "type": "string"
+            },
+            "elementId": {
+              "type": "string"
+            },
+            "propertyName": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "providerName",
+            "elementId",
+            "propertyName"
+          ]
+        }
+      },
+      {
+        "name": "getProviders",
+        "description": "Get list of available automation providers",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "listWindows",
+        "description": "List all visible windows with titles and process information",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "launchProcess",
+        "description": "Launch an application process",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "executable": {
+              "type": "string",
+              "description": "Executable name or path (e.g., \"calc.exe\", \"notepad.exe\")"
+            },
+            "args": {
+              "type": "array",
+              "description": "Optional command-line arguments",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "executable"
+          ]
+        }
+      },
+      {
+        "name": "terminateProcess",
+        "description": "Terminate a running process by name or PID",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "process": {
+              "type": "string",
+              "description": "Process name (e.g., \"calc\", \"CalculatorApp\") or PID (e.g., \"PID:12345\")"
+            }
+          },
+          "required": [
+            "process"
+          ]
+        }
+      },
+      {
+        "name": "executeScenario",
+        "description": "Execute a scenario from the app template library (XML) or a legacy JSON scenario file.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "app": {
+              "type": "string",
+              "description": "App name as it appears in apptemplates/ (e.g., \"calculator\", \"notepad\", \"chrome\"). Use with scenarioId."
+            },
+            "scenarioId": {
+              "type": "string",
+              "description": "Scenario id within apptemplates/{app}/scenarios.xml (e.g., \"compute\", \"intro\")."
+            },
+            "params": {
+              "type": "object",
+              "description": "Runtime parameter substitutions for {{placeholder}} variables in the scenario, e.g. { \"expression\": \"7 * 6\" }."
+            },
+            "scenarioPath": {
+              "type": "string",
+              "description": "Path to JSON scenario file (e.g., \"config/scenarios/calculator-basic.json\")"
+            },
+            "scenarioJson": {
+              "type": "object",
+              "description": "Inline scenario JSON object (alternative to scenarioPath)"
+            },
+            "verbose": {
+              "type": "boolean",
+              "description": "Enable verbose output",
+              "default": false
+            }
+          }
+        }
+      },
+      {
+        "name": "BrowserWin",
+        "description": "[BrowserWin.exe v1.3.0] Browser automation via Chrome DevTools Protocol (CDP).\n    Window mode: MULTI-SESSION - the browser holds many tabs/pages.\n    Workflow: LISTBROWSERS -> LAUNCH (if needed) -> NEWPAGE -> NAVIGATE -> READ/QUERYTREE -> interact.\n    Reuse the existing browser window and open a NEWPAGE instead of relaunching.\n    Teardown policy (default: leave_open): leave_open (default), discard_tab (EXEC:window.close()), close_app (KILL).\n    Requires browser started with --remote-debugging-port=<port>. Call LAUNCH to start with debug port automatically. Available commands: LISTBROWSERS, LAUNCH, NAVIGATE, READ, QUERYTREE, CLICKID, CLICKNAME, FILL, EXEC, READELEM, SENDKEYS, PAGESOURCE, SCREENSHOT, NEWPAGE, COOKIES, KILL, KEYDOWN, KEYUP, KEYPRESS, RIGHTCLICK, DBLCLICK, HOVER, CHECK, UNCHECK, MOUSEDOWN, MOUSEUP, DIALOG, FOCUS. CROSS-TOOL USAGE: For OS-level browser dialogs (file upload pickers, certificate warnings, HTTP auth prompts, download confirmations) that CDP cannot reach, use the KeyWin tool.  KeyWin LISTWINDOWS shows the dialog HWND; target it with proc=\"HANDLE:<hwnd>\".  KeyWin SENDKEYS, CLICKID, and QUERYTREE work on any visible Win32 dialog, including browser-spawned ones.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helper": {
+              "type": "string",
+              "description": "Which C# helper binary processes this call. Normally implicit in the tool name and can be omitted. This tool maps to helper \"BrowserWin.exe\"."
+            },
+            "proc": {
+              "type": "string",
+              "description": "Container hierarchy: L1 OS process // L2 sub-window // L3 document/tab. Levels are separated by \"//\"; each level is a [key:val;key:val] bracket. Omit to target the active/foreground instance. Single level examples: \"[pid:1234]\"  \"[procname:WINWORD*]\"  \"[handle:0xABCD]\"  \"[sha256:hex]\". Multi-level: \"[procname:WINWORD.EXE]//[docname:Budget.xlsx]\" \"[pid:8800]//[url:https://github.com/pulls]\" \"[pid:123]//[subwindowhandle:0x2A4]//[tabid:3]\". L3 doc/tab keys: docname url tabid page. L2 sub-window keys: subwindowhandle frame pane. L1 OS keys: pid handle hwnd procname sha256 sha512 title."
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "LISTBROWSERS",
+                "LAUNCH",
+                "NAVIGATE",
+                "READ",
+                "QUERYTREE",
+                "CLICKID",
+                "CLICKNAME",
+                "FILL",
+                "EXEC",
+                "READELEM",
+                "SENDKEYS",
+                "PAGESOURCE",
+                "SCREENSHOT",
+                "NEWPAGE",
+                "COOKIES",
+                "KILL",
+                "KEYDOWN",
+                "KEYUP",
+                "KEYPRESS",
+                "RIGHTCLICK",
+                "DBLCLICK",
+                "HOVER",
+                "CHECK",
+                "UNCHECK",
+                "MOUSEDOWN",
+                "MOUSEUP",
+                "DIALOG",
+                "FOCUS"
+              ],
+              "description": "Command to execute. LISTBROWSERS: List all running Chromium-family browser processes (Chrome, Edge, Brave, Opera); LAUNCH: Start a browser with --remote-debugging-port so CDP commands work, or reuse an existing debug window. target='brave'/'chrome'/'msedge'/'firefox'. Optional mode param: 'visible' (default) or 'headless'. Returns port number and whether it was reused or newly launched. Call this FIRST if NEWPAGE/NAVIGATE/FILL/EXEC return CDP errors.; NAVIGATE: Navigate the active page to a URL; READ: Read the current page title, URL and meta-description; QUERYTREE: Query the DOM tree up to the specified depth (default 3); CLICKID: Click a DOM element matching a CSS selector; CLICKNAME: Click a button/link whose visible text matches the given string; FILL: Set the value of an input field.; EXEC: Evaluate a JavaScript expression and return its string result; READELEM: Read the visible text or value of a specific DOM element via CSS selector (CDP) or UIA fallback.; SENDKEYS: Send keyboard input to the browser window (UIA). Supports special keys: {ENTER}, {TAB}, {ESC}, {CTRL+C}, etc.; PAGESOURCE: Retrieve the raw HTML source of the current page via Ctrl+U/Ctrl+A/Ctrl+C clipboard trick (UIA; works on every browser, no debug port required).; SCREENSHOT: Capture a PNG screenshot of the current browser page via CDP Page.captureScreenshot. Optional parameter: file path to save (default: %TEMP%\\aiapi_screenshot_<timestamp>.png). Returns the saved file path and byte size.; NEWPAGE: Open a new browser tab; optionally navigate it to a URL; COOKIES: Manage browser cookies. Actions: get | clear | set:<name=value;domain=...>; KILL: Terminate the target browser process; KEYDOWN: Hold a modifier key down via CDP Input.dispatchKeyEvent (or SendInput UIA fallback). Use with KEYUP to build chords. Param: Ctrl | Alt | Shift | Win.; KEYUP: Release a held modifier key. Always pair with a prior KEYDOWN for the same key.; KEYPRESS: Atomic keydown+keyup for function or navigation keys. Supported: F1-F12, HOME, END, PAGEUP, PAGEDOWN, INSERT, DELETE, ENTER, TAB, ESC, BACK, LEFT, RIGHT, UP, DOWN, APPS.; RIGHTCLICK: Right-click at screen coordinates via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Param: x,y.; DBLCLICK: Double left-click at screen coordinates via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Param: x,y.; HOVER: Move the cursor to screen coordinates without clicking, via CDP Input.dispatchMouseEvent (or SetCursorPos UIA fallback). Param: x,y.; CHECK: Check a checkbox by CSS selector (CDP JS el.checked=true + change event). Falls back to UIA TogglePattern when no CDP.; UNCHECK: Uncheck a checkbox by CSS selector (CDP JS el.checked=false + change event). Falls back to UIA TogglePattern when no CDP.; MOUSEDOWN: Press and hold left mouse button at screen coordinates (x,y) via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Use with MOUSEUP for drag operations.; MOUSEUP: Release left mouse button at screen coordinates (x,y) via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Completes a drag started with MOUSEDOWN.; DIALOG: Detect and handle a JavaScript dialog (alert/confirm/prompt) via CDP Page.handleJavaScriptDialog. param: empty or 'accept' (click OK), 'dismiss' (click Cancel), 'accept:TEXT' (fill prompt then OK). Returns dialogPresent:true when a dialog was open and was handled; dialogPresent:false when no dialog was showing (safe to call speculatively after any action that might produce a dialog).; FOCUS: Bring the browser window to the foreground. Call before any visible interaction in cooperative/showcase mode so the user can see what the AI is doing. Finds the browser window by process name and brings it to front via ShowWindow(SW_RESTORE) + SetForegroundWindow."
+            },
+            "path": {
+              "type": "string",
+              "description": "XPath-style element address (L4+). Pure element path — no container info. Container levels (process, sub-window, document) belong in `proc`. Leading \"//\" optional. Word:       \"//body/para[20]\"  \"//body/bookmark[@name='Summary']\" Excel:      \"//sheet[@name='Q1']/cell[@addr='B2:D5']\" PowerPoint: \"//slide[2]/shape[@name='Title']\" UIA Win32:  \"//Button[@id='num1Button']\" Browser:    \"//*[@id='compose']\""
+            },
+            "value": {
+              "type": "string",
+              "description": "Payload / value to write, apply, or send to the addressed element. Examples: \"Heading 2\"  \"=SUM(A1:A10)\"  \"hello world\"."
+            }
+          },
+          "required": [
+            "action"
+          ]
+        }
+      },
+      {
+        "name": "KeyWin",
+        "description": "[KeyWin.exe v1.1.0] Windows UI automation via UIA/HWND. Supports two window modes:\n    SINGLE-SESSION apps (Calculator, Paint, Minesweeper): only one window exists at a time.\n    Use RESET to clear state before reuse instead of closing.\n    MULTI-DOCUMENT apps (Notepad, Word, Excel, browser via UIA): can hold many open documents.\n    Use NEWDOC to open a new document/tab within the existing window instead of relaunching.\n    Teardown policy (default: leave_open): leave_open (window stays open), discard_doc (close active doc/tab), close_app (terminate app).\n    Before automating, call LISTWINDOWS to discover existing instances and reuse them. Window modes: single_session (One window; use RESET to clear state; e.g. calc.exe, mspaint.exe) | multi_document (Many documents/tabs; use NEWDOC or open new windows; e.g. notepad.exe, winword.exe). Teardown policies: leave_open, discard_doc, close_app. Default is leave_open (non-destructive). Ask the user before using discard_doc/discard_tab or close_app. Available commands: LISTWINDOWS, QUERYTREE, READ, CLICKID, CLICKNAME, CLICK, SENDKEYS, SET, RESET, NEWDOC, KILL, KEYDOWN, KEYUP, KEYPRESS, RIGHTCLICK, DBLCLICK, HOVER, FILL, READELEM, CHECK, UNCHECK, MOUSEDOWN, MOUSEUP, FOCUS. CROSS-TOOL USAGE: KeyWin is the universal Win32/UIA automation layer. Combine it with BrowserWin, MSOfficeWin, or LibreOfficeWin to handle any OS-level dialog, popup, file-picker, security prompt, or unexpected window that the app-specific helper cannot reach directly. Target office/browser dialogs with proc=\"HANDLE:<hwnd>\" (get <hwnd> from KeyWin LISTWINDOWS), or proc=\"soffice.exe\" / proc=\"WINWORD.EXE\" / proc=\"chrome.exe\".  Use SENDKEYS to dismiss, QUERYTREE to inspect, CLICKID/CLICKNAME to click buttons in any visible window.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helper": {
+              "type": "string",
+              "description": "Which C# helper binary processes this call. Normally implicit in the tool name and can be omitted. This tool maps to helper \"KeyWin.exe\"."
+            },
+            "proc": {
+              "type": "string",
+              "description": "Container hierarchy: L1 OS process // L2 sub-window // L3 document/tab. Levels are separated by \"//\"; each level is a [key:val;key:val] bracket. Omit to target the active/foreground instance. Single level examples: \"[pid:1234]\"  \"[procname:WINWORD*]\"  \"[handle:0xABCD]\"  \"[sha256:hex]\". Multi-level: \"[procname:WINWORD.EXE]//[docname:Budget.xlsx]\" \"[pid:8800]//[url:https://github.com/pulls]\" \"[pid:123]//[subwindowhandle:0x2A4]//[tabid:3]\". L3 doc/tab keys: docname url tabid page. L2 sub-window keys: subwindowhandle frame pane. L1 OS keys: pid handle hwnd procname sha256 sha512 title."
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "LISTWINDOWS",
+                "QUERYTREE",
+                "READ",
+                "CLICKID",
+                "CLICKNAME",
+                "CLICK",
+                "SENDKEYS",
+                "SET",
+                "RESET",
+                "NEWDOC",
+                "KILL",
+                "KEYDOWN",
+                "KEYUP",
+                "KEYPRESS",
+                "RIGHTCLICK",
+                "DBLCLICK",
+                "HOVER",
+                "FILL",
+                "READELEM",
+                "CHECK",
+                "UNCHECK",
+                "MOUSEDOWN",
+                "MOUSEUP",
+                "FOCUS"
+              ],
+              "description": "Command to execute. LISTWINDOWS: List all visible top-level windows with title, handle and PID. Always call first to discover existing instances before launching new ones.; QUERYTREE: Return the UIA element tree for the target window (depth 1-8). Use to discover AutomationIds and control names before clicking.; READ: Read the current value/text from the target window (document body, selected value, etc.).; CLICKID: Click a UI element by AutomationId (from QUERYTREE). Preferred over CLICKNAME when IDs are stable.; CLICKNAME: Click a UI element by its visible Name property. Use when no stable AutomationId is available.; CLICK: Click at absolute screen coordinates (x,y). Use only when element IDs and names are unavailable.; SENDKEYS: Send keystrokes to the target window. Supports literal text and special tokens: {ENTER}, {TAB}, {ESC}, {CTRL+A}, {CTRL+C} (copy), {CTRL+V} (paste), {CTRL+Z} (undo), {CTRL+S} (save), {DELETE}, {BACK}. Use for typing, editing, and clipboard operations.; SET: Set a property on a UI element via ValuePattern (direct value injection, bypasses keyboard).; RESET: Reset a SINGLE-SESSION app to a clean state without closing it. For Calculator: clicks the AC/Clear button. For other apps: application-specific reset. Prefer over close+relaunch to minimise side effects.; NEWDOC: Open a new document in the target MULTI-DOCUMENT app (Ctrl+N). Use instead of launching a second process when the application already exists.; KILL: Terminate the target process. Use only when teardown_policy=close_app and explicitly confirmed.; KEYDOWN: Hold a modifier key (SendInput KEYEVENTF_KEYDOWN). Use before other keys for chords that SENDKEYS cannot express. Always pair with KEYUP.; KEYUP: Release a held modifier key (SendInput KEYEVENTF_KEYUP). Always use after a matching KEYDOWN.; KEYPRESS: Atomic keydown+keyup for function/navigation keys (F1-F12, HOME, END, PAGEUP, PAGEDOWN, INSERT, DELETE, ENTER, TAB, ESC, APPS, arrow keys). Not for typing printable text — use SENDKEYS for that.; RIGHTCLICK: Right-click at absolute screen coordinates (x,y). Opens context menus.; DBLCLICK: Double left-click at absolute screen coordinates (x,y). Opens items and triggers default actions.; HOVER: Move mouse cursor to screen coordinates (x,y) without clicking. Triggers hover effects and tooltips.; FILL: Set value of a UI element by AutomationId or Name (ValuePattern). Fires UIA value-change so JS frameworks see the change.; READELEM: Read the current value of a UI element by AutomationId or Name (ValuePattern or Name fallback).; CHECK: Check a checkbox or radio button by AutomationId or Name. Uses TogglePattern. Idempotent: no-op if already checked.; UNCHECK: Uncheck a checkbox by AutomationId or Name. Uses TogglePattern. Idempotent: no-op if already unchecked.; MOUSEDOWN: Press and hold left mouse button at screen coordinates (x,y). Use with MOUSEUP for drag-and-drop. SendInput MOUSEEVENTF_LEFTDOWN.; MOUSEUP: Release left mouse button at screen coordinates (x,y). Completes a drag started with MOUSEDOWN. SendInput MOUSEEVENTF_LEFTUP.; FOCUS: Bring the target window to the foreground. Call before any visible UI interaction in cooperative/showcase mode so the user can see what the AI is doing. Uses ShowWindow(SW_RESTORE) + SetForegroundWindow."
+            },
+            "path": {
+              "type": "string",
+              "description": "XPath-style element address (L4+). Pure element path — no container info. Container levels (process, sub-window, document) belong in `proc`. Leading \"//\" optional. Word:       \"//body/para[20]\"  \"//body/bookmark[@name='Summary']\" Excel:      \"//sheet[@name='Q1']/cell[@addr='B2:D5']\" PowerPoint: \"//slide[2]/shape[@name='Title']\" UIA Win32:  \"//Button[@id='num1Button']\" Browser:    \"//*[@id='compose']\""
+            },
+            "value": {
+              "type": "string",
+              "description": "Payload / value to write, apply, or send to the addressed element. Examples: \"Heading 2\"  \"=SUM(A1:A10)\"  \"hello world\"."
+            }
+          },
+          "required": [
+            "action"
+          ]
+        }
+      },
+      {
+        "name": "LibreOfficeWin",
+        "description": "[LibreOfficeWin.exe v1.1.0] LibreOffice / Apache OpenOffice automation via UNO COM bridge (LO < 24) or UNO socket (LO 24+).\n    Controls Writer, Calc, Impress. Works with LibreOffice 5+ and OpenOffice 4+.\n    Office must be running. Workflow: LISTDOCS -> QUERYTREE -> READ/WRITE -> SAVE.\n    officeNote: If LibreOffice is open but unreachable (LO 24+ removed COM bridge),\n    call {RELAUNCH} or {LAUNCH:<app>} to restart with the UNO socket enabled, then retry. Available commands: LISTDOCS, QUERYTREE, READ, WRITE, SAVE, EXPORT, NEWDOC, FORMAT, RELAUNCH, LAUNCH, FOCUS. CROSS-TOOL USAGE: For Office/LibreOffice dialogs (Save As, security prompts, macro warnings, unexpected popups) that LibreOfficeWin.exe cannot reach directly, switch to the KeyWin tool.  Use KeyWin LISTWINDOWS to find the dialog HWND, then target it with proc=\"HANDLE:<hwnd>\".  KeyWin SENDKEYS/CLICKID/CLICKNAME can dismiss or fully interact with any dialog regardless of locale.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helper": {
+              "type": "string",
+              "description": "Which C# helper binary processes this call. Normally implicit in the tool name and can be omitted. This tool maps to helper \"LibreOfficeWin.exe\"."
+            },
+            "proc": {
+              "type": "string",
+              "description": "Container hierarchy: L1 OS process // L2 sub-window // L3 document/tab. Levels are separated by \"//\"; each level is a [key:val;key:val] bracket. Omit to target the active/foreground instance. Single level examples: \"[pid:1234]\"  \"[procname:WINWORD*]\"  \"[handle:0xABCD]\"  \"[sha256:hex]\". Multi-level: \"[procname:WINWORD.EXE]//[docname:Budget.xlsx]\" \"[pid:8800]//[url:https://github.com/pulls]\" \"[pid:123]//[subwindowhandle:0x2A4]//[tabid:3]\". L3 doc/tab keys: docname url tabid page. L2 sub-window keys: subwindowhandle frame pane. L1 OS keys: pid handle hwnd procname sha256 sha512 title."
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "LISTDOCS",
+                "QUERYTREE",
+                "READ",
+                "WRITE",
+                "SAVE",
+                "EXPORT",
+                "NEWDOC",
+                "FORMAT",
+                "RELAUNCH",
+                "LAUNCH",
+                "FOCUS"
+              ],
+              "description": "Command to execute. LISTDOCS: List all open documents across Writer, Calc, Impress.; QUERYTREE: Return the document structure as a JSON tree.; READ: Read a value from the document.\n    Calc: cell[@addr='A1'] or sheet[@name='Q1']/cell[@addr='B2:C5'].\n    Writer: 'body' (full text), body/para[N], bookmark[@name='X'].\n    Impress: slide[N] (all text), slide[N]/shape[@name='Title'].; WRITE: Write a value to the document.\n    Calc: cell[@addr='A1'] (formula if value starts with =).\n    Writer: body (full replace), body/para[N] (auto-extends), bookmark[@name='X'].\n    Impress: slide[N]/shape[@name='Title'] or slide[N]/shape[1] (auto-extends slides).; SAVE: Save the active document (to its current location, or Documents folder if new).; EXPORT: Export the document to PDF. Optionally provide a full output path.; NEWDOC: Create a new document. Starts LibreOffice if not already running.; FORMAT: Apply formatting to a paragraph in a Writer document. Path must be body/para[N].\n    Style name form (backward compat): path=body/para[1] value=Heading 1\n    Key=value form: path=body/para[1] value=bold=true|italic=false|fontSize=14\n    Mixed: path=body/para[1] value=style=Normal|bold=true|alignment=center\n    Character keys: bold italic underline strikethrough allCaps smallCaps fontName fontSize color(#RRGGBB) charSpacingPt\n    Paragraph keys: style alignment(left/center/right/justify) spaceBeforePt spaceAfterPt indentLeftCm indentRightCm indentFirstLineCm\n    Style names: Normal Title Subtitle Heading1..6 Quote ListBullet ListNumber Caption; RELAUNCH: Saves all open documents, kills LibreOffice, restarts with UNO socket --accept on port (default 2002).\n    Required for LibreOffice 24+ which removed the COM bridge. After RELAUNCH subsequent commands\n    use the COM bridge (LO < 24) or report socket_reachable status (LO 24+).\n    Use {RELAUNCH:2002} to specify a port.; LAUNCH: Start LibreOffice with UNO socket if not already reachable. No-op if COM bridge or socket already active.\n    Format: {LAUNCH:app} or {LAUNCH:app:port}. App: writer/calc/impress.; FOCUS: Bring the LibreOffice window to the foreground."
+            },
+            "path": {
+              "type": "string",
+              "description": "XPath-style element address (L4+). Pure element path — no container info. Container levels (process, sub-window, document) belong in `proc`. Leading \"//\" optional. Word:       \"//body/para[20]\"  \"//body/bookmark[@name='Summary']\" Excel:      \"//sheet[@name='Q1']/cell[@addr='B2:D5']\" PowerPoint: \"//slide[2]/shape[@name='Title']\" UIA Win32:  \"//Button[@id='num1Button']\" Browser:    \"//*[@id='compose']\""
+            },
+            "value": {
+              "type": "string",
+              "description": "Payload / value to write, apply, or send to the addressed element. Examples: \"Heading 2\"  \"=SUM(A1:A10)\"  \"hello world\"."
+            }
+          },
+          "required": [
+            "action"
+          ]
+        }
+      },
+      {
+        "name": "MSOfficeWin",
+        "description": "[MSOfficeWin.exe v1.0.0] MS Office automation via COM late-binding. Controls Word, Excel, PowerPoint.\n    Office must be running with at least one document open for most commands.\n    Workflow: LISTDOCS -> identify target -> QUERYTREE -> READ/WRITE -> SAVE. Available commands: LISTDOCS, QUERYTREE, READ, WRITE, SAVE, EXPORT, NEWDOC, EXEC_MACRO, FORMAT, FOCUS. CROSS-TOOL USAGE: For Office/LibreOffice dialogs (Save As, security prompts, macro warnings, unexpected popups) that MSOfficeWin.exe cannot reach directly, switch to the KeyWin tool.  Use KeyWin LISTWINDOWS to find the dialog HWND, then target it with proc=\"HANDLE:<hwnd>\".  KeyWin SENDKEYS/CLICKID/CLICKNAME can dismiss or fully interact with any dialog regardless of locale.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helper": {
+              "type": "string",
+              "description": "Which C# helper binary processes this call. Normally implicit in the tool name and can be omitted. This tool maps to helper \"MSOfficeWin.exe\"."
+            },
+            "proc": {
+              "type": "string",
+              "description": "Container hierarchy: L1 OS process // L2 sub-window // L3 document/tab. Levels are separated by \"//\"; each level is a [key:val;key:val] bracket. Omit to target the active/foreground instance. Single level examples: \"[pid:1234]\"  \"[procname:WINWORD*]\"  \"[handle:0xABCD]\"  \"[sha256:hex]\". Multi-level: \"[procname:WINWORD.EXE]//[docname:Budget.xlsx]\" \"[pid:8800]//[url:https://github.com/pulls]\" \"[pid:123]//[subwindowhandle:0x2A4]//[tabid:3]\". L3 doc/tab keys: docname url tabid page. L2 sub-window keys: subwindowhandle frame pane. L1 OS keys: pid handle hwnd procname sha256 sha512 title."
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "LISTDOCS",
+                "QUERYTREE",
+                "READ",
+                "WRITE",
+                "SAVE",
+                "EXPORT",
+                "NEWDOC",
+                "EXEC_MACRO",
+                "FORMAT",
+                "FOCUS"
+              ],
+              "description": "Command to execute. LISTDOCS: List all open documents across Word, Excel, PowerPoint. Target can be any value (e.g. 'excel').; QUERYTREE: Return the document structure as a JSON tree. Depth 2=sheets/paragraphs, depth 3=cells/shapes (Excel: capped at 200 cells).; READ: Read a value from the document.\n    Excel: cell[@addr'A1'] or sheet[@name'Q1']/cell[@addr'B2:C5'].\n    Word: \"body\" (full text), body/para[N] (Nth paragraph), bookmark[@name'X'].\n    PowerPoint: slide[N] (all text on slide), slide[N]/shape[@name'Title'].; WRITE: Write a value to the document.\n    Excel: cell[@addr'A1'] or sheet[@name'Q1']/cell[@addr'B2'] (formula if value starts with =).\n    Word: body (full replace), body/para[N] (auto-extends), bookmark[@name'X'].\n    PowerPoint: slide[N]/shape[@name'Title'] or slide[N]/shape[1].; SAVE: Save the active document/workbook/presentation.; EXPORT: Export the document to another format. Currently supported: 'pdf'. Optionally provide a full output path.; NEWDOC: Create a new document/workbook/presentation. Starts Office if not already running.; EXEC_MACRO: Run a named VBA macro (Excel only). The macro must already exist in the workbook.; FORMAT: Apply a named paragraph style to a paragraph in a Word document. Use after WRITE to style headings and body text. Path must be a paragraph address such as body/para[N] or para[N]. StyleName is a built-in Word style: 'Normal', 'Title', 'Heading 1'..'Heading 9', 'Subtitle', 'Quote', 'Intense Quote', 'List Bullet', 'List Number', 'Caption'.; FOCUS: Bring the Office application window to the foreground. Call after NEWDOC or before any visible interaction in cooperative/showcase mode so the user can see what the AI is doing. Uses ShowWindow(SW_RESTORE) + SetForegroundWindow."
+            },
+            "path": {
+              "type": "string",
+              "description": "XPath-style element address (L4+). Pure element path — no container info. Container levels (process, sub-window, document) belong in `proc`. Leading \"//\" optional. Word:       \"//body/para[20]\"  \"//body/bookmark[@name='Summary']\" Excel:      \"//sheet[@name='Q1']/cell[@addr='B2:D5']\" PowerPoint: \"//slide[2]/shape[@name='Title']\" UIA Win32:  \"//Button[@id='num1Button']\" Browser:    \"//*[@id='compose']\""
+            },
+            "value": {
+              "type": "string",
+              "description": "Payload / value to write, apply, or send to the addressed element. Examples: \"Heading 2\"  \"=SUM(A1:A10)\"  \"hello world\"."
+            }
+          },
+          "required": [
+            "action"
+          ]
+        }
+      },
+      {
+        "name": "listHelpers",
+        "description": "List all discovered helper executables and their supported commands",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "getHelperSchema",
+        "description": "Get the full API schema for a specific helper executable",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helperName": {
+              "type": "string",
+              "description": "Helper name (e.g. \"KeyWin.exe\")"
+            }
+          },
+          "required": [
+            "helperName"
+          ]
+        }
+      },
+      {
+        "name": "fetch_webpage",
+        "description": "Fetch content from a webpage with security filtering",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "URL to fetch (HTTP/HTTPS)"
+            },
+            "options": {
+              "type": "object",
+              "description": "Fetch options",
+              "properties": {
+                "method": {
+                  "type": "string",
+                  "default": "GET"
+                },
+                "headers": {
+                  "type": "object"
+                },
+                "timeout": {
+                  "type": "number",
+                  "default": 30000
+                },
+                "extractText": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "extractElements": {
+                  "type": "string",
+                  "description": "CSS selector to extract specific elements"
+                },
+                "maxResponseSize": {
+                  "type": "number",
+                  "default": 10485760
+                },
+                "allowRedirects": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "userAgent": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "required": [
+            "url"
+          ]
+        }
+      }
+    ]
+  }
+}
+[15:24:50] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:24:50] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:24:50] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:24:50] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:24:50] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 0,
+  "method": "tools/list",
+  "params": {}
+}
+[15:24:50] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:24:50] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 0,
+  "result": {
+    "tools": [
+      {
+        "name": "queryTree",
+        "description": "Query UI element tree from a provider",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "providerName": {
+              "type": "string",
+              "description": "Provider name (e.g., \"windowsForms\", \"webUI\", \"office\")"
+            },
+            "targetId": {
+              "type": "string",
+              "description": "Target window/document identifier"
+            },
+            "options": {
+              "type": "object",
+              "description": "Query options",
+              "properties": {
+                "depth": {
+                  "type": "number"
+                },
+                "includeHidden": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "required": [
+            "providerName",
+            "targetId"
+          ]
+        }
+      },
+      {
+        "name": "clickElement",
+        "description": "Click a UI element",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "providerName": {
+              "type": "string",
+              "description": "Provider name"
+            },
+            "elementId": {
+              "type": "string",
+              "description": "Element identifier to click"
+            }
+          },
+          "required": [
+            "providerName",
+            "elementId"
+          ]
+        }
+      },
+      {
+        "name": "setProperty",
+        "description": "Set a property on a UI element",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "providerName": {
+              "type": "string"
+            },
+            "elementId": {
+              "type": "string"
+            },
+            "propertyName": {
+              "type": "string"
+            },
+            "value": {
+              "description": "Property value"
+            }
+          },
+          "required": [
+            "providerName",
+            "elementId",
+            "propertyName",
+            "value"
+          ]
+        }
+      },
+      {
+        "name": "readProperty",
+        "description": "Read a property from a UI element",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "providerName": {
+              "type": "string"
+            },
+            "elementId": {
+              "type": "string"
+            },
+            "propertyName": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "providerName",
+            "elementId",
+            "propertyName"
+          ]
+        }
+      },
+      {
+        "name": "getProviders",
+        "description": "Get list of available automation providers",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "listWindows",
+        "description": "List all visible windows with titles and process information",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "launchProcess",
+        "description": "Launch an application process",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "executable": {
+              "type": "string",
+              "description": "Executable name or path (e.g., \"calc.exe\", \"notepad.exe\")"
+            },
+            "args": {
+              "type": "array",
+              "description": "Optional command-line arguments",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "executable"
+          ]
+        }
+      },
+      {
+        "name": "terminateProcess",
+        "description": "Terminate a running process by name or PID",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "process": {
+              "type": "string",
+              "description": "Process name (e.g., \"calc\", \"CalculatorApp\") or PID (e.g., \"PID:12345\")"
+            }
+          },
+          "required": [
+            "process"
+          ]
+        }
+      },
+      {
+        "name": "executeScenario",
+        "description": "Execute a scenario from the app template library (XML) or a legacy JSON scenario file.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "app": {
+              "type": "string",
+              "description": "App name as it appears in apptemplates/ (e.g., \"calculator\", \"notepad\", \"chrome\"). Use with scenarioId."
+            },
+            "scenarioId": {
+              "type": "string",
+              "description": "Scenario id within apptemplates/{app}/scenarios.xml (e.g., \"compute\", \"intro\")."
+            },
+            "params": {
+              "type": "object",
+              "description": "Runtime parameter substitutions for {{placeholder}} variables in the scenario, e.g. { \"expression\": \"7 * 6\" }."
+            },
+            "scenarioPath": {
+              "type": "string",
+              "description": "Path to JSON scenario file (e.g., \"config/scenarios/calculator-basic.json\")"
+            },
+            "scenarioJson": {
+              "type": "object",
+              "description": "Inline scenario JSON object (alternative to scenarioPath)"
+            },
+            "verbose": {
+              "type": "boolean",
+              "description": "Enable verbose output",
+              "default": false
+            }
+          }
+        }
+      },
+      {
+        "name": "BrowserWin",
+        "description": "[BrowserWin.exe v1.3.0] Browser automation via Chrome DevTools Protocol (CDP).\n    Window mode: MULTI-SESSION - the browser holds many tabs/pages.\n    Workflow: LISTBROWSERS -> LAUNCH (if needed) -> NEWPAGE -> NAVIGATE -> READ/QUERYTREE -> interact.\n    Reuse the existing browser window and open a NEWPAGE instead of relaunching.\n    Teardown policy (default: leave_open): leave_open (default), discard_tab (EXEC:window.close()), close_app (KILL).\n    Requires browser started with --remote-debugging-port=<port>. Call LAUNCH to start with debug port automatically. Available commands: LISTBROWSERS, LAUNCH, NAVIGATE, READ, QUERYTREE, CLICKID, CLICKNAME, FILL, EXEC, READELEM, SENDKEYS, PAGESOURCE, SCREENSHOT, NEWPAGE, COOKIES, KILL, KEYDOWN, KEYUP, KEYPRESS, RIGHTCLICK, DBLCLICK, HOVER, CHECK, UNCHECK, MOUSEDOWN, MOUSEUP, DIALOG, FOCUS. CROSS-TOOL USAGE: For OS-level browser dialogs (file upload pickers, certificate warnings, HTTP auth prompts, download confirmations) that CDP cannot reach, use the KeyWin tool.  KeyWin LISTWINDOWS shows the dialog HWND; target it with proc=\"HANDLE:<hwnd>\".  KeyWin SENDKEYS, CLICKID, and QUERYTREE work on any visible Win32 dialog, including browser-spawned ones.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helper": {
+              "type": "string",
+              "description": "Which C# helper binary processes this call. Normally implicit in the tool name and can be omitted. This tool maps to helper \"BrowserWin.exe\"."
+            },
+            "proc": {
+              "type": "string",
+              "description": "Container hierarchy: L1 OS process // L2 sub-window // L3 document/tab. Levels are separated by \"//\"; each level is a [key:val;key:val] bracket. Omit to target the active/foreground instance. Single level examples: \"[pid:1234]\"  \"[procname:WINWORD*]\"  \"[handle:0xABCD]\"  \"[sha256:hex]\". Multi-level: \"[procname:WINWORD.EXE]//[docname:Budget.xlsx]\" \"[pid:8800]//[url:https://github.com/pulls]\" \"[pid:123]//[subwindowhandle:0x2A4]//[tabid:3]\". L3 doc/tab keys: docname url tabid page. L2 sub-window keys: subwindowhandle frame pane. L1 OS keys: pid handle hwnd procname sha256 sha512 title."
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "LISTBROWSERS",
+                "LAUNCH",
+                "NAVIGATE",
+                "READ",
+                "QUERYTREE",
+                "CLICKID",
+                "CLICKNAME",
+                "FILL",
+                "EXEC",
+                "READELEM",
+                "SENDKEYS",
+                "PAGESOURCE",
+                "SCREENSHOT",
+                "NEWPAGE",
+                "COOKIES",
+                "KILL",
+                "KEYDOWN",
+                "KEYUP",
+                "KEYPRESS",
+                "RIGHTCLICK",
+                "DBLCLICK",
+                "HOVER",
+                "CHECK",
+                "UNCHECK",
+                "MOUSEDOWN",
+                "MOUSEUP",
+                "DIALOG",
+                "FOCUS"
+              ],
+              "description": "Command to execute. LISTBROWSERS: List all running Chromium-family browser processes (Chrome, Edge, Brave, Opera); LAUNCH: Start a browser with --remote-debugging-port so CDP commands work, or reuse an existing debug window. target='brave'/'chrome'/'msedge'/'firefox'. Optional mode param: 'visible' (default) or 'headless'. Returns port number and whether it was reused or newly launched. Call this FIRST if NEWPAGE/NAVIGATE/FILL/EXEC return CDP errors.; NAVIGATE: Navigate the active page to a URL; READ: Read the current page title, URL and meta-description; QUERYTREE: Query the DOM tree up to the specified depth (default 3); CLICKID: Click a DOM element matching a CSS selector; CLICKNAME: Click a button/link whose visible text matches the given string; FILL: Set the value of an input field.; EXEC: Evaluate a JavaScript expression and return its string result; READELEM: Read the visible text or value of a specific DOM element via CSS selector (CDP) or UIA fallback.; SENDKEYS: Send keyboard input to the browser window (UIA). Supports special keys: {ENTER}, {TAB}, {ESC}, {CTRL+C}, etc.; PAGESOURCE: Retrieve the raw HTML source of the current page via Ctrl+U/Ctrl+A/Ctrl+C clipboard trick (UIA; works on every browser, no debug port required).; SCREENSHOT: Capture a PNG screenshot of the current browser page via CDP Page.captureScreenshot. Optional parameter: file path to save (default: %TEMP%\\aiapi_screenshot_<timestamp>.png). Returns the saved file path and byte size.; NEWPAGE: Open a new browser tab; optionally navigate it to a URL; COOKIES: Manage browser cookies. Actions: get | clear | set:<name=value;domain=...>; KILL: Terminate the target browser process; KEYDOWN: Hold a modifier key down via CDP Input.dispatchKeyEvent (or SendInput UIA fallback). Use with KEYUP to build chords. Param: Ctrl | Alt | Shift | Win.; KEYUP: Release a held modifier key. Always pair with a prior KEYDOWN for the same key.; KEYPRESS: Atomic keydown+keyup for function or navigation keys. Supported: F1-F12, HOME, END, PAGEUP, PAGEDOWN, INSERT, DELETE, ENTER, TAB, ESC, BACK, LEFT, RIGHT, UP, DOWN, APPS.; RIGHTCLICK: Right-click at screen coordinates via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Param: x,y.; DBLCLICK: Double left-click at screen coordinates via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Param: x,y.; HOVER: Move the cursor to screen coordinates without clicking, via CDP Input.dispatchMouseEvent (or SetCursorPos UIA fallback). Param: x,y.; CHECK: Check a checkbox by CSS selector (CDP JS el.checked=true + change event). Falls back to UIA TogglePattern when no CDP.; UNCHECK: Uncheck a checkbox by CSS selector (CDP JS el.checked=false + change event). Falls back to UIA TogglePattern when no CDP.; MOUSEDOWN: Press and hold left mouse button at screen coordinates (x,y) via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Use with MOUSEUP for drag operations.; MOUSEUP: Release left mouse button at screen coordinates (x,y) via CDP Input.dispatchMouseEvent (or SendInput UIA fallback). Completes a drag started with MOUSEDOWN.; DIALOG: Detect and handle a JavaScript dialog (alert/confirm/prompt) via CDP Page.handleJavaScriptDialog. param: empty or 'accept' (click OK), 'dismiss' (click Cancel), 'accept:TEXT' (fill prompt then OK). Returns dialogPresent:true when a dialog was open and was handled; dialogPresent:false when no dialog was showing (safe to call speculatively after any action that might produce a dialog).; FOCUS: Bring the browser window to the foreground. Call before any visible interaction in cooperative/showcase mode so the user can see what the AI is doing. Finds the browser window by process name and brings it to front via ShowWindow(SW_RESTORE) + SetForegroundWindow."
+            },
+            "path": {
+              "type": "string",
+              "description": "XPath-style element address (L4+). Pure element path — no container info. Container levels (process, sub-window, document) belong in `proc`. Leading \"//\" optional. Word:       \"//body/para[20]\"  \"//body/bookmark[@name='Summary']\" Excel:      \"//sheet[@name='Q1']/cell[@addr='B2:D5']\" PowerPoint: \"//slide[2]/shape[@name='Title']\" UIA Win32:  \"//Button[@id='num1Button']\" Browser:    \"//*[@id='compose']\""
+            },
+            "value": {
+              "type": "string",
+              "description": "Payload / value to write, apply, or send to the addressed element. Examples: \"Heading 2\"  \"=SUM(A1:A10)\"  \"hello world\"."
+            }
+          },
+          "required": [
+            "action"
+          ]
+        }
+      },
+      {
+        "name": "KeyWin",
+        "description": "[KeyWin.exe v1.1.0] Windows UI automation via UIA/HWND. Supports two window modes:\n    SINGLE-SESSION apps (Calculator, Paint, Minesweeper): only one window exists at a time.\n    Use RESET to clear state before reuse instead of closing.\n    MULTI-DOCUMENT apps (Notepad, Word, Excel, browser via UIA): can hold many open documents.\n    Use NEWDOC to open a new document/tab within the existing window instead of relaunching.\n    Teardown policy (default: leave_open): leave_open (window stays open), discard_doc (close active doc/tab), close_app (terminate app).\n    Before automating, call LISTWINDOWS to discover existing instances and reuse them. Window modes: single_session (One window; use RESET to clear state; e.g. calc.exe, mspaint.exe) | multi_document (Many documents/tabs; use NEWDOC or open new windows; e.g. notepad.exe, winword.exe). Teardown policies: leave_open, discard_doc, close_app. Default is leave_open (non-destructive). Ask the user before using discard_doc/discard_tab or close_app. Available commands: LISTWINDOWS, QUERYTREE, READ, CLICKID, CLICKNAME, CLICK, SENDKEYS, SET, RESET, NEWDOC, KILL, KEYDOWN, KEYUP, KEYPRESS, RIGHTCLICK, DBLCLICK, HOVER, FILL, READELEM, CHECK, UNCHECK, MOUSEDOWN, MOUSEUP, FOCUS. CROSS-TOOL USAGE: KeyWin is the universal Win32/UIA automation layer. Combine it with BrowserWin, MSOfficeWin, or LibreOfficeWin to handle any OS-level dialog, popup, file-picker, security prompt, or unexpected window that the app-specific helper cannot reach directly. Target office/browser dialogs with proc=\"HANDLE:<hwnd>\" (get <hwnd> from KeyWin LISTWINDOWS), or proc=\"soffice.exe\" / proc=\"WINWORD.EXE\" / proc=\"chrome.exe\".  Use SENDKEYS to dismiss, QUERYTREE to inspect, CLICKID/CLICKNAME to click buttons in any visible window.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helper": {
+              "type": "string",
+              "description": "Which C# helper binary processes this call. Normally implicit in the tool name and can be omitted. This tool maps to helper \"KeyWin.exe\"."
+            },
+            "proc": {
+              "type": "string",
+              "description": "Container hierarchy: L1 OS process // L2 sub-window // L3 document/tab. Levels are separated by \"//\"; each level is a [key:val;key:val] bracket. Omit to target the active/foreground instance. Single level examples: \"[pid:1234]\"  \"[procname:WINWORD*]\"  \"[handle:0xABCD]\"  \"[sha256:hex]\". Multi-level: \"[procname:WINWORD.EXE]//[docname:Budget.xlsx]\" \"[pid:8800]//[url:https://github.com/pulls]\" \"[pid:123]//[subwindowhandle:0x2A4]//[tabid:3]\". L3 doc/tab keys: docname url tabid page. L2 sub-window keys: subwindowhandle frame pane. L1 OS keys: pid handle hwnd procname sha256 sha512 title."
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "LISTWINDOWS",
+                "QUERYTREE",
+                "READ",
+                "CLICKID",
+                "CLICKNAME",
+                "CLICK",
+                "SENDKEYS",
+                "SET",
+                "RESET",
+                "NEWDOC",
+                "KILL",
+                "KEYDOWN",
+                "KEYUP",
+                "KEYPRESS",
+                "RIGHTCLICK",
+                "DBLCLICK",
+                "HOVER",
+                "FILL",
+                "READELEM",
+                "CHECK",
+                "UNCHECK",
+                "MOUSEDOWN",
+                "MOUSEUP",
+                "FOCUS"
+              ],
+              "description": "Command to execute. LISTWINDOWS: List all visible top-level windows with title, handle and PID. Always call first to discover existing instances before launching new ones.; QUERYTREE: Return the UIA element tree for the target window (depth 1-8). Use to discover AutomationIds and control names before clicking.; READ: Read the current value/text from the target window (document body, selected value, etc.).; CLICKID: Click a UI element by AutomationId (from QUERYTREE). Preferred over CLICKNAME when IDs are stable.; CLICKNAME: Click a UI element by its visible Name property. Use when no stable AutomationId is available.; CLICK: Click at absolute screen coordinates (x,y). Use only when element IDs and names are unavailable.; SENDKEYS: Send keystrokes to the target window. Supports literal text and special tokens: {ENTER}, {TAB}, {ESC}, {CTRL+A}, {CTRL+C} (copy), {CTRL+V} (paste), {CTRL+Z} (undo), {CTRL+S} (save), {DELETE}, {BACK}. Use for typing, editing, and clipboard operations.; SET: Set a property on a UI element via ValuePattern (direct value injection, bypasses keyboard).; RESET: Reset a SINGLE-SESSION app to a clean state without closing it. For Calculator: clicks the AC/Clear button. For other apps: application-specific reset. Prefer over close+relaunch to minimise side effects.; NEWDOC: Open a new document in the target MULTI-DOCUMENT app (Ctrl+N). Use instead of launching a second process when the application already exists.; KILL: Terminate the target process. Use only when teardown_policy=close_app and explicitly confirmed.; KEYDOWN: Hold a modifier key (SendInput KEYEVENTF_KEYDOWN). Use before other keys for chords that SENDKEYS cannot express. Always pair with KEYUP.; KEYUP: Release a held modifier key (SendInput KEYEVENTF_KEYUP). Always use after a matching KEYDOWN.; KEYPRESS: Atomic keydown+keyup for function/navigation keys (F1-F12, HOME, END, PAGEUP, PAGEDOWN, INSERT, DELETE, ENTER, TAB, ESC, APPS, arrow keys). Not for typing printable text — use SENDKEYS for that.; RIGHTCLICK: Right-click at absolute screen coordinates (x,y). Opens context menus.; DBLCLICK: Double left-click at absolute screen coordinates (x,y). Opens items and triggers default actions.; HOVER: Move mouse cursor to screen coordinates (x,y) without clicking. Triggers hover effects and tooltips.; FILL: Set value of a UI element by AutomationId or Name (ValuePattern). Fires UIA value-change so JS frameworks see the change.; READELEM: Read the current value of a UI element by AutomationId or Name (ValuePattern or Name fallback).; CHECK: Check a checkbox or radio button by AutomationId or Name. Uses TogglePattern. Idempotent: no-op if already checked.; UNCHECK: Uncheck a checkbox by AutomationId or Name. Uses TogglePattern. Idempotent: no-op if already unchecked.; MOUSEDOWN: Press and hold left mouse button at screen coordinates (x,y). Use with MOUSEUP for drag-and-drop. SendInput MOUSEEVENTF_LEFTDOWN.; MOUSEUP: Release left mouse button at screen coordinates (x,y). Completes a drag started with MOUSEDOWN. SendInput MOUSEEVENTF_LEFTUP.; FOCUS: Bring the target window to the foreground. Call before any visible UI interaction in cooperative/showcase mode so the user can see what the AI is doing. Uses ShowWindow(SW_RESTORE) + SetForegroundWindow."
+            },
+            "path": {
+              "type": "string",
+              "description": "XPath-style element address (L4+). Pure element path — no container info. Container levels (process, sub-window, document) belong in `proc`. Leading \"//\" optional. Word:       \"//body/para[20]\"  \"//body/bookmark[@name='Summary']\" Excel:      \"//sheet[@name='Q1']/cell[@addr='B2:D5']\" PowerPoint: \"//slide[2]/shape[@name='Title']\" UIA Win32:  \"//Button[@id='num1Button']\" Browser:    \"//*[@id='compose']\""
+            },
+            "value": {
+              "type": "string",
+              "description": "Payload / value to write, apply, or send to the addressed element. Examples: \"Heading 2\"  \"=SUM(A1:A10)\"  \"hello world\"."
+            }
+          },
+          "required": [
+            "action"
+          ]
+        }
+      },
+      {
+        "name": "LibreOfficeWin",
+        "description": "[LibreOfficeWin.exe v1.1.0] LibreOffice / Apache OpenOffice automation via UNO COM bridge (LO < 24) or UNO socket (LO 24+).\n    Controls Writer, Calc, Impress. Works with LibreOffice 5+ and OpenOffice 4+.\n    Office must be running. Workflow: LISTDOCS -> QUERYTREE -> READ/WRITE -> SAVE.\n    officeNote: If LibreOffice is open but unreachable (LO 24+ removed COM bridge),\n    call {RELAUNCH} or {LAUNCH:<app>} to restart with the UNO socket enabled, then retry. Available commands: LISTDOCS, QUERYTREE, READ, WRITE, SAVE, EXPORT, NEWDOC, FORMAT, RELAUNCH, LAUNCH, FOCUS. CROSS-TOOL USAGE: For Office/LibreOffice dialogs (Save As, security prompts, macro warnings, unexpected popups) that LibreOfficeWin.exe cannot reach directly, switch to the KeyWin tool.  Use KeyWin LISTWINDOWS to find the dialog HWND, then target it with proc=\"HANDLE:<hwnd>\".  KeyWin SENDKEYS/CLICKID/CLICKNAME can dismiss or fully interact with any dialog regardless of locale.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helper": {
+              "type": "string",
+              "description": "Which C# helper binary processes this call. Normally implicit in the tool name and can be omitted. This tool maps to helper \"LibreOfficeWin.exe\"."
+            },
+            "proc": {
+              "type": "string",
+              "description": "Container hierarchy: L1 OS process // L2 sub-window // L3 document/tab. Levels are separated by \"//\"; each level is a [key:val;key:val] bracket. Omit to target the active/foreground instance. Single level examples: \"[pid:1234]\"  \"[procname:WINWORD*]\"  \"[handle:0xABCD]\"  \"[sha256:hex]\". Multi-level: \"[procname:WINWORD.EXE]//[docname:Budget.xlsx]\" \"[pid:8800]//[url:https://github.com/pulls]\" \"[pid:123]//[subwindowhandle:0x2A4]//[tabid:3]\". L3 doc/tab keys: docname url tabid page. L2 sub-window keys: subwindowhandle frame pane. L1 OS keys: pid handle hwnd procname sha256 sha512 title."
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "LISTDOCS",
+                "QUERYTREE",
+                "READ",
+                "WRITE",
+                "SAVE",
+                "EXPORT",
+                "NEWDOC",
+                "FORMAT",
+                "RELAUNCH",
+                "LAUNCH",
+                "FOCUS"
+              ],
+              "description": "Command to execute. LISTDOCS: List all open documents across Writer, Calc, Impress.; QUERYTREE: Return the document structure as a JSON tree.; READ: Read a value from the document.\n    Calc: cell[@addr='A1'] or sheet[@name='Q1']/cell[@addr='B2:C5'].\n    Writer: 'body' (full text), body/para[N], bookmark[@name='X'].\n    Impress: slide[N] (all text), slide[N]/shape[@name='Title'].; WRITE: Write a value to the document.\n    Calc: cell[@addr='A1'] (formula if value starts with =).\n    Writer: body (full replace), body/para[N] (auto-extends), bookmark[@name='X'].\n    Impress: slide[N]/shape[@name='Title'] or slide[N]/shape[1] (auto-extends slides).; SAVE: Save the active document (to its current location, or Documents folder if new).; EXPORT: Export the document to PDF. Optionally provide a full output path.; NEWDOC: Create a new document. Starts LibreOffice if not already running.; FORMAT: Apply formatting to a paragraph in a Writer document. Path must be body/para[N].\n    Style name form (backward compat): path=body/para[1] value=Heading 1\n    Key=value form: path=body/para[1] value=bold=true|italic=false|fontSize=14\n    Mixed: path=body/para[1] value=style=Normal|bold=true|alignment=center\n    Character keys: bold italic underline strikethrough allCaps smallCaps fontName fontSize color(#RRGGBB) charSpacingPt\n    Paragraph keys: style alignment(left/center/right/justify) spaceBeforePt spaceAfterPt indentLeftCm indentRightCm indentFirstLineCm\n    Style names: Normal Title Subtitle Heading1..6 Quote ListBullet ListNumber Caption; RELAUNCH: Saves all open documents, kills LibreOffice, restarts with UNO socket --accept on port (default 2002).\n    Required for LibreOffice 24+ which removed the COM bridge. After RELAUNCH subsequent commands\n    use the COM bridge (LO < 24) or report socket_reachable status (LO 24+).\n    Use {RELAUNCH:2002} to specify a port.; LAUNCH: Start LibreOffice with UNO socket if not already reachable. No-op if COM bridge or socket already active.\n    Format: {LAUNCH:app} or {LAUNCH:app:port}. App: writer/calc/impress.; FOCUS: Bring the LibreOffice window to the foreground."
+            },
+            "path": {
+              "type": "string",
+              "description": "XPath-style element address (L4+). Pure element path — no container info. Container levels (process, sub-window, document) belong in `proc`. Leading \"//\" optional. Word:       \"//body/para[20]\"  \"//body/bookmark[@name='Summary']\" Excel:      \"//sheet[@name='Q1']/cell[@addr='B2:D5']\" PowerPoint: \"//slide[2]/shape[@name='Title']\" UIA Win32:  \"//Button[@id='num1Button']\" Browser:    \"//*[@id='compose']\""
+            },
+            "value": {
+              "type": "string",
+              "description": "Payload / value to write, apply, or send to the addressed element. Examples: \"Heading 2\"  \"=SUM(A1:A10)\"  \"hello world\"."
+            }
+          },
+          "required": [
+            "action"
+          ]
+        }
+      },
+      {
+        "name": "MSOfficeWin",
+        "description": "[MSOfficeWin.exe v1.0.0] MS Office automation via COM late-binding. Controls Word, Excel, PowerPoint.\n    Office must be running with at least one document open for most commands.\n    Workflow: LISTDOCS -> identify target -> QUERYTREE -> READ/WRITE -> SAVE. Available commands: LISTDOCS, QUERYTREE, READ, WRITE, SAVE, EXPORT, NEWDOC, EXEC_MACRO, FORMAT, FOCUS. CROSS-TOOL USAGE: For Office/LibreOffice dialogs (Save As, security prompts, macro warnings, unexpected popups) that MSOfficeWin.exe cannot reach directly, switch to the KeyWin tool.  Use KeyWin LISTWINDOWS to find the dialog HWND, then target it with proc=\"HANDLE:<hwnd>\".  KeyWin SENDKEYS/CLICKID/CLICKNAME can dismiss or fully interact with any dialog regardless of locale.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helper": {
+              "type": "string",
+              "description": "Which C# helper binary processes this call. Normally implicit in the tool name and can be omitted. This tool maps to helper \"MSOfficeWin.exe\"."
+            },
+            "proc": {
+              "type": "string",
+              "description": "Container hierarchy: L1 OS process // L2 sub-window // L3 document/tab. Levels are separated by \"//\"; each level is a [key:val;key:val] bracket. Omit to target the active/foreground instance. Single level examples: \"[pid:1234]\"  \"[procname:WINWORD*]\"  \"[handle:0xABCD]\"  \"[sha256:hex]\". Multi-level: \"[procname:WINWORD.EXE]//[docname:Budget.xlsx]\" \"[pid:8800]//[url:https://github.com/pulls]\" \"[pid:123]//[subwindowhandle:0x2A4]//[tabid:3]\". L3 doc/tab keys: docname url tabid page. L2 sub-window keys: subwindowhandle frame pane. L1 OS keys: pid handle hwnd procname sha256 sha512 title."
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "LISTDOCS",
+                "QUERYTREE",
+                "READ",
+                "WRITE",
+                "SAVE",
+                "EXPORT",
+                "NEWDOC",
+                "EXEC_MACRO",
+                "FORMAT",
+                "FOCUS"
+              ],
+              "description": "Command to execute. LISTDOCS: List all open documents across Word, Excel, PowerPoint. Target can be any value (e.g. 'excel').; QUERYTREE: Return the document structure as a JSON tree. Depth 2=sheets/paragraphs, depth 3=cells/shapes (Excel: capped at 200 cells).; READ: Read a value from the document.\n    Excel: cell[@addr'A1'] or sheet[@name'Q1']/cell[@addr'B2:C5'].\n    Word: \"body\" (full text), body/para[N] (Nth paragraph), bookmark[@name'X'].\n    PowerPoint: slide[N] (all text on slide), slide[N]/shape[@name'Title'].; WRITE: Write a value to the document.\n    Excel: cell[@addr'A1'] or sheet[@name'Q1']/cell[@addr'B2'] (formula if value starts with =).\n    Word: body (full replace), body/para[N] (auto-extends), bookmark[@name'X'].\n    PowerPoint: slide[N]/shape[@name'Title'] or slide[N]/shape[1].; SAVE: Save the active document/workbook/presentation.; EXPORT: Export the document to another format. Currently supported: 'pdf'. Optionally provide a full output path.; NEWDOC: Create a new document/workbook/presentation. Starts Office if not already running.; EXEC_MACRO: Run a named VBA macro (Excel only). The macro must already exist in the workbook.; FORMAT: Apply a named paragraph style to a paragraph in a Word document. Use after WRITE to style headings and body text. Path must be a paragraph address such as body/para[N] or para[N]. StyleName is a built-in Word style: 'Normal', 'Title', 'Heading 1'..'Heading 9', 'Subtitle', 'Quote', 'Intense Quote', 'List Bullet', 'List Number', 'Caption'.; FOCUS: Bring the Office application window to the foreground. Call after NEWDOC or before any visible interaction in cooperative/showcase mode so the user can see what the AI is doing. Uses ShowWindow(SW_RESTORE) + SetForegroundWindow."
+            },
+            "path": {
+              "type": "string",
+              "description": "XPath-style element address (L4+). Pure element path — no container info. Container levels (process, sub-window, document) belong in `proc`. Leading \"//\" optional. Word:       \"//body/para[20]\"  \"//body/bookmark[@name='Summary']\" Excel:      \"//sheet[@name='Q1']/cell[@addr='B2:D5']\" PowerPoint: \"//slide[2]/shape[@name='Title']\" UIA Win32:  \"//Button[@id='num1Button']\" Browser:    \"//*[@id='compose']\""
+            },
+            "value": {
+              "type": "string",
+              "description": "Payload / value to write, apply, or send to the addressed element. Examples: \"Heading 2\"  \"=SUM(A1:A10)\"  \"hello world\"."
+            }
+          },
+          "required": [
+            "action"
+          ]
+        }
+      },
+      {
+        "name": "listHelpers",
+        "description": "List all discovered helper executables and their supported commands",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "getHelperSchema",
+        "description": "Get the full API schema for a specific helper executable",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "helperName": {
+              "type": "string",
+              "description": "Helper name (e.g. \"KeyWin.exe\")"
+            }
+          },
+          "required": [
+            "helperName"
+          ]
+        }
+      },
+      {
+        "name": "fetch_webpage",
+        "description": "Fetch content from a webpage with security filtering",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "URL to fetch (HTTP/HTTPS)"
+            },
+            "options": {
+              "type": "object",
+              "description": "Fetch options",
+              "properties": {
+                "method": {
+                  "type": "string",
+                  "default": "GET"
+                },
+                "headers": {
+                  "type": "object"
+                },
+                "timeout": {
+                  "type": "number",
+                  "default": 30000
+                },
+                "extractText": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "extractElements": {
+                  "type": "string",
+                  "description": "CSS selector to extract specific elements"
+                },
+                "maxResponseSize": {
+                  "type": "number",
+                  "default": 10485760
+                },
+                "allowRedirects": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "userAgent": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "required": [
+            "url"
+          ]
+        }
+      }
+    ]
+  }
+}
+[15:24:50] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:24:50] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:24:50] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:24:50] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:24:50] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259490350,
+  "method": "tools/call",
+  "params": {
+    "name": "LibreOfficeWin",
+    "arguments": {
+      "proc": "writer",
+      "action": "LISTDOCS"
+    }
+  }
+}
+[15:24:50] INFO [keywin] >> LibreOfficeWin.exe  proc="writer"  action=LISTDOCS  path=  value=
+[15:25:02] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:25:02] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:25:02] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:25:02] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259502355,
+  "method": "tools/call",
+  "params": {
+    "name": "LibreOfficeWin",
+    "arguments": {
+      "proc": "writer",
+      "action": "NEWDOC"
+    }
+  }
+}
+[15:25:02] INFO [keywin] >> LibreOfficeWin.exe  proc="writer"  action=NEWDOC  path=  value=
+[15:25:10] INFO [keywin] << LibreOfficeWin.exe  success=false
+[15:25:10] DEBUG [keywin] Response:
+{
+  "success": false,
+  "error": "helper_timeout: no response after 20000ms"
+}
+[15:25:10] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:25:10] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259490350,
+  "error": {
+    "code": -32603,
+    "message": "LISTDOCS failed: helper_timeout: no response after 20000ms"
+  }
+}
+[15:25:10] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:25:20] INFO [keywin] << LibreOfficeWin.exe  success=true
+[15:25:20] DEBUG [keywin] Response:
+{
+  "id": "9",
+  "success": true,
+  "result": []
+}
+[15:25:20] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:25:20] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259502355,
+  "result": {
+    "id": "9",
+    "success": true,
+    "result": []
+  }
+}
+[15:25:20] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:25:20] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:25:20] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:25:20] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:25:20] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259520814,
+  "method": "tools/call",
+  "params": {
+    "name": "LibreOfficeWin",
+    "arguments": {
+      "proc": "writer",
+      "action": "QUERYTREE",
+      "path": "2"
+    }
+  }
+}
+[15:25:20] INFO [keywin] >> LibreOfficeWin.exe  proc="writer"  action=QUERYTREE  path=2  value=
+[15:25:21] INFO [keywin] << LibreOfficeWin.exe  success=true
+[15:25:21] DEBUG [keywin] Response:
+{
+  "id": "10",
+  "success": true,
+  "result": "created",
+  "name": "Zpráva o pádu"
+}
+[15:25:21] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:25:21] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259520814,
+  "result": {
+    "id": "10",
+    "success": true,
+    "result": "created",
+    "name": "Zpráva o pádu"
+  }
+}
+[15:25:21] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:25:21] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:25:21] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:25:21] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:25:21] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259521385,
+  "method": "tools/call",
+  "params": {
+    "name": "LibreOfficeWin",
+    "arguments": {
+      "proc": "writer",
+      "action": "READ",
+      "path": "body"
+    }
+  }
+}
+[15:25:21] INFO [keywin] >> LibreOfficeWin.exe  proc="writer"  action=READ  path=body  value=
+[15:25:31] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:25:31] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:25:31] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:25:31] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259531397,
+  "method": "tools/call",
+  "params": {
+    "name": "LibreOfficeWin",
+    "arguments": {
+      "proc": "writer",
+      "action": "WRITE",
+      "path": "body/para[1]",
+      "value": "AIAPI dogfood dogfood_1776259490331"
+    }
+  }
+}
+[15:25:31] INFO [keywin] >> LibreOfficeWin.exe  proc="writer"  action=WRITE  path=body/para[1]  value=AIAPI dogfood dogfood_1776259490331
+[15:25:41] INFO [keywin] << LibreOfficeWin.exe  success=false
+[15:25:41] DEBUG [keywin] Response:
+{
+  "success": false,
+  "error": "helper_timeout: no response after 20000ms"
+}
+[15:25:41] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:25:41] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259521385,
+  "error": {
+    "code": -32603,
+    "message": "READ failed: helper_timeout: no response after 20000ms"
+  }
+}
+[15:25:41] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:25:43] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:25:43] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:25:43] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:25:43] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259543399,
+  "method": "tools/call",
+  "params": {
+    "name": "LibreOfficeWin",
+    "arguments": {
+      "proc": "writer",
+      "action": "FORMAT",
+      "path": "body/para[1]",
+      "value": "bold=true|fontSize=14"
+    }
+  }
+}
+[15:25:43] INFO [keywin] >> LibreOfficeWin.exe  proc="writer"  action=FORMAT  path=body/para[1]  value=bold=true|fontSize=14
+[15:25:51] INFO [keywin] << LibreOfficeWin.exe  success=false
+[15:25:51] DEBUG [keywin] Response:
+{
+  "id": "11",
+  "success": false,
+  "error": "No open document found for target: writer"
+}
+[15:25:51] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:25:51] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259531397,
+  "error": {
+    "code": -32603,
+    "message": "WRITE failed: No open document found for target: writer"
+  }
+}
+[15:25:51] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:25:53] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:25:53] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:25:53] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:25:53] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259553415,
+  "method": "tools/call",
+  "params": {
+    "name": "LibreOfficeWin",
+    "arguments": {
+      "proc": "calc",
+      "action": "NEWDOC"
+    }
+  }
+}
+[15:25:53] INFO [keywin] >> LibreOfficeWin.exe  proc="calc"  action=NEWDOC  path=  value=
+[15:26:11] INFO [keywin] << LibreOfficeWin.exe  success=false
+[15:26:11] DEBUG [keywin] Response:
+{
+  "success": false,
+  "error": "helper_timeout: no response after 20000ms"
+}
+[15:26:11] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:26:11] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259543399,
+  "error": {
+    "code": -32603,
+    "message": "FORMAT failed: helper_timeout: no response after 20000ms"
+  }
+}
+[15:26:11] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:26:18] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:26:18] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:26:18] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:26:18] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259578425,
+  "method": "tools/call",
+  "params": {
+    "name": "LibreOfficeWin",
+    "arguments": {
+      "proc": "impress",
+      "action": "NEWDOC"
+    }
+  }
+}
+[15:26:18] INFO [keywin] >> LibreOfficeWin.exe  proc="impress"  action=NEWDOC  path=  value=
+[15:26:21] INFO [keywin] << LibreOfficeWin.exe  success=false
+[15:26:21] DEBUG [keywin] Response:
+{
+  "id": "12",
+  "success": false,
+  "error": "No open document found for target: writer"
+}
+[15:26:21] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:26:21] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259553415,
+  "error": {
+    "code": -32603,
+    "message": "NEWDOC failed: No open document found for target: writer"
+  }
+}
+[15:26:21] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:26:41] INFO [keywin] << LibreOfficeWin.exe  success=false
+[15:26:41] DEBUG [keywin] Response:
+{
+  "success": false,
+  "error": "helper_timeout: no response after 20000ms"
+}
+[15:26:41] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:26:41] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259578425,
+  "error": {
+    "code": -32603,
+    "message": "NEWDOC failed: helper_timeout: no response after 20000ms"
+  }
+}
+[15:26:41] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:26:41] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:26:41] INFO [mcp] ← INCOMING JSON-RPC REQUEST
+[15:26:41] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:26:41] INFO [mcp] Request:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259601869,
+  "method": "tools/call",
+  "params": {
+    "name": "KeyWin",
+    "arguments": {
+      "proc": "soffice.exe",
+      "action": "KILL"
+    }
+  }
+}
+[15:26:41] INFO [keywin] >> KeyWin.exe  proc="soffice.exe"  action=KILL  path=  value=
+[15:26:41] WARN [HelperDaemon] [KeyWin.exe] stderr: DEBUG: Using inject-mode: direct
+[15:26:41] WARN [HelperDaemon] [KeyWin.exe] stderr: DEBUG: Command=KILL, Parameter=*
+[15:26:41] INFO [keywin] << KeyWin.exe  success=false
+[15:26:41] DEBUG [keywin] Response:
+{
+  "id": "2",
+  "success": false,
+  "error": "process_not_found",
+  "target": "soffice.exe"
+}
+[15:26:41] INFO [mcp] → OUTGOING JSON-RPC RESPONSE
+[15:26:41] INFO [mcp] Response:
+{
+  "jsonrpc": "2.0",
+  "id": 1776259601869,
+  "error": {
+    "code": -32603,
+    "message": "KILL failed: process_not_found"
+  }
+}
+[15:26:41] INFO [mcp] ═══════════════════════════════════════════════════════════
+[15:27:31] DEBUG [HelperDaemon] [LibreOfficeWin.exe] exited code=4294967295

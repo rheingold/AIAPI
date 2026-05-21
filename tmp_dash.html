@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI API Server Dashboard</title>
+  <link rel="icon" href="/favicon.ico" type="image/svg+xml">
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🤖 AI API Server Control Panel</h1>
+      <div class="status-bar">
+        <div class="status-item">
+          <span class="label">Status:</span>
+          <span id="server-status" class="value status-running">Running</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Uptime:</span>
+          <span id="uptime" class="value">--</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Requests:</span>
+          <span id="request-count" class="value">0</span>
+        </div>
+        <div class="status-item">
+          <span class="label">🛡️ Security:</span>
+          <span id="security-status" class="value status-indicator" title="Security status">--</span>
+        </div>
+        <div class="status-item">
+          <span class="label">🔑 Keys:</span>
+          <span id="keys-status" class="value status-indicator" title="Key files status">--</span>
+        </div>
+        <div class="status-item">
+          <span class="label">🔌 Helpers:</span>
+          <span id="helpers-status" class="value status-indicator" title="Discovered helpers">--</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Admin Mode Warning Banner -->
+    <div id="admin-mode-banner" class="admin-warning" style="display: none;">
+      <div class="admin-content">
+        <span class="admin-icon">⚠️</span>
+        <span class="admin-message">
+          <strong>ADMIN MODE ACTIVE</strong> - Security filters are bypassed!
+          <span id="admin-expiry"></span>
+        </span>
+        <button id="btn-exit-admin" class="admin-exit">Exit Admin Mode</button>
+      </div>
+    </div>
+
+    <div class="content">
+      <aside class="sidebar">
+        <nav>
+          <button class="nav-btn active" data-section="logs">
+            📋 Live Logs
+          </button>
+          <button class="nav-btn" data-section="settings">
+            ⚙️ Settings
+          </button>
+          <button class="nav-btn" data-section="security">
+            🛡️ Security Filters
+          </button>
+          <button class="nav-btn" data-section="tools">
+            🔧 MCP Tools
+          </button>
+          <button class="nav-btn" data-section="scenarios">
+            🎬 Scenarios
+          </button>
+          <button class="nav-btn" data-section="templates">
+            📚 App Templates
+          </button>
+          <button class="nav-btn" data-section="auth">
+            🔑 Auth
+          </button>
+        </nav>
+
+        <div class="actions">
+          <h3>Quick Actions</h3>
+          <button id="btn-admin-mode" class="action-btn admin-btn">🔓 Enter Admin Mode</button>
+          <button id="btn-restart" class="action-btn">🔄 Restart Server</button>
+          <button id="btn-clear-logs" class="action-btn">🗑️ Clear Logs</button>
+          <button id="btn-export-logs" class="action-btn">💾 Export Logs</button>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <!-- Logs Section -->
+        <section id="section-logs" class="section active">
+          <div class="section-header">
+            <h2>Live Server Logs</h2>
+            <div class="log-controls">
+              <label>
+                <input type="checkbox" id="auto-scroll" checked> Auto-scroll
+              </label>
+              <label style="color: #007acc; font-weight: bold;">
+                <input type="checkbox" id="json-logging" checked> JSON Logging
+              </label>
+              <label style="color: #ff6b35; font-weight: bold;">
+                <input type="checkbox" id="raw-mode"> Raw Mode
+              </label>
+              <label style="color: #89d185; font-weight: bold;">
+                <input type="checkbox" id="expand-all"> Expand All
+              </label>
+              <select id="log-source" title="Filter by source">
+                <option value="all">All Sources</option>
+                <option value="http">🌐 HTTP</option>
+                <option value="keywin">🔧 KeyWin</option>
+                <option value="security">🛡️ Security</option>
+                <option value="system">⚙️ System</option>
+                <option value="auth">🔑 Auth</option>
+              </select>
+              <select id="log-level">
+                <option value="all">All Levels</option>
+                <option value="debug">Debug</option>
+                <option value="info">Info</option>
+                <option value="warn">Warning</option>
+                <option value="error">Error</option>
+              </select>
+              <input type="text" id="log-search" placeholder="Search logs...">
+            </div>
+          </div>
+          <div class="log-container" id="log-output">
+            <div class="log-entry info">
+              <span class="timestamp">21:45:00</span>
+              <span class="level">INFO</span>
+              <span class="source">system</span>
+              <span class="message">Dashboard connected, waiting for logs...</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Settings Section -->
+        <section id="section-settings" class="section">
+          <div class="section-header">
+            <h2>Server Settings</h2>
+            <button id="btn-save-settings" class="btn-primary">💾 Save Changes</button>
+            <button id="btn-reload-settings" class="btn-secondary">🔄 Reload</button>
+          </div>
+          
+          <!-- Current Working Directory -->
+          <div class="current-dir-banner">
+            <span class="label">📁 Current Working Directory:</span>
+            <code id="current-working-dir">Loading...</code>
+            <button id="btn-change-dir" class="btn-browse">📂 Change</button>
+            <small>All relative paths are resolved from this directory</small>
+          </div>
+          
+          <div class="info-banner">
+            ℹ️ <strong>Tip:</strong> Security filters have moved to their own dedicated section. Click <strong>🛡️ Security Filters</strong> in the sidebar.
+          </div>
+
+          <!-- ⚙️ Setup Wizard Panel -->
+          <div id="setup-wizard-panel" style="margin-bottom:1rem;border:1px solid var(--border);border-radius:6px;overflow:hidden;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:0.55rem 0.8rem;background:var(--bg-secondary);cursor:pointer;"
+                 onclick="toggleSetupPanel()">
+              <span style="font-weight:600;font-size:0.88rem;">⚙️ First-Run Setup Wizard</span>
+              <span id="setup-panel-chevron" style="font-size:0.8rem;color:var(--text-secondary);">▼</span>
+            </div>
+            <div id="setup-panel-body" style="display:none;padding:0.75rem 1rem;">
+              <p style="margin:0 0 0.6rem;font-size:0.82rem;color:var(--text-secondary);">
+                Run this wizard on a fresh install to generate crypto keys, sign the security config, and create the initial admin user.
+                All steps are <strong>idempotent</strong> — safe to re-run at any time.
+              </p>
+              <div id="setup-step-table" style="font-size:0.8rem;margin-bottom:0.75rem;"></div>
+              <div style="display:flex;gap:0.5rem;">
+                <button class="btn-primary" onclick="runSetup()" id="btn-run-setup">▶ Run Setup</button>
+                <button class="btn-secondary" onclick="loadSetupStatus()" id="btn-check-setup">🔄 Check Status</button>
+              </div>
+              <div id="setup-output" style="margin-top:0.6rem;font-family:monospace;font-size:0.78rem;white-space:pre-wrap;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:0.5rem;max-height:180px;overflow-y:auto;display:none;"></div>
+            </div>
+          </div>
+
+          <div class="settings-container">
+            <!-- File Paths -->
+            <div class="setting-group">
+              <h3>📁 File Paths</h3>
+              <label>
+                Scenarios Folder:
+                <div class="path-input">
+                  <input type="text" id="setting-scenarios-path" value="./scenarios" placeholder="./scenarios">
+                  <button class="btn-browse" data-target="setting-scenarios-path" data-folder="true">📂 Browse</button>
+                </div>
+              </label>
+              <label>
+                Security Folder:
+                <div class="path-input">
+                  <input type="text" id="setting-security-path" value="./security" placeholder="./security">
+                  <button class="btn-browse" data-target="setting-security-path" data-folder="true">📂 Browse</button>
+                </div>
+              </label>
+              <label>
+                Public Key File:
+                <div class="path-input">
+                  <input type="text" id="setting-public-key" value="./security/public.key.enc" placeholder="./security/public.key.enc">
+                  <button class="btn-browse" data-target="setting-public-key" data-filter="Encrypted Key Files (*.key.enc)|*.key.enc|PEM Files (*.pem;*.key)|*.pem;*.key|All files (*.*)|*.*">📂 Browse</button>
+                </div>
+              </label>
+              <label>
+                Private Key File:
+                <div class="path-input">
+                  <input type="text" id="setting-private-key" value="./security/private.key.enc" placeholder="./security/private.key.enc">
+                  <button class="btn-browse" data-target="setting-private-key" data-filter="Encrypted Key Files (*.key.enc)|*.key.enc|PEM Files (*.pem;*.key)|*.pem;*.key|All files (*.*)|*.*">📂 Browse</button>
+                </div>
+              </label>
+              <label>
+                Helper Executables (wildcards allowed):
+                <div class="path-input">
+                  <input type="text" id="setting-helper-paths" value="./dist/win/*.exe" placeholder="./dist/win/*.exe, ./dist/office/*.exe">
+                  <button class="btn-browse" data-target="setting-helper-paths" data-folder="true">📂 Browse</button>
+                </div>
+                <small>Comma-separated paths (e.g., ./dist/win/*.exe, ./dist/office/*.exe)</small>
+              </label>
+              <label>
+                Test Session Directory:
+                <div class="path-input">
+                  <input type="text" id="setting-session-dir" value="./test-sessions" placeholder="./test-sessions">
+                  <button class="btn-browse" data-target="setting-session-dir" data-folder="true">📂 Browse</button>
+                </div>
+                <small>Base directory for test session logs and screenshots</small>
+              </label>
+            </div>
+
+            <!-- Discovered Helpers -->
+            <div class="setting-group" id="discovered-helpers-group">
+              <h3>🔌 Discovered Helpers</h3>
+              <p class="setting-hint">Helper executables advertise their commands via <code>--api-schema</code>. Paths above control where they are discovered on startup.</p>
+              <div class="helpers-toolbar">
+                <button id="btn-scan-helpers" class="btn-secondary">🔍 Scan for Helpers</button>
+                <button id="btn-reload-helpers" class="btn-secondary" title="Shutdown daemons, re-scan exes, restart daemons">♻️ Reload Helpers</button>
+                <span id="helpers-scan-status" class="helpers-scan-status"></span>
+              </div>
+              <div id="helpers-list" class="helpers-list">
+                <div class="helpers-empty">Click "Scan for Helpers" to discover available helper executables.</div>
+              </div>
+            </div>
+
+            <!-- Security Policy -->
+            <div class="setting-group">
+              <h3>🔐 Security Policy</h3>
+              <label>
+                <input type="checkbox" id="setting-require-signature"> Require Binary Signatures
+              </label>
+              <label>
+                <input type="checkbox" id="setting-require-os-enforcement"> Require OS Enforcement
+              </label>
+              <label>
+                <input type="checkbox" id="setting-allow-unsigned-scenarios"> Allow Unsigned Scenarios
+              </label>
+              <label>
+                <input type="checkbox" id="setting-enable-session-auth" checked> Enable Session Authentication
+              </label>
+            </div>
+
+            <!-- Session Tokens -->
+            <div class="setting-group">
+              <h3>🔑 Session Tokens</h3>
+              <label>
+                Token Expiry (seconds):
+                <input type="number" id="setting-token-expiry" value="60" min="5" max="3600">
+              </label>
+              <button id="btn-generate-token" class="btn-secondary">🔄 Generate New Token</button>
+              <div id="token-info" class="token-info">
+                <span>Current Token: <code id="current-token">Loading...</code></span>
+              </div>
+            </div>
+
+            <!-- Server Configuration -->
+            <div class="setting-group">
+              <h3>⚙️ Server Configuration</h3>
+              <label>
+                MCP Server Port:
+                <input type="number" id="setting-port" value="3457" min="1024" max="65535">
+              </label>
+              <label>
+                Dashboard Port:
+                <input type="number" id="setting-dashboard-port" value="3458" min="1024" max="65535">
+              </label>
+              <label>
+                Log Level:
+                <select id="setting-log-level">
+                  <option value="debug">Debug</option>
+                  <option value="info" selected>Info</option>
+                  <option value="warn">Warning</option>
+                  <option value="error">Error</option>
+                </select>
+              </label>
+            </div>
+
+            <!-- Validation Status -->
+            <div class="setting-group">
+              <h3>✅ Configuration Status</h3>
+              <div id="config-status" class="config-status">
+                <div class="status-item">
+                  <span class="status-icon">⏳</span>
+                  <span>Checking configuration...</span>
+                </div>
+              </div>
+              <button id="btn-validate-config" class="btn-secondary">🔍 Validate Configuration</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Security Filters Section -->
+        <section id="section-security" class="section">
+          <div class="section-header">
+            <h2>🛡️ Security Filters - Context-Aware Access Control</h2>
+            <button id="btn-add-filter" class="btn-primary">➕ Add Filter Rule</button>
+          </div>
+          
+          <div class="info-banner">
+            <strong>ℹ️ Context-Aware Filtering:</strong> Control which operations are allowed based on:<br>
+            📦 <strong>Target Process</strong> (calc.exe, notepad.exe, etc.) + 
+            🔧 <strong>Helper Tool</strong> (KeyWin.exe, BrowserWin.exe) + 
+            ⚡ <strong>Command</strong> ({CLICKNAME}, {SETPROPERTY}) + 
+            🎯 <strong>Parameter Pattern</strong> (num*Button, closeButton*)
+          </div>
+          
+          <div class="filter-toolbar">
+            <button id="btn-import-tree" class="btn-secondary">📥 Import from Live UI</button>
+            <button id="btn-import-filters" class="btn-secondary">📂 Import JSON</button>
+            <button id="btn-validate-filters" class="btn-secondary">✔️ Validate All</button>
+            <button id="btn-export-filters" class="btn-secondary">💾 Export</button>
+            <button id="btn-save-filters" class="btn-primary" style="margin-left:auto">💾 Save All Filters</button>
+            <button id="btn-filter-table-toggle" class="btn-secondary" onclick="toggleFilterTableMode()" title="Switch between card view and inline table editor">🗃️ Quick-Edit</button>
+            <input type="text" id="filter-search" placeholder="🔍 Search filters..." class="filter-search">
+          </div>
+
+          <!-- Filter Rules Display -->
+          <div id="filter-rules-list" class="filter-rules-container">
+            <!-- Dynamically populated -->
+          </div>
+
+          <!-- Effective Permissions Summary -->
+          <details id="filter-summary-panel" style="margin-top:0.75rem;">
+            <summary style="cursor:pointer;padding:0.4rem 0;font-size:0.85rem;user-select:none;">📊 Rules by Process (effective permissions preview)</summary>
+            <div id="filter-summary-body" style="margin-top:0.5rem;font-size:0.82rem;"></div>
+          </details>
+          
+          <!-- Filter Format Help -->
+          <details class="filter-help-section">
+            <summary><strong>📖 Filter Format & Pattern Syntax</strong></summary>
+            <div class="filter-format-help">
+              <h4>Filter Structure:</h4>
+              <code>[ACTION] [PROCESS] → [HELPER]::[COMMAND]/[PATTERN]</code>
+              
+              <h4>Examples:</h4>
+              <ul>
+                <li><code><span class="allow">ALLOW</span> calc.exe → KeyWin.exe::{CLICKNAME}/num*Button</code>
+                  <br><em>Allow clicking number buttons only in Calculator</em></li>
+                <li><code><span class="deny">DENY</span> * → KeyWin.exe::{CLICKNAME}/closeButton*</code>
+                  <br><em>Block closing any window (universal rule)</em></li>
+                <li><code><span class="allow">ALLOW</span> notepad.exe → KeyWin.exe::{SETPROPERTY}/Text=*</code>
+                  <br><em>Allow text editing only in Notepad</em></li>
+                <li><code><span class="deny">DENY</span> * → BrowserWin.exe::navigate/*://malicious.com/*</code>
+                  <br><em>Block navigation to malicious domains in any browser</em></li>
+              </ul>
+              
+              <h4>Pattern Wildcards (glob):</h4>
+              <ul>
+                <li><code>*</code> — match any characters (zero or more)</li>
+                <li><code>?</code> — match any single character</li>
+                <li><code>num*Button</code> — num0Button, num1Button, …</li>
+              </ul>
+
+              <h4>Pattern Regex (<code>/…/</code> syntax):</h4>
+              <ul>
+                <li><code>/num\dButton/</code> — match any single-digit num button</li>
+                <li><code>/^(calc|notepad)\.exe$/i</code> — exact name, case-insensitive</li>
+                <li><code>/Submit(\s+Button)?/i</code> — Submit or Submit Button</li>
+                <li>Wrap the regex in <code>/…/</code>; optionally append <code>i</code> for case-insensitive</li>
+              </ul>
+            </div>
+          </details>
+
+          <!-- Filter Test Panel -->
+          <div class="setting-group filter-test-panel">
+            <h3>🧪 Test Security Rule</h3>
+            <p class="setting-hint">Simulate a tool call and see which filter would match — no actual execution.</p>
+            <div class="filter-test-form">
+              <input type="text" id="test-process" placeholder="Process (e.g. calc.exe)" value="calc.exe">
+              <select id="test-command">
+                <option>CLICKNAME</option><option>CLICKID</option><option>CLICK</option>
+                <option>SENDKEYS</option><option>SET</option><option>READ</option>
+                <option>QUERYTREE</option><option>LISTWINDOWS</option>
+                <option>LAUNCH</option><option>KILL</option>
+              </select>
+              <input type="text" id="test-parameter" placeholder="Parameter (e.g. num5Button)">
+              <button id="btn-test-filter" class="btn-primary">🧪 Test</button>
+            </div>
+            <div id="filter-test-result" class="filter-test-result" style="display:none"></div>
+          </div>
+
+          <!-- Security Audit Log -->
+          <details id="security-log-panel" style="margin-top:1rem;">
+            <summary style="cursor:pointer;padding:0.5rem 0;font-size:0.9rem;user-select:none;font-weight:600;">🔍 Security Audit Log</summary>
+            <div style="margin-top:0.5rem;">
+              <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;flex-wrap:wrap;">
+                <button onclick="loadSecurityLog(0)" class="btn-secondary" style="padding:0.25rem 0.75rem;font-size:0.8rem;">🔄 Refresh</button>
+                <label style="font-size:0.8rem;display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
+                  <input type="checkbox" id="security-log-autorefresh" onchange="toggleSecurityLogAutoRefresh()"> Auto-refresh (5s)
+                </label>
+                <label style="font-size:0.8rem;display:flex;align-items:center;gap:0.3rem;">
+                  Per page:
+                  <select id="security-log-pagesize" onchange="loadSecurityLog(0)" style="font-size:0.8rem;padding:0 0.2rem;">
+                    <option value="50">50</option>
+                    <option value="100" selected>100</option>
+                    <option value="200">200</option>
+                    <option value="500">500</option>
+                  </select>
+                </label>
+                <span id="security-log-count" style="font-size:0.8rem;opacity:0.6;margin-left:auto;"></span>
+              </div>
+              <div id="security-log-list" style="max-height:280px;overflow-y:auto;font-family:monospace;font-size:0.78rem;border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.5rem;background:var(--bg-secondary);">
+                <em style="opacity:0.6;">Open to load events…</em>
+              </div>
+              <div id="security-log-pager" style="display:none;margin-top:0.4rem;display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;">
+                <button id="security-log-prev" onclick="securityLogPage(-1)" class="btn-secondary" style="padding:0.2rem 0.6rem;">◀ Prev</button>
+                <span id="security-log-page-info" style="opacity:0.7;"></span>
+                <button id="security-log-next" onclick="securityLogPage(1)" class="btn-secondary" style="padding:0.2rem 0.6rem;">Next ▶</button>
+              </div>
+            </div>
+          </details>
+        </section>
+
+        <!-- Tools Section -->
+        <section id="section-tools" class="section">
+          <div class="section-header">
+            <h2>Available MCP Tools</h2>
+          </div>
+          <div id="tools-list" class="tools-grid">
+            <div class="loading">Loading tools...</div>
+          </div>
+        </section>
+
+        <!-- Scenarios Section -->
+        <section id="section-scenarios" class="section">
+          <div class="section-header">
+            <h2>Test Scenarios</h2>
+            <button id="btn-run-scenario" class="btn-primary">▶️ Run Selected</button>
+          </div>
+          <div id="scenarios-list" class="scenarios-list">
+            <div class="loading">Loading scenarios...</div>
+          </div>
+        </section>
+
+        <!-- App Templates Section -->
+        <section id="section-templates" class="section">
+          <div class="section-header">
+            <h2>📚 App Templates</h2>
+            <button id="btn-refresh-templates" class="btn-secondary" onclick="loadAppTemplates()">🔄 Refresh</button>
+          </div>
+          <div class="info-banner">
+            ℹ️ App templates are in <code>apptemplates/</code>. Each folder contains a
+            <code>tree.xml</code> (control inventory) and <code>scenarios.xml</code> (reusable steps).
+            Use <strong>POST /api/appTemplates/{app}/scenarios/{id}/run</strong> to execute a scenario.
+          </div>
+          <div id="templates-list" class="tools-grid">
+            <div class="loading">Loading app templates...</div>
+          </div>
+        </section>
+        <!-- Auth Configuration Section -->
+        <section id="section-auth" class="section">
+          <div class="section-header">
+            <h2>🔑 Authentication Configuration</h2>
+            <button id="btn-save-auth" class="btn-primary">💾 Save Auth Config</button>
+            <button id="btn-reload-auth" class="btn-secondary">🔄 Reload</button>
+          </div>
+
+          <!-- Sub-tabs -->
+          <div class="auth-tabs" style="display:flex;gap:0.5rem;margin-bottom:1rem;border-bottom:1px solid var(--border);padding-bottom:0.5rem;">
+            <button class="auth-tab-btn active" data-auth-tab="config" onclick="switchAuthTab('config')">⚙️ Auth Config</button>
+            <button class="auth-tab-btn" data-auth-tab="users" onclick="switchAuthTab('users')">👥 Users &amp; Roles</button>
+          </div>
+
+          <!-- ── Auth Config Tab ── -->
+          <div id="auth-tab-config" class="auth-tab-panel">
+
+            <!-- Auth Mode -->
+            <div class="setting-group">
+              <h3>🔐 Authentication Mode</h3>
+              <label>
+                Mode:
+                <select id="auth-mode" onchange="onAuthModeChange()">
+                  <option value="none">None (open access)</option>
+                  <option value="password">Password (username + password)</option>
+                  <option value="apikey">API Key</option>
+                  <option value="certificate">Client Certificate (mTLS)</option>
+                  <option value="oauth">OAuth 2.0 / OIDC</option>
+                  <option value="saml">SAML 2.0</option>
+                </select>
+              </label>
+              <label>
+                <input type="checkbox" id="auth-debug-external">
+                Debug External Auth <small>(logs sanitised OAuth/SAML req/resp — credentials redacted)</small>
+              </label>
+            </div>
+
+            <!-- JWT Settings -->
+            <div class="setting-group">
+              <h3>🎫 JWT Settings</h3>
+              <label>
+                <input type="checkbox" id="auth-jwt-enabled" checked>
+                Enable JWT tokens
+              </label>
+              <label>
+                JWT Secret:
+                <div class="input-with-button">
+                  <input type="password" id="auth-jwt-secret" placeholder="Leave blank to keep current secret"
+                         autocomplete="new-password" style="font-family:monospace;letter-spacing:0.05em;">
+                  <button type="button" onclick="generateJwtSecret()" class="btn-tool" title="Generate a cryptographically random 64-char secret">🎲 Generate</button>
+                </div>
+                <small>Minimum 32 characters. Leave blank when saving to preserve the existing secret.</small>
+              </label>
+              <label>
+                Token Expiry (minutes):
+                <input type="number" id="auth-jwt-expiry" value="60" min="1" max="10080" style="width:6rem;">
+                <small style="margin-left:0.5rem;">e.g. 60 = 1 h · 480 = 8 h · 10080 = 1 week</small>
+              </label>
+            </div>
+
+            <!-- Password mode settings -->
+            <div class="setting-group auth-mode-panel" id="auth-panel-password" style="display:none;">
+              <h3>🔒 Password Settings</h3>
+              <label>
+                bcrypt Rounds:
+                <input type="number" id="auth-password-rounds" value="10" min="8" max="14" style="width:5rem;">
+                <small style="margin-left:0.5rem;">8 = fast (dev) · 10 = default · 12+ = production</small>
+              </label>
+            </div>
+
+            <!-- API Key mode settings -->
+            <div class="setting-group auth-mode-panel" id="auth-panel-apikey" style="display:none;">
+              <h3>🗝️ API Key Settings</h3>
+              <label>
+                Default username for anonymous API keys:
+                <input type="text" id="auth-apikey-default-user" placeholder="apikey-user" style="width:16rem;">
+                <small>Used when the API key is not tied to a specific user account.</small>
+              </label>
+            </div>
+
+            <!-- Certificate mode settings -->
+            <div class="setting-group auth-mode-panel" id="auth-panel-certificate" style="display:none;">
+              <h3>📜 Client Certificate / mTLS</h3>
+              <label>
+                CA Certificate Path (PEM):
+                <div class="path-input">
+                  <input type="text" id="auth-cert-ca-path" placeholder="./config/security/ca.pem">
+                  <button class="btn-browse" data-target="auth-cert-ca-path" data-filter="Certificate Files (*.pem;*.crt;*.cer)|*.pem;*.crt;*.cer|All files (*.*)|*.*">📂 Browse</button>
+                </div>
+              </label>
+              <label>
+                <input type="checkbox" id="auth-cert-require" checked>
+                Require Client Certificate (disable to allow unauthenticated fallback)
+              </label>
+            </div>
+
+            <!-- OAuth mode settings -->
+            <div class="setting-group auth-mode-panel" id="auth-panel-oauth" style="display:none;">
+              <h3>🌐 OAuth 2.0 / OIDC Settings</h3>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 1rem;">
+                <label>
+                  Client ID:
+                  <input type="text" id="auth-oauth-client-id" placeholder="your-client-id" style="width:100%;box-sizing:border-box;">
+                </label>
+                <label>
+                  Client Secret:
+                  <input type="password" id="auth-oauth-client-secret" placeholder="Leave blank to keep current"
+                         autocomplete="new-password" style="width:100%;box-sizing:border-box;">
+                </label>
+              </div>
+              <label>Authorization URL:
+                <input type="text" id="auth-oauth-auth-url" placeholder="https://provider.example.com/oauth2/authorize" style="width:100%;box-sizing:border-box;">
+              </label>
+              <label>Token URL:
+                <input type="text" id="auth-oauth-token-url" placeholder="https://provider.example.com/oauth2/token" style="width:100%;box-sizing:border-box;">
+              </label>
+              <label>User Info URL <small>(optional)</small>:
+                <input type="text" id="auth-oauth-userinfo-url" placeholder="https://provider.example.com/userinfo" style="width:100%;box-sizing:border-box;">
+              </label>
+              <label>Scope:
+                <input type="text" id="auth-oauth-scope" placeholder="openid profile email" style="width:100%;box-sizing:border-box;">
+              </label>
+              <label>Callback URL:
+                <input type="text" id="auth-oauth-callback-url" placeholder="http://localhost:3458/api/auth/oauth/callback" style="width:100%;box-sizing:border-box;">
+              </label>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 1rem;">
+                <label>Username JSON Path:
+                  <input type="text" id="auth-oauth-username-path" placeholder="preferred_username" style="width:100%;box-sizing:border-box;">
+                </label>
+                <label>Groups JSON Path <small>(optional)</small>:
+                  <input type="text" id="auth-oauth-groups-path" placeholder="groups" style="width:100%;box-sizing:border-box;">
+                </label>
+              </div>
+              <label>
+                <input type="checkbox" id="auth-oauth-pkce">
+                Enable PKCE (Proof Key for Code Exchange — recommended for public clients)
+              </label>
+            </div>
+
+            <!-- SAML mode settings -->
+            <div class="setting-group auth-mode-panel" id="auth-panel-saml" style="display:none;">
+              <h3>🔐 SAML 2.0 Settings</h3>
+              <label>IdP Entry Point (SSO URL):
+                <input type="text" id="auth-saml-entry-point" placeholder="https://idp.example.com/sso/saml" style="width:100%;box-sizing:border-box;">
+              </label>
+              <label>Issuer (SP Entity ID):
+                <input type="text" id="auth-saml-issuer" placeholder="https://your-aiapi-server.com" style="width:100%;box-sizing:border-box;">
+              </label>
+              <label>IdP Certificate (PEM or <code>file://path</code>):
+                <textarea id="auth-saml-cert" rows="4"
+                          placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+                          style="width:100%;box-sizing:border-box;font-family:monospace;font-size:0.8rem;resize:vertical;"></textarea>
+              </label>
+              <label>SP Private Key <small>(PEM, optional — for signed AuthN requests)</small>:
+                <textarea id="auth-saml-private-key" rows="3"
+                          placeholder="-----BEGIN PRIVATE KEY-----&#10;(optional)"
+                          style="width:100%;box-sizing:border-box;font-family:monospace;font-size:0.8rem;resize:vertical;"></textarea>
+              </label>
+              <label>Callback URL:
+                <input type="text" id="auth-saml-callback-url" placeholder="http://localhost:3458/api/auth/saml/callback" style="width:100%;box-sizing:border-box;">
+              </label>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 1rem;">
+                <label>Username Attribute Path:
+                  <input type="text" id="auth-saml-username-path" placeholder="nameID" style="width:100%;box-sizing:border-box;">
+                </label>
+                <label>Groups Attribute Path <small>(optional)</small>:
+                  <input type="text" id="auth-saml-groups-path" placeholder="memberOf" style="width:100%;box-sizing:border-box;">
+                </label>
+              </div>
+              <label>Signature Algorithm:
+                <select id="auth-saml-sig-alg">
+                  <option value="sha256">SHA-256 (recommended)</option>
+                  <option value="sha512">SHA-512</option>
+                  <option value="sha1">SHA-1 (legacy)</option>
+                </select>
+              </label>
+            </div>
+
+            <!-- User Store -->
+            <div class="setting-group">
+              <h3>🗄️ User Store</h3>
+              <label>
+                Source:
+                <select id="auth-users-store-source" onchange="onUserStoreSourceChange()">
+                  <option value="json">JSON file (simple)</option>
+                  <option value="db">Database (PostgreSQL / MSSQL / MySQL)</option>
+                </select>
+              </label>
+
+              <div id="auth-users-json-panel">
+                <label>
+                  Users JSON Path:
+                  <div class="path-input">
+                    <input type="text" id="auth-users-json-path" placeholder="./config/users.json">
+                    <button class="btn-browse" data-target="auth-users-json-path" data-filter="JSON Files (*.json)|*.json|All files (*.*)|*.*">📂 Browse</button>
+                  </div>
+                </label>
+              </div>
+
+              <div id="auth-users-db-panel" style="display:none;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 1rem;">
+                  <label>
+                    DB Engine:
+                    <select id="auth-users-db-engine">
+                      <option value="postgresql">PostgreSQL</option>
+                      <option value="mssql">MSSQL (SQL Server)</option>
+                      <option value="mysql">MySQL / MariaDB</option>
+                      <option value="oracle">Oracle</option>
+                    </select>
+                  </label>
+                  <label>
+                    Auth Method:
+                    <select id="auth-users-db-auth-method" onchange="onDbAuthMethodChange('users')">
+                      <option value="password">Username + Password</option>
+                      <option value="integrated">Integrated / Kerberos (Windows)</option>
+                      <option value="certificate">TLS Client Certificate</option>
+                      <option value="impersonation">Windows Impersonation (MSSQL)</option>
+                      <option value="constant">Connection String</option>
+                    </select>
+                  </label>
+                </div>
+                <div id="auth-users-db-creds" style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 1rem;">
+                  <label>Host: <input type="text" id="auth-users-db-host" placeholder="localhost" style="width:100%;box-sizing:border-box;"></label>
+                  <label>Port: <input type="number" id="auth-users-db-port" placeholder="5432" min="1" max="65535" style="width:100%;box-sizing:border-box;"></label>
+                  <label>Database: <input type="text" id="auth-users-db-name" placeholder="aiapi" style="width:100%;box-sizing:border-box;"></label>
+                  <label>Username: <input type="text" id="auth-users-db-user" placeholder="sa" style="width:100%;box-sizing:border-box;"></label>
+                  <label style="grid-column:1/-1;">Password: <input type="password" id="auth-users-db-password" placeholder="Leave blank to keep current" autocomplete="new-password" style="width:100%;box-sizing:border-box;"></label>
+                </div>
+                <div id="auth-users-db-connstr-panel" style="display:none;">
+                  <label>Connection String:
+                    <input type="text" id="auth-users-db-connstr-val" placeholder="postgresql://user:pass@host/db" style="width:100%;box-sizing:border-box;">
+                  </label>
+                </div>
+
+                <!-- ── Provision DB ── -->
+                <details id="auth-db-provision-sect" style="margin-top:1rem;border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;">
+                  <summary style="cursor:pointer;font-weight:600;">🔧 Provision / Initialize Database</summary>
+                  <div style="margin-top:0.75rem;">
+                    <div style="display:flex;gap:1.5rem;margin-bottom:0.6rem;flex-wrap:wrap;">
+                      <label><input type="checkbox" id="auth-db-provision-create"> Create database if not exists</label>
+                      <label><input type="checkbox" id="auth-db-provision-seed" checked> Seed initial admin user</label>
+                    </div>
+                    <details id="auth-db-admin-creds-sect" style="margin-bottom:0.6rem;">
+                      <summary style="cursor:pointer;color:var(--text-muted);font-size:0.9em;">▸ Admin / DDL credentials <small>(only when creating the DB; never stored)</small></summary>
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 1rem;margin-top:0.5rem;">
+                        <label>Host: <input type="text" id="auth-db-admin-host" placeholder="same as above" style="width:100%;box-sizing:border-box;"></label>
+                        <label>Port: <input type="number" id="auth-db-admin-port" placeholder="5432" min="1" max="65535" style="width:100%;box-sizing:border-box;"></label>
+                        <label>Database: <input type="text" id="auth-db-admin-name" placeholder="postgres" style="width:100%;box-sizing:border-box;"></label>
+                        <label>Username: <input type="text" id="auth-db-admin-user" placeholder="ddladmin" style="width:100%;box-sizing:border-box;"></label>
+                        <label style="grid-column:1/-1;">Password: <input type="password" id="auth-db-admin-password" autocomplete="new-password" placeholder="DDL account password" style="width:100%;box-sizing:border-box;"></label>
+                      </div>
+                    </details>
+                    <button class="btn-primary" onclick="provisionDb()" id="btn-provision-db">🔧 Run Provision</button>
+                    <div id="auth-db-provision-result" style="margin-top:0.75rem;font-size:0.9em;white-space:pre-wrap;display:none;"></div>
+                  </div>
+                </details>
+              </div>
+            </div>
+          </div><!-- end auth-tab-config -->
+
+          <!-- ── Users & Roles Tab ── -->
+          <div id="auth-tab-users" class="auth-tab-panel" style="display:none;">
+            <div id="auth-mode-none-notice" class="info-banner" style="display:none;">
+              ℹ️ <strong>Auth mode is set to None</strong> — save an auth mode above to manage users and roles.
+            </div>
+            <div id="auth-users-roles-panel">
+
+              <!-- Users table -->
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                <h3 style="margin:0;">👤 Users</h3>
+                <button class="btn-primary" onclick="openAddUserModal()">➕ Add User</button>
+              </div>
+              <table style="width:100%;border-collapse:collapse;font-size:0.85rem;margin-bottom:1.5rem;">
+                <thead>
+                  <tr style="background:var(--bg-secondary);">
+                    <th style="padding:6px 8px;text-align:left;">Username</th>
+                    <th style="padding:6px 8px;text-align:center;width:80px;">Enabled</th>
+                    <th style="padding:6px 8px;text-align:left;">Roles</th>
+                    <th style="padding:6px 8px;text-align:center;width:90px;">API Keys</th>
+                    <th style="padding:6px 8px;text-align:center;width:120px;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="auth-users-tbody">
+                  <tr><td colspan="5" style="text-align:center;padding:1rem;opacity:0.6;">Loading…</td></tr>
+                </tbody>
+              </table>
+
+              <!-- Roles table -->
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                <h3 style="margin:0;">🎭 Roles</h3>
+                <button class="btn-primary" onclick="openAddRoleModal()">➕ Add Role</button>
+              </div>
+              <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+                <thead>
+                  <tr style="background:var(--bg-secondary);">
+                    <th style="padding:6px 8px;text-align:left;">Role Name</th>
+                    <th style="padding:6px 8px;text-align:left;">Description</th>
+                    <th style="padding:6px 8px;text-align:center;width:80px;">Members</th>
+                    <th style="padding:6px 8px;text-align:center;width:120px;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="auth-roles-tbody">
+                  <tr><td colspan="4" style="text-align:center;padding:1rem;opacity:0.6;">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div><!-- end auth-tab-users -->
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- Add User Modal -->
+  <div id="add-user-modal" class="modal">
+    <div class="modal-content" style="max-width:480px;">
+      <div class="modal-header">
+        <h3 id="add-user-modal-title">➕ Add User</h3>
+        <button class="modal-close" onclick="closeAddUserModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="new-user-username">Username:</label>
+          <input type="text" id="new-user-username" placeholder="alice" autocomplete="off" style="width:100%;box-sizing:border-box;">
+        </div>
+        <div class="form-group">
+          <label for="new-user-password">Password:</label>
+          <input type="password" id="new-user-password" placeholder="(required for password mode)" autocomplete="new-password" style="width:100%;box-sizing:border-box;">
+        </div>
+        <div class="form-group">
+          <label for="new-user-roles">Roles <small>(comma-separated)</small>:</label>
+          <input type="text" id="new-user-roles" placeholder="admin, operator" style="width:100%;box-sizing:border-box;">
+        </div>
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="new-user-enabled" checked>
+            Enabled
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:0.75rem;padding:1rem 1.5rem;border-top:1px solid var(--border);">
+        <button class="btn-secondary" onclick="closeAddUserModal()">Cancel</button>
+        <button class="btn-primary" onclick="saveNewUser()">💾 Save User</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Role Modal -->
+  <div id="add-role-modal" class="modal">
+    <div class="modal-content" style="max-width:420px;">
+      <div class="modal-header">
+        <h3>➕ Add Role</h3>
+        <button class="modal-close" onclick="closeAddRoleModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="new-role-name">Role Name:</label>
+          <input type="text" id="new-role-name" placeholder="admin" autocomplete="off" style="width:100%;box-sizing:border-box;">
+        </div>
+        <div class="form-group">
+          <label for="new-role-description">Description:</label>
+          <input type="text" id="new-role-description" placeholder="Full administrative access" style="width:100%;box-sizing:border-box;">
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:0.75rem;padding:1rem 1.5rem;border-top:1px solid var(--border);">
+        <button class="btn-secondary" onclick="closeAddRoleModal()">Cancel</button>
+        <button class="btn-primary" onclick="saveNewRole()">💾 Save Role</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Generate API Key Result Modal -->
+  <div id="apikey-result-modal" class="modal">
+    <div class="modal-content" style="max-width:480px;">
+      <div class="modal-header">
+        <h3>🗝️ New API Key Generated</h3>
+        <button class="modal-close" onclick="closeApiKeyResultModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="info-banner" style="background:#1a3a1a;border-color:#4caf50;color:#c8e6c9;">
+          ⚠️ <strong>Copy this key now.</strong> It will not be shown again.
+        </div>
+        <div style="margin-top:0.75rem;">
+          <label>API Key:</label>
+          <div style="display:flex;gap:0.5rem;margin-top:0.25rem;">
+            <input type="text" id="apikey-result-value" readonly style="flex:1;font-family:monospace;font-size:0.8rem;letter-spacing:0.04em;">
+            <button class="btn-secondary" onclick="copyApiKey()">📋 Copy</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;padding:1rem 1.5rem;border-top:1px solid var(--border);">
+        <button class="btn-primary" onclick="closeApiKeyResultModal()">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scenario Step Editor Modal -->
+  <div id="scenario-editor-modal" class="modal">
+    <div class="modal-content" style="max-width:900px;width:95vw;">
+      <div class="modal-header">
+        <h3 id="scenario-editor-title">✏️ Edit Scenario – <span id="scenario-editor-appname"></span></h3>
+        <button class="modal-close" onclick="closeScenarioEditor()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- Scenario picker + label row -->
+        <div class="form-group" style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;">
+          <div style="flex:0 0 auto;min-width:160px;">
+            <label for="scenario-editor-picker">Scenario:</label>
+            <select id="scenario-editor-picker" onchange="scenarioEditorPick(this.value)">
+              <option value="">— select —</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:180px;">
+            <label for="scenario-editor-label">Label:</label>
+            <input type="text" id="scenario-editor-label" placeholder="Human-readable label" style="width:100%;box-sizing:border-box;">
+          </div>
+        </div>
+
+        <!-- Metadata panel (collapsible) -->
+        <details id="scenario-editor-meta-panel" style="margin-top:0.5rem;border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;">
+          <summary style="cursor:pointer;font-size:0.82rem;color:var(--text-secondary);user-select:none;">🔧 Scenario Metadata (helper, process, assistant, checksum)</summary>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 1rem;margin-top:0.5rem;font-size:0.82rem;">
+            <div>
+              <label for="se-meta-helper" style="display:block;margin-bottom:2px;">Helper exe:</label>
+              <select id="se-meta-helper" style="width:100%;padding:3px;" onchange="_seRefreshCommandList()">
+                <option value="">— inherit from template —</option>
+                <option value="KeyWin.exe">KeyWin.exe</option>
+                <option value="BrowserWin.exe">BrowserWin.exe</option>
+              </select>
+            </div>
+            <div>
+              <label for="se-meta-process" style="display:block;margin-bottom:2px;">Target process (e.g. calc.exe):</label>
+              <input type="text" id="se-meta-process" placeholder="calc.exe" style="width:100%;padding:3px;box-sizing:border-box;">
+            </div>
+            <div>
+              <label for="se-meta-apptitle" style="display:block;margin-bottom:2px;">Window title hint (for LISTWINDOWS):</label>
+              <input type="text" id="se-meta-apptitle" placeholder="Calculator" style="width:100%;padding:3px;box-sizing:border-box;">
+            </div>
+            <div>
+              <label for="se-meta-assistant" style="display:block;margin-bottom:2px;">Linked AI assistant:</label>
+              <input type="text" id="se-meta-assistant" placeholder="copilot / gpt-4o / …" style="width:100%;padding:3px;box-sizing:border-box;">
+            </div>
+            <div style="grid-column:1/-1;">
+              <label for="se-meta-checksum" style="display:block;margin-bottom:2px;">Binary SHA-256 checksum (informational):</label>
+              <input type="text" id="se-meta-checksum" placeholder="64-char hex SHA-256 of target binary" style="width:100%;padding:3px;box-sizing:border-box;font-family:monospace;">
+            </div>
+          </div>
+        </details>
+
+        <!-- Autocomplete datalists for the scenario editor -->
+        <datalist id="se-cmd-list"></datalist>
+        <datalist id="se-tgt-list">
+          <option value="HANDLE:"></option>
+          <option value="PAGE:"></option>
+          <option value="chrome:"></option>
+          <option value="SYSTEM"></option>
+        </datalist>
+        <datalist id="se-par-list"></datalist>
+        <!-- Steps table -->
+        <div style="overflow-x:auto;margin-top:0.5rem;">
+          <table id="scenario-editor-steps-table" style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+            <thead>
+              <tr style="background:var(--bg-secondary);text-align:left;">
+                <th style="padding:4px 6px;width:34px;">#</th>
+                <th style="padding:4px 6px;width:90px;">Type</th>
+                <th style="padding:4px 6px;width:130px;">Command / Ref</th>
+                <th style="padding:4px 6px;width:160px;">Target</th>
+                <th style="padding:4px 6px;">Parameter</th>
+                <th style="padding:4px 6px;width:110px;">Conditional</th>
+                <th style="padding:4px 6px;width:100px;">Note</th>
+                <th style="padding:4px 6px;width:72px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="scenario-editor-steps-body">
+              <!-- rows inserted by renderStepRows() -->
+            </tbody>
+          </table>
+        </div>
+        <div id="scenario-editor-empty" style="color:var(--text-secondary);padding:1rem 0;display:none;">
+          No scenario selected. Choose one above.
+        </div>
+
+        <!-- Add step buttons + Undo/Redo -->
+        <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+          <button class="btn-secondary" onclick="scenarioEditorAddStep()" id="scenario-editor-btn-add" disabled>＋ Add Step</button>
+          <button class="btn-secondary" onclick="scenarioEditorAddRef()" id="scenario-editor-btn-addref" disabled>🔗 Add ScenarioRef</button>
+          <span style="flex:1"></span>
+          <button class="btn-secondary" onclick="_seUndo()" id="scenario-editor-btn-undo" disabled title="Undo (Ctrl+Z)">↩ Undo</button>
+          <button class="btn-secondary" onclick="_seRedo()" id="scenario-editor-btn-redo" disabled title="Redo (Ctrl+Y)">↪ Redo</button>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:0.75rem;padding:1rem 1.5rem;border-top:1px solid var(--border);">
+        <button class="btn-secondary" onclick="closeScenarioEditor()">Cancel</button>
+        <button class="btn-primary" id="scenario-editor-btn-save" onclick="scenarioEditorSave()" disabled>💾 Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filter Editor Modal -->
+  <div id="filter-editor-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="filter-editor-title">Add Security Filter</h3>
+        <button class="modal-close" onclick="closeFilterEditor()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="filter-action">Action:</label>
+          <select id="filter-action">
+            <option value="allow">✅ ALLOW - Permit this operation</option>
+            <option value="deny">🚫 DENY - Block this operation</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>📋 Quick Templates:</label>
+          <div class="template-row">
+            <select id="filter-template" style="flex:1">
+              <option value="">— choose a template —</option>
+              <option value="0">✅ Allow calc number buttons (CLICKNAME/num*Button)</option>
+              <option value="1">🚫 Block KILL on all processes</option>
+              <option value="2">✅ Allow read-only ops on any process</option>
+              <option value="3">🚫 Block all SENDKEYS globally</option>
+              <option value="4">✅ Allow Notepad text editing (SET/*)</option>
+              <option value="5">🚫 Block LAUNCH everywhere</option>
+              <option value="6">✅ Allow QUERYTREE on any process</option>
+            </select>
+            <button type="button" class="btn-secondary" onclick="applyFilterTemplate()">Apply</button>
+          </div>
+          <small>Fill the form from a predefined template, then customise as needed</small>
+        </div>
+        
+        <div class="form-group">
+          <label for="filter-process">Target Process:</label>
+          <div class="input-with-button" style="flex-wrap:wrap;gap:4px;">
+            <input type="text" id="filter-process" placeholder="calc.exe" style="flex:1;min-width:160px;"
+                   list="process-suggestions">
+            <button type="button" onclick="openWindowSelector()" class="btn-tool">🪟 Window</button>
+            <button type="button" onclick="launchAndSelect()" class="btn-tool">🚀 Launch</button>
+            <button type="button" onclick="computeHashFromFile()" class="btn-tool" title="Compute SHA-256 from .exe file">📂 Hash File</button>
+            <button type="button" onclick="computeHashFromRunning()" class="btn-tool" title="Get SHA-256 of selected running process">🔍 Hash Process</button>
+          </div>
+          <datalist id="process-suggestions">
+            <option value="*">
+            <option value="calc.exe">
+            <option value="CalculatorApp.exe">
+            <option value="notepad.exe">
+            <option value="explorer.exe">
+            <option value="chrome.exe">
+            <option value="msedge.exe">
+          </datalist>
+          <small>
+            <strong>Formats:</strong> process name (<code>calc.exe</code>) · hash only (<code>SHA256:5a8d…</code>) · name+hash (<code>calc.exe[SHA256:5a8d…]</code>) · <code>*</code> for all.<br>
+            Use <strong>📂 Hash File</strong> or <strong>🔍 Hash Process</strong> to compute and insert the hash automatically.
+            <span style="color:var(--warning)"> ⚠️ Do not use PID or HANDLE — transient, changes on restart.</span>
+          </small>
+          <div id="process-details" class="process-details"></div>
+        </div>
+        
+        <div class="form-group">
+          <label for="filter-helper">Helper Tool:</label>
+          <select id="filter-helper">
+            <option value="KeyWin.exe">🎹 KeyWin.exe - Windows UI Automation</option>
+            <option value="BrowserWin.exe">🌐 BrowserWin.exe - Web Browser (Coming Soon)</option>
+            <option value="OfficeWin.exe">📄 OfficeWin.exe - MS Office (Coming Soon)</option>
+            <option value="_internal">🔒 _internal - REST Admin / Security Log</option>
+          </select>
+          <small>The automation helper that will execute the command</small>
+        </div>
+        
+        <div class="form-group">
+          <label for="filter-command">Command:</label>
+          <select id="filter-command">
+            <optgroup label="🟢 Read Operations (Low Risk)">
+              <option value="{QUERYTREE}">{QUERYTREE} - Query UI element tree</option>
+              <option value="{READ}">{READ} - Read text/properties</option>
+              <option value="{LISTWINDOWS}">{LISTWINDOWS} - List all windows</option>
+              <option value="{GETPROVIDERS}">{GETPROVIDERS} - List available providers</option>
+            </optgroup>
+            <optgroup label="🟡 Modification (Medium Risk)">
+              <option value="{SET}">{SET} - Set property/text value</option>
+            </optgroup>
+            <optgroup label="🔴 UI Interaction (High Risk)">
+              <option value="{CLICKID}">{CLICKID} - Click element by AutomationId</option>
+              <option value="{CLICKNAME}">{CLICKNAME} - Click element by Name</option>
+              <option value="{CLICK}">{CLICK} - Click at coordinates</option>
+              <option value="{SENDKEYS}">{SENDKEYS} - Send keyboard input</option>
+            </optgroup>
+            <optgroup label="⛔ Process Control (Critical Risk)">
+              <option value="{LAUNCH}">{LAUNCH} - Launch new process</option>
+              <option value="{KILL}">{KILL} - Terminate process</option>
+            </optgroup>
+            <optgroup label="Special">
+              <option value="*">* - All commands (use with caution)</option>
+            </optgroup>
+            <optgroup label="🔒 _internal Admin Commands">
+              <option value="access">access - Read internal API (users, roles)</option>
+              <option value="settings_change">settings_change - Modify users/roles/config</option>
+              <option value="access_logs">access_logs - Read security / session logs</option>
+            </optgroup>
+          </select>
+          <small>The specific command/operation to control</small>
+        </div>
+        
+        <div class="form-group">
+          <label for="filter-pattern">Parameter Pattern:</label>
+          <div class="input-with-button">
+            <input type="text" id="filter-pattern" placeholder="num*Button or * for all"
+                   list="parameter-suggestions"
+                   title="Glob: * = any sequence, ? = any char | Regex: /pattern/ or /pattern/i">
+            <button type="button" onclick="openUITreeBrowser()" class="btn-tool" id="btn-browse-tree">🌳 Browse UI Tree</button>
+          </div>
+          <datalist id="parameter-suggestions"></datalist>
+          <small>
+            <strong>Glob examples:</strong><br>
+            • <code>num*Button</code> — matches num0Button, num1Button, …<br>
+            • <code>Submit*</code> — matches Submit, Submit Button, …<br>
+            • <code>*</code> — matches everything<br>
+            <strong>Regex examples</strong> (enclose in <code>/…/</code>):<br>
+            • <code>/num\dButton/</code> — matches any single-digit num button<br>
+            • <code>/^(calc|notepad)\.exe$/i</code> — exact process names<br>
+            • <code>/Submit(\s+Button)?/i</code> — Submit or Submit Button
+          </small>
+        </div>
+        
+        <div class="form-group">
+          <label for="filter-description">Description:</label>
+          <input type="text" id="filter-description" 
+                 placeholder="Brief description of what this filter does">
+        </div>
+
+        <div class="form-group">
+          <label for="filter-role">Required Role <small style="font-weight:normal;opacity:0.7;">(optional)</small>:</label>
+          <input type="text" id="filter-role"
+                 placeholder="e.g. admin  — leave blank to apply to all users"
+                 title="Comma-separated roles. Rule is skipped for callers that do not carry any of these roles.">
+          <small>Leave empty to apply this rule to <em>all</em> authenticated callers regardless of role.</small>
+        </div>
+        
+        <div class="filter-preview">
+          <strong>🔍 Filter Preview:</strong>
+          <code id="filter-preview-text">
+            <span class="preview-action">ACTION</span>
+            <span class="preview-process">process</span> → 
+            <span class="preview-helper">Helper.exe</span>::<span class="preview-command">command</span>/<span class="preview-pattern">pattern</span>
+          </code>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button onclick="closeFilterEditor()" class="btn-secondary">Cancel</button>
+        <button onclick="saveFilter()" class="btn-primary">Save Filter</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Window Selector Modal -->
+  <div id="window-selector-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>🪟 Select Running Window</h3>
+        <button class="modal-close" onclick="closeWindowSelector()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="window-search" placeholder="🔍 Search windows..." class="filter-search">
+        <div id="windows-list" class="windows-list">
+          <div class="loading">Loading windows...</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button onclick="closeWindowSelector()" class="btn-secondary">Cancel</button>
+        <button onclick="refreshWindowsList()" class="btn-secondary">🔄 Refresh</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- UI Tree Browser Modal -->
+  <div id="tree-browser-modal" class="modal">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h3>🌳 UI Tree Browser</h3>
+        <button class="modal-close" onclick="closeUITreeBrowser()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="tree-info">
+          <strong>Target:</strong> <span id="tree-target">Not selected</span>
+          <button onclick="queryUITree()" class="btn-tool">🔄 Query Tree</button>
+        </div>
+        <div class="info-banner" style="background: var(--bg-tertiary); padding: 0.75rem; border-left: 3px solid var(--success); margin-bottom: 1rem; font-size: 0.9rem;">
+          <strong>💡 Identifier Priority:</strong> Use <span style="color: var(--success); font-weight: bold;">[ID: xxx]</span> for scripts (stable across sessions). 
+          <strong>Name</strong> may change with localization. <strong>Type</strong> is not unique.
+        </div>
+        <input type="text" id="tree-search" placeholder="🔍 Search elements..." class="filter-search">
+        <div class="tree-browser-container">
+          <div class="tree-panel">
+            <div id="ui-tree-display" class="ui-tree">
+              <div class="tree-instructions">
+                ℹ️ First select a window from "Select Window", then click "🔄 Query Tree" to load UI elements.
+              </div>
+            </div>
+          </div>
+          <div class="properties-panel">
+            <div class="properties-header">
+              <h4>📋 Element Properties</h4>
+            </div>
+            <div id="element-properties" class="properties-content">
+              <div class="properties-placeholder">
+                Select an element from the tree to view its properties
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button onclick="closeUITreeBrowser()" class="btn-secondary">Cancel</button>
+        <button onclick="useSelectedElement()" class="btn-primary">Use Selected Element</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Helper Schema Modal -->
+  <div id="helper-schema-modal" class="modal">
+    <div class="modal-content" style="max-width:720px;width:90%">
+      <div class="modal-header">
+        <h3>📄 Schema: <span id="helper-schema-title"></span></h3>
+        <button class="modal-close" onclick="closeHelperSchema()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:0">
+        <pre id="helper-schema-content" style="margin:0;padding:1rem;background:var(--bg-primary);color:var(--text-primary);font-size:0.82rem;overflow:auto;max-height:65vh;border-radius:0 0 6px 6px"></pre>
+      </div>
+    </div>
+  </div>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>

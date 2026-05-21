@@ -1,6 +1,7 @@
-param()
+﻿param()
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+# $PSScriptRoot = dir of this script (build/windows); root is two levels up
+$root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 
 # TypeScript compile
 Write-Host "=== Compiling TypeScript ==="
@@ -27,6 +28,7 @@ $uiac   = (Get-ChildItem "$env:WINDIR\Microsoft.NET" -Recurse -Filter UIAutomati
 $uiat   = (Get-ChildItem "$env:WINDIR\Microsoft.NET" -Recurse -Filter UIAutomationTypes.dll   -EA SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1).FullName
 $wbase  = (Get-ChildItem "$env:WINDIR\Microsoft.NET" -Recurse -Filter WindowsBase.dll         -EA SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1).FullName
 $wforms = (Get-ChildItem "$env:WINDIR\Microsoft.NET" -Recurse -Filter System.Windows.Forms.dll -EA SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+$sdrawing = (Get-ChildItem "$env:WINDIR\Microsoft.NET" -Recurse -Filter System.Drawing.dll -EA SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1).FullName
 $mcsharp = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\Microsoft.CSharp.dll"
 if (-not (Test-Path $mcsharp)) { $mcsharp = "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\Microsoft.CSharp.dll" }
 
@@ -42,7 +44,7 @@ Start-Sleep -Milliseconds 300
 
 # Build KeyWin.exe  (WinCommon.cs merged in — shared UIA helpers, FILL/READELEM support)
 Write-Host "=== Building KeyWin.exe ==="
-& $csc /nologo /target:winexe "/out:$helpersDestDir\KeyWin.exe" "/r:$uiac" "/r:$uiat" "/r:$wbase" "/r:$wforms" "/r:$mcsharp" $helperCommonSrc $winCommonSrc $keySrc
+& $csc /nologo /target:winexe "/out:$helpersDestDir\KeyWin.exe" "/r:$uiac" "/r:$uiat" "/r:$wbase" "/r:$wforms" "/r:$sdrawing" "/r:$mcsharp" $helperCommonSrc $winCommonSrc $keySrc
 Write-Host "KeyWin exit: $LASTEXITCODE"
 
 # Build BrowserWin.exe  (WinCommon.cs adds UIA fallback; needs same DLL set as KeyWin)
@@ -64,6 +66,13 @@ Write-Host "=== Building LibreOfficeWin.exe ==="
 & $csc /nologo /target:exe "/out:$helpersDestDir\LibreOfficeWin.exe" "/r:$mcsharp" `
     $helperCommonSrc $lofficeSrc
 Write-Host "LibreOfficeWin exit: $LASTEXITCODE"
+
+# Copy Python UNO bridge script alongside LibreOfficeWin.exe (LO 24+ fallback)
+$loHelperSrc = "$root\components\helpers\windows\src\lo_helper.py"
+if (Test-Path $loHelperSrc) {
+    Copy-Item $loHelperSrc "$helpersDestDir\lo_helper.py" -Force
+    Write-Host "Copied lo_helper.py -> $helpersDestDir"
+}
 
 # ── SecurityLib.dll  (native C++ — requires MSVC cl.exe) ─────────────────────
 Write-Host "=== Building SecurityLib.dll ==="
@@ -92,8 +101,33 @@ if (-not $clExe) {
 }
 
 if (-not $clExe) {
-    Write-Warning "cl.exe not found - skipping SecurityLib.dll build."
-    Write-Warning "Install Visual Studio Build Tools (C++ workload) to enable native security enforcement."
+    # MSVC not found — try MinGW g++ (MSYS2) as a fallback.
+    # MinGW produces a self-contained DLL (bcrypt.dll + kernel32.dll + msvcrt.dll only).
+    $gppCandidates = @(
+        'C:\msys64\mingw64\bin\g++.exe',
+        'C:\msys2\mingw64\bin\g++.exe',
+        $(if ($c = Get-Command g++.exe -EA SilentlyContinue) { $c.Source } else { $null })
+    ) | Where-Object { $_ -and (Test-Path $_ -EA SilentlyContinue) } | Select-Object -First 1
+
+    if ($gppCandidates) {
+        $gppExe = $gppCandidates
+        # MinGW needs itself on PATH to resolve its own DLL search paths at compile time.
+        $mingwBin = Split-Path $gppExe -Parent
+        if ($env:PATH -notlike "*$mingwBin*") { $env:PATH = "$mingwBin;$env:PATH" }
+        Write-Host "cl.exe not found — using MinGW g++ fallback: $gppExe"
+        & $gppExe -shared -O2 -static-libgcc -static-libstdc++ `
+            -o $secLibDest $secLibSrc `
+            -lbcrypt -DAIAPI_SECURITYLIB_EXPORTS -D_WIN32_WINNT=0x0601
+        Write-Host "SecurityLib (MinGW) exit: $LASTEXITCODE"
+        if (Test-Path $secLibDest) {
+            Write-Host "Built: $secLibDest"
+        } else {
+            Write-Warning "SecurityLib.dll was not produced by MinGW g++ — check compiler output."
+        }
+    } else {
+        Write-Warning "Neither cl.exe nor MinGW g++ found — skipping SecurityLib.dll build."
+        Write-Warning "Install Visual Studio Build Tools (C++ workload) or MSYS2 MinGW64 to enable native security."
+    }
 } else {
     Write-Host "Using cl.exe: $clExe"
 
@@ -129,6 +163,61 @@ if (-not $clExe) {
     } else {
         Write-Warning "SecurityLib.dll was not produced - check compiler output."
     }
+}
+
+
+# ── Update binaryHashes in config/security/config.json ───────────────────────
+# Keeps the on-disk hash manifest in sync with freshly-built binaries so
+# sec_validate_signature_self() (SecurityLib) and the dashboard integrity check
+# always compare against the correct expected values.
+Write-Host "=== Updating binaryHashes in config/security/config.json ==="
+$configPath = "$root\config\security\config.json"
+if (Test-Path $configPath) {
+    try {
+        $cfg = Get-Content $configPath -Raw | ConvertFrom-Json
+
+        # Map: config key → relative path from root
+        $binMap = @{
+            keyWin       = "dist\helpers\KeyWin.exe"
+            browserWin   = "dist\helpers\BrowserWin.exe"
+            msOfficeWin  = "dist\helpers\MSOfficeWin.exe"
+            libreOfficeWin = "dist\helpers\LibreOfficeWin.exe"
+            securityLib  = "dist\helpers\SecurityLib.dll"
+        }
+
+        foreach ($key in $binMap.Keys) {
+            $relPath = $binMap[$key]
+            $fullPath = Join-Path $root $relPath
+            if (Test-Path $fullPath) {
+                $hash     = (Get-FileHash $fullPath -Algorithm SHA256).Hash.ToLower()
+                $size     = (Get-Item $fullPath).Length
+                $modified = (Get-Item $fullPath).LastWriteTimeUtc.ToString("o")
+
+                if (-not $cfg.binaryHashes) {
+                    $cfg | Add-Member -MemberType NoteProperty -Name binaryHashes -Value ([PSCustomObject]@{})
+                }
+                if (-not ($cfg.binaryHashes | Get-Member -Name $key -ErrorAction SilentlyContinue)) {
+                    $cfg.binaryHashes | Add-Member -MemberType NoteProperty -Name $key -Value ([PSCustomObject]@{})
+                }
+                $cfg.binaryHashes.$key = [PSCustomObject]@{
+                    path         = $relPath
+                    sha256       = $hash
+                    size         = $size
+                    lastModified = $modified
+                }
+                Write-Host "  $key : $hash ($size bytes)"
+            } else {
+                Write-Host "  $key : not found at $fullPath — skipped"
+            }
+        }
+
+        $cfg | ConvertTo-Json -Depth 20 | Set-Content $configPath -Encoding UTF8
+        Write-Host "config.json updated."
+    } catch {
+        Write-Warning "Failed to update binaryHashes: $_"
+    }
+} else {
+    Write-Warning "config.json not found at $configPath — skipping hash update."
 }
 
 Write-Host "=== Build complete ==="

@@ -1,303 +1,442 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <!--
   apptemplates/calculator/tree.xml
-  Annotated UIA control tree for the Windows 11 Calculator (UWP).
-  AutomationIds captured live via QUERYTREE depth=5 on Windows 11 23H2.
-  Helper: KeyWin.exe  Target: calc.exe  (window_mode: single_session)
+  Live UIA control tree for the Windows 11 Calculator (UWP).
+  Captured via QUERYTREE depth=6 on Windows 11 23H2 (Czech locale).
+  Helper: KeyWin.exe  process: calc.exe  window_mode: single_session
 
-  Usage:
-    - Call RESET before any sequence to ensure a clean state.
-    - Click digit/operator buttons by their AutomationId with CLICKID.
-    - Read the current expression from CalculatorExpression (READ or CLICKID).
-    - Read the current result from CalculatorResults or its TextContainer child.
-    - All button names/labels here are English equivalents; actual localised name
-      depends on OS locale — always use automationId (stable across locales).
+  ── PATH CONVENTION ───────────────────────────────────────────────
+  path= attributes carry the /-separated address for READELEM / CLICKID.
+  WinCommon.ReadElementValue walks segments left-to-right, each step calling
+  FindFirst(TreeScope.Subtree) from the previously matched node.
+
+  The unnamed Group (id="") directly under NavView has no AutomationId and
+  is therefore TRANSPARENT to path addressing — skip it, address its children
+  directly via NavView:
+      NavView/CalculatorResults
+      NavView/MemoryPanel/memButton
+      NavView/StandardOperators/equalButton
+
+  ── MODE SWITCHING ────────────────────────────────────────────────
+  The Calculator supports multiple modes (Standard, Scientific, …).
+  Switching mode replaces large parts of the UIA subtree under NavView.
+  Each <assert> block below documents the controls present only in that mode.
+
+  Active mode is detected by reading NavView/Header (Text control whose
+  Name property contains the mode name, e.g. "Standardní" or "Vědecký").
+  The <assert> wrappers encode this detection rule generically — same
+  path/op/value semantics as ASSERT in scenarios.xml.
+
+  To switch mode: CLICKID TogglePaneButton, then CLICKID the mode item.
+  Scenarios that need a specific mode must first assert / switch to it.
+
+  ── COMMAND TAXONOMY ──────────────────────────────────────────────
+  Only UIA-technology primitives appear in <action> elements:
+    CLICKID   — click a control by AutomationId (flat FindFirst(Descendants))
+    READELEM  — read a control by tree path   (walks /-segments)
+    SENDKEYS  — emit keystrokes via OS input stack
+  App-level sequences belong in scenarios.xml ONLY.
 -->
 <AppTree app="calculator" version="11.2302" os="win11" helper="KeyWin.exe"
          window_mode="single_session" process="calc.exe">
 
   <meta>
     <description lang="en">
-      Windows Calculator (Modern UWP). Single-session app — one instance at a time.
-      Use RESET to clear state before reuse instead of closing and relaunching.
-      Standard mode buttons shown here; other modes (Scientific, Programmer) add extra controls.
+      Windows Calculator (Modern UWP). Single-session — one window at a time.
+      Do NOT kill/relaunch; use CLICKID clearButton to reset between uses.
     </description>
     <description lang="ai">
       Single-session UWP calculator. One process, one window.
-      Numeric buttons use AutomationId numXButton (X = 0–9).
-      Operator buttons: plusButton, minusButton, multiplyButton, divideButton, equalButton.
-      Clear buttons: clearButton (AC — clears all), clearEntryButton (CE — clears entry),
-        backSpaceButton (backspace last digit).
-      Result display: CalculatorResults (click or READ to get result string like "Zobrazuje se 32").
-      Expression display: CalculatorExpression (shows full expression like "4 × 8 =").
-      TextContainer inside CalculatorResults shows just the number: "32".
-      RESET: clicks clearButton (or clearEntryButton); falls back to Ctrl+Z×20.
-      Always call LISTWINDOWS first — reuse existing calculator window; never KILL.
+      All interactive controls live under NavView (Custom, direct child of root Window).
+      NavView contains an unnamed Group (id="") that is transparent to paths.
+      Read result:   READELEM path="NavView/CalculatorResults"     → "Zobrazuje se 32"
+      Read bare num: READELEM path="NavView/CalculatorResults/NormalOutput" → "32"
+      Click button:  CLICKID  parameter="equalButton"  (flat search still works for CLICKID)
+      Active mode:   READELEM path="NavView/Header"  → contains mode name
     </description>
-    <!-- Live hash captured 2026-03-03; update after OS/app upgrades -->
     <binaries>
       <binary path="C:\Windows\SystemApps\Microsoft.WindowsCalculator_*\Calculator.exe"
-              sha256="" version="11.2302.x.0" note="Hash intentionally blank — update after capture"/>
+              sha256="" version="11.2302.x.0" note="Hash blank — update after capture"/>
     </binaries>
-    <!-- Vector embeddings for semantic control search — generated separately per engine -->
     <embeddings>
-      <engine name="openai-ada-002"          file="embeddings/openai-ada-002.bin"          dims="1536" optional="true"/>
-      <engine name="ollama-nomic-embed-text" file="embeddings/ollama-nomic-embed-text.json" dims="768"  optional="true"/>
+      <engine name="openai-ada-002"          file="embeddings/openai-ada-002.bin"   dims="1536" optional="true"/>
+      <engine name="ollama-nomic-embed-text" file="embeddings/ollama-nomic-embed-text.json" dims="768" optional="true"/>
     </embeddings>
   </meta>
 
   <!--
-    ════════════════════════════════════════════════════════════
-    A NOTE ON COMMAND TAXONOMY
-    ════════════════════════════════════════════════════════════
-    <action> elements listed here are ONLY UI-technology primitives:
-      SENDKEYS  — emit keystrokes via the OS input stack
-      CLICKID   — click a UIA control by AutomationId
-      READ      — read text content / Name property of a control or window
-    Application-level compound operations (e.g. "open new document",
-    "compute expression", "reset state") belong in scenarios.xml ONLY.
-    ════════════════════════════════════════════════════════════
+    ═══════════════════════════════════════════════════════════════
+    ACTUAL UIA TREE — abbreviated (Standard mode, depth 4)
+
+    Window (id="")
+    ├── AppIcon  (Image)
+    ├── AppName  (Text)
+    └── NavView  (Custom, id="NavView")
+        ├── TogglePaneButton   (Button)
+        ├── Header             (Text)      ← mode name label
+        ├── NormalAlwaysOnTopButton (Button)
+        └── Group  (id="", UNNAMED — transparent)
+            ├── CalculatorExpression (Text)
+            ├── CalculatorResults    (Text)
+            │   └── TextContainer    (Pane)
+            │       └── NormalOutput (Text)  ← bare number "32"
+            ├── MemoryPanel          (Group)
+            │   ├── ClearMemoryButton
+            │   ├── MemRecall  ├── MemPlus  ├── MemMinus  └── memButton
+            ├── DisplayControls      (Group)
+            │   ├── clearButton      ← AC / C
+            │   ├── clearEntryButton ← CE [Standard only]
+            │   └── backSpaceButton
+            ├── StandardFunctions    (Group) [Standard only]
+            │   ├── percentButton  ├── invertButton
+            │   ├── xpower2Button  └── squareRootButton
+            ├── StandardOperators    (Group)
+            │   ├── divideButton  ├── multiplyButton  ├── minusButton
+            │   ├── plusButton    └── equalButton
+            ├── negateButton       (Button — directly in unnamed Group)
+            ├── NumberPad          (Group)
+            │   ├── num0Button … num9Button
+            │   └── decimalSeparatorButton
+            └── DockPanel          (Group — history/memory slide-in)
+                └── DockPivot (Tab)
+                    ├── HistoryLabel (TabItem)
+                    └── MemoryLabel  (TabItem)
+
+    Scientific mode replaces StandardFunctions with:
+        ScientificAngleOperators (Group): degButton, ftoeButton
+        Group "Vědecké funkce" (unnamed): xpower2Button, squareRootButton,
+            powerButton, powerOf10Button, logBase10Button, logBaseEButton
+        shiftButton, piButton, eulerButton, invertButton, absButton,
+        expButton, modButton, openParenthesisButton, closeParenthesisButton,
+        factorialButton  (all direct children of the unnamed Group)
+        List > ListItem > trigButton / funcButton  (flyout panels)
+    ═══════════════════════════════════════════════════════════════
   -->
 
   <!--
-    Group elements are non-wrapping preceding-sibling annotations.
-    A control may logically belong to multiple groups; placing markers here
-    instead of wrapping avoids a forced 1:N tree hierarchy.
+    ── CONDITIONAL CONTROLS ──────────────────────────────────────────────
+    Controls that are only present when a runtime condition holds are wrapped
+    in <assert> elements — the same path/op/value semantics as the ASSERT
+    command in scenarios.xml.  There are no app-specific wrapper tags.
+    Before accessing any <assert>-wrapped control, a scenario must verify
+    (or establish) the condition.  To switch mode: CLICKID TogglePaneButton,
+    then CLICKID the desired mode nav item.
+    ──────────────────────────────────────────────────────────────────────
   -->
+  <Node id="NavView" type="Custom" path="NavView">
 
-  <Group id="display" label="Display"
-         members="CalculatorResults TextContainer CalculatorExpression"
-         note="Read-only controls that show calculator state. Use READ or inspect Name attribute."/>
+    <Control id="TogglePaneButton" type="Button" path="NavView/TogglePaneButton">
+      <label lang="en">Open navigation pane — switches calculator mode.</label>
+      <label lang="ai">Opens left nav panel to change mode. Avoid during arithmetic. CLICKID TogglePaneButton.</label>
+      <action command="CLICKID" parameter="TogglePaneButton"/>
+    </Control>
 
-  <Control id="CalculatorResults" type="Text">
-    <label lang="en">Result / answer display. Shows the current expression result.</label>
-    <label lang="ai">
-      Read this to get the result after pressing equalButton.
-      Value format localised, e.g. "Zobrazuje se 32" (Czech) or "Display is 32" (English).
-      Parse the trailing number.  Alternatively read TextContainer child for just the number.
-    </label>
-    <action command="READ"    parameter=""/>
-    <action command="CLICKID" parameter="CalculatorResults"/>
-  </Control>
+    <Control id="Header" type="Text" path="NavView/Header">
+      <label lang="en">Current mode label, e.g. "Standardní" / "Vědecký".</label>
+      <label lang="ai">READELEM NavView/Header to detect active mode. Value contains mode name.</label>
+      <action command="READELEM" parameter="NavView/Header"/>
+    </Control>
 
-  <Control id="TextContainer" type="Pane" parent="CalculatorResults">
-    <label lang="en">Raw numeric display pane inside CalculatorResults.</label>
-    <label lang="ai">
-      Child of CalculatorResults. Name property is the pure numeric result ("32").
-      Query via QUERYTREE and read Name attribute — no action needed.
-    </label>
-  </Control>
+    <Control id="NormalAlwaysOnTopButton" type="Button" path="NavView/NormalAlwaysOnTopButton">
+      <label lang="en">Always-on-top toggle.</label>
+      <action command="CLICKID" parameter="NormalAlwaysOnTopButton"/>
+    </Control>
 
-  <Control id="CalculatorExpression" type="Text">
-    <label lang="en">Expression display — shows the current in-progress expression, e.g. "4 × 8 =".</label>
-    <label lang="ai">
-      Shows the full expression being built. Use READ on the window to read both
-      expression and result together.  Generally not needed for read-back — use
-      CalculatorResults or TextContainer for the answer.
-    </label>
-    <action command="CLICKID" parameter="CalculatorExpression"/>
-  </Control>
+    <!-- unnamed Group is transparent — children addressed via NavView directly -->
+    <Node id="" type="Group" path=""
+          note="No AutomationId — omit from paths. Address children as NavView/childId.">
 
-  <Group id="clear-correction" label="Clear / Correction"
-         members="clearButton clearEntryButton backSpaceButton"
-         note="Three levels of erasure: AC (all), CE (entry only), Backspace (one digit). All CLICKID."/>
+      <!-- ── Display ───────────────────────────────── -->
+      <Control id="CalculatorResults" type="Text" path="NavView/CalculatorResults">
+        <label lang="en">Result display — localised string, e.g. "Zobrazuje se 32".</label>
+        <label lang="ai">
+          Read after equalButton. Returns localised string.
+          For bare number: READELEM NavView/CalculatorResults/NormalOutput → "32".
+        </label>
+        <action command="READELEM" parameter="NavView/CalculatorResults"/>
+        <action command="CLICKID"  parameter="CalculatorResults"/>
 
-  <Control id="clearButton" type="Button">
-    <label lang="en">Clear / AC — clears both current entry and the expression.</label>
-    <label lang="ai">
-      Click to fully reset the calculator state.  Equivalent to pressing C or AC.
-      Preferred target for RESET fallback.  After clicking, CalculatorResults
-      shows 0 and CalculatorExpression is blank.
-    </label>
-    <action command="CLICKID" parameter="clearButton"/>
-  </Control>
+        <Node id="TextContainer" type="Pane" path="NavView/CalculatorResults/TextContainer">
+          <Control id="NormalOutput" type="Text" path="NavView/CalculatorResults/NormalOutput">
+            <label lang="en">Raw numeric result without localisation prefix.</label>
+            <label lang="ai">READELEM NavView/CalculatorResults/NormalOutput → plain "32".</label>
+            <action command="READELEM" parameter="NavView/CalculatorResults/NormalOutput"/>
+          </Control>
+        </Node>
+      </Control>
 
-  <Control id="clearEntryButton" type="Button">
-    <label lang="en">Clear Entry / CE — clears only the most-recently entered value.</label>
-    <label lang="ai">
-      Use to erase a mistyped digit/number without losing the pending operator.
-      Difference from clearButton: clearEntryButton leaves the operator and first
-      operand in place; clearButton resets everything.
-    </label>
-    <action command="CLICKID" parameter="clearEntryButton"/>
-  </Control>
+      <Control id="CalculatorExpression" type="Text" path="NavView/CalculatorExpression">
+        <label lang="en">Expression display — in-progress expression, e.g. "4 × 8 =".</label>
+        <action command="READELEM" parameter="NavView/CalculatorExpression"/>
+      </Control>
 
-  <Control id="backSpaceButton" type="Button">
-    <label lang="en">Backspace — removes the last entered digit.</label>
-    <label lang="ai">Removes one digit at a time from the current entry. Equivalent to {BACK} key.</label>
-    <action command="CLICKID" parameter="backSpaceButton"/>
-  </Control>
+      <!-- ── Memory ────────────────────────────────── -->
+      <Node id="MemoryPanel" type="Group" path="NavView/MemoryPanel">
+        <Control id="ClearMemoryButton" type="Button" path="NavView/MemoryPanel/ClearMemoryButton">
+          <label lang="en">Memory Clear (MC).</label>
+          <action command="CLICKID" parameter="ClearMemoryButton"/>
+        </Control>
+        <Control id="MemRecall" type="Button" path="NavView/MemoryPanel/MemRecall">
+          <label lang="en">Memory Recall (MR).</label>
+          <action command="CLICKID" parameter="MemRecall"/>
+        </Control>
+        <Control id="MemPlus" type="Button" path="NavView/MemoryPanel/MemPlus">
+          <label lang="en">Memory Add (M+).</label>
+          <action command="CLICKID" parameter="MemPlus"/>
+        </Control>
+        <Control id="MemMinus" type="Button" path="NavView/MemoryPanel/MemMinus">
+          <label lang="en">Memory Subtract (M−).</label>
+          <action command="CLICKID" parameter="MemMinus"/>
+        </Control>
+        <Control id="memButton" type="Button" path="NavView/MemoryPanel/memButton">
+          <label lang="en">Memory Store (MS).</label>
+          <action command="CLICKID" parameter="memButton"/>
+        </Control>
+      </Node>
 
-  <Group id="digits" label="Digit buttons (0–9, decimal, negate)"
-         members="num0Button num1Button num2Button num3Button num4Button num5Button num6Button num7Button num8Button num9Button decimalSeparatorButton negateButton"
-         note="AutomationId pattern: numXButton. Also decimalSeparatorButton, negateButton (±)."/>
+      <!-- ── Clear / Backspace ─────────────────────── -->
+      <Node id="DisplayControls" type="Group" path="NavView/DisplayControls">
+        <Control id="clearButton" type="Button" path="NavView/DisplayControls/clearButton">
+          <label lang="en">Clear / AC (C) — resets both entry and expression.</label>
+          <label lang="ai">
+            Fully resets calculator. After click: CalculatorResults = 0, CalculatorExpression blank.
+            CLICKID clearButton.
+          </label>
+          <action command="CLICKID" parameter="clearButton"/>
+        </Control>
+        <Control id="backSpaceButton" type="Button" path="NavView/DisplayControls/backSpaceButton">
+          <label lang="en">Backspace — removes last entered digit.</label>
+          <action command="CLICKID"  parameter="backSpaceButton"/>
+          <action command="SENDKEYS" parameter="{BACK}" note="keyboard equivalent"/>
+        </Control>
 
-  <Control id="num0Button" type="Button">
-    <label lang="en">Digit 0</label>
-    <label lang="ai">Type digit 0. CLICKID num0Button.</label>
-    <action command="CLICKID" parameter="num0Button"/>
-  </Control>
-  <Control id="num1Button" type="Button">
-    <label lang="en">Digit 1</label>
-    <label lang="ai">Type digit 1. CLICKID num1Button.</label>
-    <action command="CLICKID" parameter="num1Button"/>
-  </Control>
-  <Control id="num2Button" type="Button">
-    <label lang="en">Digit 2</label>
-    <label lang="ai">Type digit 2. CLICKID num2Button.</label>
-    <action command="CLICKID" parameter="num2Button"/>
-  </Control>
-  <Control id="num3Button" type="Button">
-    <label lang="en">Digit 3</label>
-    <label lang="ai">Type digit 3. CLICKID num3Button.</label>
-    <action command="CLICKID" parameter="num3Button"/>
-  </Control>
-  <Control id="num4Button" type="Button">
-    <label lang="en">Digit 4</label>
-    <label lang="ai">Type digit 4. CLICKID num4Button.</label>
-    <action command="CLICKID" parameter="num4Button"/>
-  </Control>
-  <Control id="num5Button" type="Button">
-    <label lang="en">Digit 5</label>
-    <label lang="ai">Type digit 5. CLICKID num5Button.</label>
-    <action command="CLICKID" parameter="num5Button"/>
-  </Control>
-  <Control id="num6Button" type="Button">
-    <label lang="en">Digit 6</label>
-    <label lang="ai">Type digit 6. CLICKID num6Button.</label>
-    <action command="CLICKID" parameter="num6Button"/>
-  </Control>
-  <Control id="num7Button" type="Button">
-    <label lang="en">Digit 7</label>
-    <label lang="ai">Type digit 7. CLICKID num7Button.</label>
-    <action command="CLICKID" parameter="num7Button"/>
-  </Control>
-  <Control id="num8Button" type="Button">
-    <label lang="en">Digit 8</label>
-    <label lang="ai">Type digit 8. CLICKID num8Button.</label>
-    <action command="CLICKID" parameter="num8Button"/>
-  </Control>
-  <Control id="num9Button" type="Button">
-    <label lang="en">Digit 9</label>
-    <label lang="ai">Type digit 9. CLICKID num9Button.</label>
-    <action command="CLICKID" parameter="num9Button"/>
-  </Control>
+        <!-- clearEntryButton is ONLY present in Standard mode.
+             Its presence in the UIA tree IS the locale-invariant mode gate (ADR-012).
+             DO NOT guard with a locale string assert — AutomationId is locale-invariant. -->
+        <Control id="clearEntryButton" type="Button" path="NavView/DisplayControls/clearEntryButton">
+          <label lang="en">Clear Entry (CE) — clears last entry, keeps pending operator. Standard mode only.</label>
+          <label lang="ai">Standard mode only. Erases last entry without losing operator. CLICKID clearEntryButton. If READ clearEntryButton returns empty the app is NOT in Standard mode.</label>
+          <action command="CLICKID" parameter="clearEntryButton"/>
+        </Control>
+      </Node>
 
-  <Control id="decimalSeparatorButton" type="Button">
-    <label lang="en">Decimal point / separator</label>
-    <label lang="ai">Type decimal separator (locale-dependent: '.' or ','). CLICKID decimalSeparatorButton.</label>
-    <action command="CLICKID" parameter="decimalSeparatorButton"/>
-  </Control>
+      <!-- ── Operators ─────────────────────────────── -->
+      <Node id="StandardOperators" type="Group" path="NavView/StandardOperators">
+        <Control id="divideButton" type="Button" path="NavView/StandardOperators/divideButton">
+          <label lang="en">Division (÷)</label>
+          <action command="CLICKID" parameter="divideButton"/>
+        </Control>
+        <Control id="multiplyButton" type="Button" path="NavView/StandardOperators/multiplyButton">
+          <label lang="en">Multiplication (×)</label>
+          <action command="CLICKID" parameter="multiplyButton"/>
+        </Control>
+        <Control id="minusButton" type="Button" path="NavView/StandardOperators/minusButton">
+          <label lang="en">Subtraction (−)</label>
+          <action command="CLICKID" parameter="minusButton"/>
+        </Control>
+        <Control id="plusButton" type="Button" path="NavView/StandardOperators/plusButton">
+          <label lang="en">Addition (+)</label>
+          <action command="CLICKID" parameter="plusButton"/>
+        </Control>
+        <Control id="equalButton" type="Button" path="NavView/StandardOperators/equalButton">
+          <label lang="en">Equals (=) — evaluates the expression.</label>
+          <label lang="ai">
+            Press after second operand to compute. Then read NavView/CalculatorResults.
+            CLICKID equalButton or SENDKEYS {ENTER}.
+          </label>
+          <action command="CLICKID"  parameter="equalButton"/>
+          <action command="SENDKEYS" parameter="{ENTER}" note="keyboard equivalent"/>
+        </Control>
+      </Node>
 
-  <Control id="negateButton" type="Button">
-    <label lang="en">Negate — toggle positive/negative on current entry.</label>
-    <label lang="ai">Applies ± to the current entry. CLICKID negateButton.</label>
-    <action command="CLICKID" parameter="negateButton"/>
-  </Control>
+      <!-- ── Negate ────────────────────────────────── -->
+      <Control id="negateButton" type="Button" path="NavView/negateButton">
+        <label lang="en">Negate (±) — toggle positive/negative on current entry.</label>
+        <label lang="ai">Direct child of unnamed Group. CLICKID negateButton.</label>
+        <action command="CLICKID" parameter="negateButton"/>
+      </Control>
 
-  <Group id="basic-operators" label="Basic operators (+, −, ×, ÷, =)"
-         members="plusButton minusButton multiplyButton divideButton equalButton"
-         note="Binary operators expect a first operand, an operator click, a second operand, then equalButton."/>
+      <!-- ── Number pad ────────────────────────────── -->
+      <Node id="NumberPad" type="Group" path="NavView/NumberPad">
+        <Control id="num0Button" type="Button" path="NavView/NumberPad/num0Button">
+          <label lang="en">Digit 0</label><action command="CLICKID" parameter="num0Button"/>
+        </Control>
+        <Control id="num1Button" type="Button" path="NavView/NumberPad/num1Button">
+          <label lang="en">Digit 1</label><action command="CLICKID" parameter="num1Button"/>
+        </Control>
+        <Control id="num2Button" type="Button" path="NavView/NumberPad/num2Button">
+          <label lang="en">Digit 2</label><action command="CLICKID" parameter="num2Button"/>
+        </Control>
+        <Control id="num3Button" type="Button" path="NavView/NumberPad/num3Button">
+          <label lang="en">Digit 3</label><action command="CLICKID" parameter="num3Button"/>
+        </Control>
+        <Control id="num4Button" type="Button" path="NavView/NumberPad/num4Button">
+          <label lang="en">Digit 4</label><action command="CLICKID" parameter="num4Button"/>
+        </Control>
+        <Control id="num5Button" type="Button" path="NavView/NumberPad/num5Button">
+          <label lang="en">Digit 5</label><action command="CLICKID" parameter="num5Button"/>
+        </Control>
+        <Control id="num6Button" type="Button" path="NavView/NumberPad/num6Button">
+          <label lang="en">Digit 6</label><action command="CLICKID" parameter="num6Button"/>
+        </Control>
+        <Control id="num7Button" type="Button" path="NavView/NumberPad/num7Button">
+          <label lang="en">Digit 7</label><action command="CLICKID" parameter="num7Button"/>
+        </Control>
+        <Control id="num8Button" type="Button" path="NavView/NumberPad/num8Button">
+          <label lang="en">Digit 8</label><action command="CLICKID" parameter="num8Button"/>
+        </Control>
+        <Control id="num9Button" type="Button" path="NavView/NumberPad/num9Button">
+          <label lang="en">Digit 9</label><action command="CLICKID" parameter="num9Button"/>
+        </Control>
+        <Control id="decimalSeparatorButton" type="Button" path="NavView/NumberPad/decimalSeparatorButton">
+          <label lang="en">Decimal separator (locale: '.' or ',').</label>
+          <action command="CLICKID" parameter="decimalSeparatorButton"/>
+        </Control>
+      </Node>
 
-  <Control id="plusButton" type="Button">
-    <label lang="en">Addition (+)</label>
-    <label lang="ai">Press after first operand to begin addition. CLICKID plusButton.</label>
-    <action command="CLICKID" parameter="plusButton"/>
-  </Control>
-  <Control id="minusButton" type="Button">
-    <label lang="en">Subtraction (−)</label>
-    <label lang="ai">Press after first operand to begin subtraction. CLICKID minusButton.</label>
-    <action command="CLICKID" parameter="minusButton"/>
-  </Control>
-  <Control id="multiplyButton" type="Button">
-    <label lang="en">Multiplication (×)</label>
-    <label lang="ai">Press after first operand to begin multiplication. CLICKID multiplyButton.</label>
-    <action command="CLICKID" parameter="multiplyButton"/>
-  </Control>
-  <Control id="divideButton" type="Button">
-    <label lang="en">Division (÷)</label>
-    <label lang="ai">Press after first operand to begin division. CLICKID divideButton.</label>
-    <action command="CLICKID" parameter="divideButton"/>
-  </Control>
-  <Control id="equalButton" type="Button">
-    <label lang="en">Equals (=) — evaluates the expression.</label>
-    <label lang="ai">
-      Press after second operand to compute the result.
-      After pressing, CalculatorResults shows the answer.
-      Alternatively send {ENTER} via SENDKEYS.
-      CLICKID equalButton.
-    </label>
-    <action command="CLICKID" parameter="equalButton"/>
-    <action command="SENDKEYS" parameter="{ENTER}" note="keyboard equivalent"/>
-  </Control>
+      <!-- ── History / Memory dock ─────────────────── -->
+      <Node id="DockPanel" type="Group" path="NavView/DockPanel">
+        <Node id="DockPivot" type="Tab" path="NavView/DockPanel/DockPivot">
+          <Control id="HistoryLabel" type="TabItem" path="NavView/DockPanel/DockPivot/HistoryLabel">
+            <label lang="en">History tab.</label>
+            <action command="CLICKID" parameter="HistoryLabel"/>
+          </Control>
+          <Control id="MemoryLabel" type="TabItem" path="NavView/DockPanel/DockPivot/MemoryLabel">
+            <label lang="en">Memory tab.</label>
+            <action command="CLICKID" parameter="MemoryLabel"/>
+          </Control>
+        </Node>
+      </Node>
 
-  <Group id="unary-functions" label="Unary / standard functions (%, 1/x, x², √x)"
-         members="percentButton invertButton xpower2Button squareRootButton"
-         note="Operate on the current entry immediately — no second operand needed."/>
+      <!-- ══════════════════════════════════════════════════════════════
+           STANDARD MODE — controls present only in Standard mode.
+           Condition: NavView/Header contains "Standardní" (CZ) / "Standard" (EN).
+           clearEntryButton is already embedded inside DisplayControls above.
+           ══════════════════════════════════════════════════════════════ -->
+      <assert path="NavView/Header" op="contains" value="Standardní"
+              note="Czech locale Standard mode. Also 'Standard' in EN builds.">
+        <Node id="StandardFunctions" type="Group" path="NavView/StandardFunctions">
+          <Control id="percentButton" type="Button" path="NavView/StandardFunctions/percentButton">
+            <label lang="en">Percent (%)</label>
+            <action command="CLICKID" parameter="percentButton"/>
+          </Control>
+          <Control id="invertButton" type="Button" path="NavView/StandardFunctions/invertButton">
+            <label lang="en">Reciprocal (1/x)</label>
+            <action command="CLICKID" parameter="invertButton"/>
+          </Control>
+          <Control id="xpower2Button" type="Button" path="NavView/StandardFunctions/xpower2Button">
+            <label lang="en">Square (x²)</label>
+            <action command="CLICKID" parameter="xpower2Button"/>
+          </Control>
+          <Control id="squareRootButton" type="Button" path="NavView/StandardFunctions/squareRootButton">
+            <label lang="en">Square root (√x)</label>
+            <action command="CLICKID" parameter="squareRootButton"/>
+          </Control>
+        </Node>
+      </assert>
 
-  <Control id="percentButton" type="Button">
-    <label lang="en">Percent (%)</label>
-    <label lang="ai">Convert current entry to percent. CLICKID percentButton.</label>
-    <action command="CLICKID" parameter="percentButton"/>
-  </Control>
-  <Control id="invertButton" type="Button">
-    <label lang="en">Reciprocal (1/x)</label>
-    <label lang="ai">Compute 1 ÷ current entry. CLICKID invertButton.</label>
-    <action command="CLICKID" parameter="invertButton"/>
-  </Control>
-  <Control id="xpower2Button" type="Button">
-    <label lang="en">Square (x²)</label>
-    <label lang="ai">Compute x² on current entry. CLICKID xpower2Button.</label>
-    <action command="CLICKID" parameter="xpower2Button"/>
-  </Control>
-  <Control id="squareRootButton" type="Button">
-    <label lang="en">Square root (√x)</label>
-    <label lang="ai">Compute √x on current entry. CLICKID squareRootButton.</label>
-    <action command="CLICKID" parameter="squareRootButton"/>
-  </Control>
+      <!-- ══════════════════════════════════════════════════════════════
+           SCIENTIFIC MODE — controls present only in Scientific mode.
+           Condition: NavView/Header contains "Vědecký" (CZ) / "Scientific" (EN).
+           StandardFunctions group is absent; replaced by the controls below.
+           ══════════════════════════════════════════════════════════════ -->
+      <assert path="NavView/Header" op="contains" value="Vědecký"
+              note="Czech locale Scientific mode. Also 'Scientific' in EN builds.">
 
-  <Group id="memory" label="Memory (MS / MR / M+ / M− / MC)"
-         members="memButton MemRecall MemPlus MemMinus ClearMemoryButton"
-         note="Single memory slot. Store (MS), Recall (MR), Add (M+), Subtract (M−), Clear (MC)."/>
+        <Node id="ScientificAngleOperators" type="Group" path="NavView/ScientificAngleOperators">
+          <label lang="en">Angle unit + notation selector.</label>
+          <Control id="degButton" type="Button" path="NavView/ScientificAngleOperators/degButton">
+            <label lang="en">Toggle angle units (DEG / RAD / GRAD).</label>
+            <action command="CLICKID" parameter="degButton"/>
+          </Control>
+          <Control id="ftoeButton" type="Button" path="NavView/ScientificAngleOperators/ftoeButton">
+            <label lang="en">Toggle scientific (F-E) notation.</label>
+            <action command="CLICKID" parameter="ftoeButton"/>
+          </Control>
+        </Node>
 
-  <Control id="memButton" type="Button">
-    <label lang="en">Memory Store (MS) — save current value into memory.</label>
-    <label lang="ai">Stores current display value into memory slot. CLICKID memButton.</label>
-    <action command="CLICKID" parameter="memButton"/>
-  </Control>
-  <Control id="MemRecall" type="Button">
-    <label lang="en">Memory Recall (MR) — paste stored value into display.</label>
-    <label lang="ai">Retrieves stored memory value into current entry. CLICKID MemRecall.</label>
-    <action command="CLICKID" parameter="MemRecall"/>
-  </Control>
-  <Control id="MemPlus" type="Button">
-    <label lang="en">Memory Add (M+) — add current value to stored memory.</label>
-    <label lang="ai">Adds current display value to the memory slot. CLICKID MemPlus.</label>
-    <action command="CLICKID" parameter="MemPlus"/>
-  </Control>
-  <Control id="MemMinus" type="Button">
-    <label lang="en">Memory Subtract (M−) — subtract current value from stored memory.</label>
-    <label lang="ai">Subtracts current display value from the memory slot. CLICKID MemMinus.</label>
-    <action command="CLICKID" parameter="MemMinus"/>
-  </Control>
-  <Control id="ClearMemoryButton" type="Button">
-    <label lang="en">Memory Clear (MC) — erase the memory slot.</label>
-    <label lang="ai">Clears the memory slot entirely. CLICKID ClearMemoryButton.</label>
-    <action command="CLICKID" parameter="ClearMemoryButton"/>
-  </Control>
+        <!-- Unnamed "Vědecké funkce" sub-group is transparent — children via NavView -->
+        <Node id="" type="Group" path=""
+              note="Unnamed 'Vědecké funkce' sub-group — transparent. Children via NavView.">
+          <Control id="xpower2Button"    type="Button" path="NavView/xpower2Button">
+            <label lang="en">Square (x²)</label>
+            <action command="CLICKID" parameter="xpower2Button"/>
+          </Control>
+          <Control id="squareRootButton" type="Button" path="NavView/squareRootButton">
+            <label lang="en">Square root (√x)</label>
+            <action command="CLICKID" parameter="squareRootButton"/>
+          </Control>
+          <Control id="powerButton"      type="Button" path="NavView/powerButton">
+            <label lang="en">Power (x^y)</label>
+            <action command="CLICKID" parameter="powerButton"/>
+          </Control>
+          <Control id="powerOf10Button"  type="Button" path="NavView/powerOf10Button">
+            <label lang="en">10^x</label>
+            <action command="CLICKID" parameter="powerOf10Button"/>
+          </Control>
+          <Control id="logBase10Button"  type="Button" path="NavView/logBase10Button">
+            <label lang="en">Common logarithm (log)</label>
+            <action command="CLICKID" parameter="logBase10Button"/>
+          </Control>
+          <Control id="logBaseEButton"   type="Button" path="NavView/logBaseEButton">
+            <label lang="en">Natural logarithm (ln)</label>
+            <action command="CLICKID" parameter="logBaseEButton"/>
+          </Control>
+        </Node>
 
-  <Group id="navigation" label="Navigation / mode switch"
-         members="TogglePaneButton"
-         note="TogglePaneButton switches between Standard, Scientific, Programmer modes. Avoid during arithmetic."/>
+        <!-- Direct children of the unnamed Group in Scientific mode -->
+        <Control id="shiftButton"            type="Button" path="NavView/shiftButton">
+          <label lang="en">Inverse / shift — toggles secondary trig functions (sin→asin, etc.).</label>
+          <action command="CLICKID" parameter="shiftButton"/>
+        </Control>
+        <Control id="piButton"               type="Button" path="NavView/piButton">
+          <label lang="en">π constant</label>
+          <action command="CLICKID" parameter="piButton"/>
+        </Control>
+        <Control id="eulerButton"            type="Button" path="NavView/eulerButton">
+          <label lang="en">Euler's number (e)</label>
+          <action command="CLICKID" parameter="eulerButton"/>
+        </Control>
+        <Control id="invertButton"           type="Button" path="NavView/invertButton">
+          <label lang="en">Reciprocal (1/x)</label>
+          <action command="CLICKID" parameter="invertButton"/>
+        </Control>
+        <Control id="absButton"              type="Button" path="NavView/absButton">
+          <label lang="en">Absolute value |x|</label>
+          <action command="CLICKID" parameter="absButton"/>
+        </Control>
+        <Control id="expButton"              type="Button" path="NavView/expButton">
+          <label lang="en">Exponential (exp)</label>
+          <action command="CLICKID" parameter="expButton"/>
+        </Control>
+        <Control id="modButton"              type="Button" path="NavView/modButton">
+          <label lang="en">Modulo (mod)</label>
+          <action command="CLICKID" parameter="modButton"/>
+        </Control>
+        <Control id="openParenthesisButton"  type="Button" path="NavView/openParenthesisButton">
+          <label lang="en">Open parenthesis (</label>
+          <action command="CLICKID" parameter="openParenthesisButton"/>
+        </Control>
+        <Control id="closeParenthesisButton" type="Button" path="NavView/closeParenthesisButton">
+          <label lang="en">Close parenthesis )</label>
+          <action command="CLICKID" parameter="closeParenthesisButton"/>
+        </Control>
+        <Control id="factorialButton"        type="Button" path="NavView/factorialButton">
+          <label lang="en">Factorial (n!)</label>
+          <action command="CLICKID" parameter="factorialButton"/>
+        </Control>
+        <Control id="trigButton"             type="Button" path="NavView/trigButton">
+          <label lang="en">Trigonometry flyout (sin, cos, tan, …)</label>
+          <action command="CLICKID" parameter="trigButton"/>
+        </Control>
+        <Control id="funcButton"             type="Button" path="NavView/funcButton">
+          <label lang="en">Functions flyout (floor, ceiling, round, …)</label>
+          <action command="CLICKID" parameter="funcButton"/>
+        </Control>
 
-  <Control id="TogglePaneButton" type="Button">
-    <label lang="en">Open navigation pane (hamburger menu).</label>
-    <label lang="ai">
-      Opens the left navigation panel to switch modes (Standard, Scientific, Programmer, etc.).
-      Usually leave this alone during standard arithmetic sequences.
-      CLICKID TogglePaneButton.
-    </label>
-    <action command="CLICKID" parameter="TogglePaneButton"/>
-  </Control>
+      </assert><!-- /Scientific mode -->
+
+    </Node><!-- /unnamed Group -->
+  </Node><!-- /NavView -->
 
 </AppTree>

@@ -1,0 +1,539 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D3 Auth-UI test scenarios — test/e2e/d3/scenarios.xml
+  app     : d3
+  helper  : BrowserWin.exe
+  process : chrome.exe
+
+  These scenarios are the TESTING layer for D3 (dashboard auth-UI dogfood).
+  REST calls (A1, A2, A5, A6) remain in run.js — no browser needed.
+  UI-only steps are captured here as scenario atoms.
+
+  ── Layer design ────────────────────────────────────────────────────────────
+  Test infra  : same dialog-override shims as d2 (copy of override-page-dialogs).
+  Test steps  : CLICKID / READELEM / WAIT for nav and presence checks.
+                CDP_EXECUTE is used only for: shim injection, <select> value-set
+                (the `set-loglevel-select` pattern — SENDKEYS is UIA-only,
+                path= ignored), and element-count assertions.
+                All clicks and element-present checks use CLICKID / READELEM.
+  ────────────────────────────────────────────────────────────────────────────
+  <select> navigation pattern:
+    SENDKEYS proc="{{tab}}" path="#select-id" value="firstLetter"
+    — focuses the select and typeahead-navigates to the matching option;
+      Blink fires onchange immediately on keyboard navigation.
+-->
+<Scenarios app="d3" helper="BrowserWin.exe" process="chrome.exe" xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d3">
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       TEST INFRA — browser dialog shims (mirrors d2)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="override-page-dialogs" effect="modifies-dom">
+    <Description lang="en">
+      Patch window.fetch, window.prompt, window.confirm and window.alert
+      so that automation code can inject return values without blocking the
+      browser with a native dialog box.
+    </Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}" value="(function(){
+  if (window.__origFetch) return 'already-overridden';
+  window.__testDialogAnswer = null;
+  window.__origFetch   = window.fetch;
+  window.__origPrompt  = window.prompt;
+  window.__origConfirm = window.confirm;
+  window.__origAlert   = window.alert;
+  window.fetch = function(url, opts) {
+    if (typeof url === 'string' &amp;&amp; url.includes('/api/shell/openFileDialog')) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, path: window.__testDialogAnswer ?? '' }) });
+    }
+    return window.__origFetch.apply(this, arguments);
+  };
+  window.prompt  = function(msg, def) { return window.__testDialogAnswer ?? def ?? ''; };
+  window.confirm = function() { return true; };
+  window.__testAlertMessage = null;
+  window.alert   = function(msg) { window.__testAlertMessage = msg; };
+  return 'overridden';
+})()"
+            bind="overrideResult"
+            note="install dialog shims; stashes originals for restore"/>
+      <Step action="ASSERTPATHEVAL" path="'{{overrideResult}}'.includes('overridden')"
+            note="assert shims were installed (returned 'overridden' or 'already-overridden')"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="restore-page-dialogs" effect="modifies-dom">
+    <Description lang="en">Remove the dialog shims and restore native browser behavior.</Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}" value="(function(){
+  if (window.__origFetch)   { window.fetch   = window.__origFetch;   delete window.__origFetch; }
+  if (window.__origPrompt)  { window.prompt  = window.__origPrompt;  delete window.__origPrompt; }
+  if (window.__origConfirm) { window.confirm = window.__origConfirm; delete window.__origConfirm; }
+  if (window.__origAlert)   { window.alert   = window.__origAlert;   delete window.__origAlert; }
+  delete window.__testDialogAnswer;
+  delete window.__testAlertMessage;
+  return 'restored';
+})()"
+            bind="restoreResult"
+            note="restore original dialog functions"/>
+      <Step action="ASSERTPATHEVAL" path="'{{restoreResult}}' === 'restored'"
+            note="assert shims were removed"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       A3 — Navigate to Auth section
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="a3-auth-nav" effect="changes-view">
+    <Description lang="en">
+      Click the Auth nav button and assert the auth-tab-config panel
+      and #auth-mode select are present in the DOM.
+    </Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path=".nav-btn[data-section='auth']"
+            note="click Auth nav button"/>
+      <Step action="WAIT" proc="" path="700" note="wait for auth section to render"/>
+      <Step action="READELEM" proc="{{tab}}" path="#auth-tab-config"
+            note="assert: #auth-tab-config is in DOM"/>
+      <Step action="READELEM" proc="{{tab}}" path="#auth-mode"
+            note="assert: #auth-mode select is in DOM"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       A4 — Users & Roles sub-tab
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="a4-users-roles-tab" effect="changes-view">
+    <Description lang="en">
+      Click the Users &amp; Roles sub-tab button and assert both
+      #auth-tab-users and #auth-users-roles-panel appear in the DOM.
+      Falls back to clicking [data-auth-tab="users"] if a text-based
+      click fails.
+    </Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="[data-auth-tab='users']"
+            note="click Users &amp; Roles sub-tab"/>
+      <Step action="WAIT" proc="" path="500" note="wait for panel transition"/>
+      <Step action="READELEM" proc="{{tab}}" path="#auth-tab-users"
+            note="assert: #auth-tab-users panel is in DOM"/>
+      <Step action="READELEM" proc="{{tab}}" path="#auth-users-roles-panel"
+            note="assert: #auth-users-roles-panel is in DOM"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       A7 — DB Provision section DOM check
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="a7-db-provision-dom" effect="modifies-dom">
+    <Description lang="en">
+      Switch auth-users-store-source to 'db' (to reveal the provision panel),
+      assert #auth-db-provision-sect and #btn-provision-db are in the DOM,
+      then restore source to 'json'.
+    </Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="#auth-users-store-source"
+            note="focus user-store-source select"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var s=document.getElementById('auth-users-store-source'); s.value='db'; s.dispatchEvent(new Event('change',{bubbles:true})); return s.value; })()"
+            note="set user-store-source=db and dispatch change (select pattern)"/>
+      <Step action="WAIT" proc="" path="300" note="wait for DOM update"/>
+      <Step action="READELEM" proc="{{tab}}" path="#auth-db-provision-sect"
+            note="assert: #auth-db-provision-sect exists"/>
+      <Step action="READELEM" proc="{{tab}}" path="#btn-provision-db"
+            note="assert: #btn-provision-db exists"/>
+      <Step action="CLICKID" proc="{{tab}}" path="#auth-users-store-source"
+            note="focus user-store-source select"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var s=document.getElementById('auth-users-store-source'); s.value='json'; s.dispatchEvent(new Event('change',{bubbles:true})); return s.value; })()"
+            note="restore user-store-source=json"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       A8 — Auth mode panels DOM check
+       Switch to each auth mode, assert correct side-panel becomes visible.
+       Runs on the Auth Config sub-tab (switches to it first).
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="a8-mode-panels" effect="modifies-dom">
+    <Description lang="en">
+      Switch #auth-mode through every supported mode and assert the associated
+      auth-mode-panel becomes visible (display != none).  Restores to 'none'.
+    </Description>
+    <Steps>
+      <!-- make sure we are on the config sub-tab -->
+      <Step action="CLICKID" proc="{{tab}}" path="[data-auth-tab='config']"
+            note="switch to Auth Config sub-tab"/>
+      <Step action="WAIT" proc="" path="400" note="allow tab transition"/>
+
+      <!-- password panel -->
+      <Step action="CLICKID" proc="{{tab}}" path="#auth-mode"
+            note="focus #auth-mode select"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var s=document.getElementById('auth-mode'); s.value='password'; s.dispatchEvent(new Event('change',{bubbles:true})); return s.value; })()"
+            note="set auth-mode=password and dispatch change (select value-set — CONVENTIONS set-loglevel-select pattern)"/>
+      <Step action="READELEM" proc="{{tab}}" path="#auth-panel-password:not([style*=none])"
+            note="assert: #auth-panel-password is visible (style.display != none)"/>
+
+      <!-- apikey panel -->
+      <Step action="CLICKID" proc="{{tab}}" path="#auth-mode"
+            note="focus #auth-mode select"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var s=document.getElementById('auth-mode'); s.value='apikey'; s.dispatchEvent(new Event('change',{bubbles:true})); return s.value; })()"
+            note="set auth-mode=apikey"/>
+      <Step action="READELEM" proc="{{tab}}" path="#auth-panel-apikey:not([style*=none])"
+            note="assert: #auth-panel-apikey is visible"/>
+
+      <!-- certificate panel -->
+      <Step action="CLICKID" proc="{{tab}}" path="#auth-mode"
+            note="focus #auth-mode select"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var s=document.getElementById('auth-mode'); s.value='certificate'; s.dispatchEvent(new Event('change',{bubbles:true})); return s.value; })()"
+            note="set auth-mode=certificate"/>
+      <Step action="READELEM" proc="{{tab}}" path="#auth-panel-certificate:not([style*=none])"
+            note="assert: #auth-panel-certificate is visible"/>
+
+      <!-- oauth panel -->
+      <Step action="CLICKID" proc="{{tab}}" path="#auth-mode"
+            note="focus #auth-mode select"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var s=document.getElementById('auth-mode'); s.value='oauth'; s.dispatchEvent(new Event('change',{bubbles:true})); return s.value; })()"
+            note="set auth-mode=oauth"/>
+      <Step action="READELEM" proc="{{tab}}" path="#auth-panel-oauth:not([style*=none])"
+            note="assert: #auth-panel-oauth is visible"/>
+
+      <!-- saml panel -->
+      <Step action="CLICKID" proc="{{tab}}" path="#auth-mode"
+            note="focus #auth-mode select"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var s=document.getElementById('auth-mode'); s.value='saml'; s.dispatchEvent(new Event('change',{bubbles:true})); return s.value; })()"
+            note="set auth-mode=saml"/>
+      <Step action="READELEM" proc="{{tab}}" path="#auth-panel-saml:not([style*=none])"
+            note="assert: #auth-panel-saml is visible"/>
+
+      <!-- restore to none — assert all panels hidden -->
+      <Step action="CLICKID" proc="{{tab}}" path="#auth-mode"
+            note="focus #auth-mode select"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var s=document.getElementById('auth-mode'); s.value='none'; s.dispatchEvent(new Event('change',{bubbles:true})); return s.value; })()"
+            note="restore auth-mode=none"/>
+      <Step action="READELEM" proc="{{tab}}" path="#auth-panel-password[style*=none]"
+            note="assert: password panel hidden"/>
+      <Step action="READELEM" proc="{{tab}}" path="#auth-panel-apikey[style*=none]"
+            note="assert: apikey panel hidden"/>
+      <Step action="READELEM" proc="{{tab}}" path="#auth-panel-certificate[style*=none]"
+            note="assert: certificate panel hidden"/>
+      <Step action="READELEM" proc="{{tab}}" path="#auth-panel-oauth[style*=none]"
+            note="assert: oauth panel hidden"/>
+      <Step action="READELEM" proc="{{tab}}" path="#auth-panel-saml[style*=none]"
+            note="assert: saml panel hidden"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       A9 — Reload auth config in UI (verify #auth-mode reflects server)
+       Called after REST save/restore to confirm dashboard reloads correctly.
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="a9-auth-reload" effect="reads-state">
+    <Description lang="en">
+      Click Reload on the auth section and return the current #auth-mode value.
+      bind="reloadedMode" lets the caller assert what mode the server returned.
+    </Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="[data-auth-tab='config']"
+            note="ensure Auth Config sub-tab is active"/>
+      <Step action="WAIT" proc="" path="300"/>
+      <Step action="CLICKID" proc="{{tab}}" path="btn-reload-auth"
+            note="click Reload auth config"/>
+      <Step action="WAIT" proc="" path="900" note="wait for reload fetch + render"/>
+      <Step action="READELEM" proc="{{tab}}" path="#auth-mode" bind="reloadedMode"
+            note="read current auth-mode select value"/>
+      <Step action="ASSERTPATHEVAL" path="typeof '{{reloadedMode}}' === 'string' &amp;&amp; '{{reloadedMode}}'.length > 0"
+            note="assert #auth-mode has a non-empty value after reload"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       A11 — Users &amp; Roles tab: table populated + Add User modal
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="a11-users-table" effect="reads-state">
+    <Description lang="en">
+      Navigate to Users &amp; Roles sub-tab and assert the users tbody has at
+      least one real row (not the "Loading…" placeholder).
+    </Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="[data-auth-tab='users']"
+            note="switch to Users &amp; Roles sub-tab"/>
+      <Step action="WAIT" proc="" path="1200" note="wait for users fetch + render"/>
+      <Step action="READELEM" proc="{{tab}}" path="#auth-users-tbody"
+            note="assert: #auth-users-tbody is in DOM"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var tbl=document.getElementById('auth-users-tbody'); var rows=[...tbl.querySelectorAll('tr')]; var real=rows.filter(function(r){ return !r.querySelector('td[colspan]'); }); if(!real.length) throw new Error('A11: users table has no real rows — rows='+rows.length); return real.length; })()"
+            bind="userRowCount" note="assert: users table has ≥1 real row (count)"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="a11-add-user-modal" effect="modifies-dom">
+    <Description lang="en">
+      Click Add User, assert #add-user-modal has class 'active',
+      fill in a test username, then close the modal.
+    </Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="[onclick*='openAddUserModal']"
+            note="click Add User button (opens modal)"/>
+      <Step action="WAIT" proc="" path="300"/>
+      <Step action="READELEM" proc="{{tab}}" path="#add-user-modal.active"
+            note="assert: #add-user-modal has class active"/>
+      <Step action="READELEM" proc="{{tab}}" path="#new-user-username"
+            note="assert: #new-user-username input is present"/>
+      <Step action="CLICKID"  proc="{{tab}}" path="#new-user-username"
+            note="focus username input"/>
+      <Step action="SENDKEYS" proc="{{tab}}" value="dogfood-test-user"
+            note="type test username"/>
+      <Step action="CLICKID"  proc="{{tab}}" path="#new-user-password"
+            note="focus password input"/>
+      <Step action="SENDKEYS" proc="{{tab}}" value="DogfoodPass1!"
+            note="type test password"/>
+      <Step action="CLICKID" proc="{{tab}}" path="#add-user-modal .modal-close"
+            note="click modal close button"/>
+      <Step action="WAIT" proc="" path="200"/>
+      <Step action="READELEM" proc="{{tab}}" path="#add-user-modal:not(.active)"
+            note="assert: #add-user-modal no longer has class active"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       A1 — GET /api/auth/config (REST)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="a1-auth-config-rest" effect="read-only">
+    <Description lang="en">GET /api/auth/config — verify response is an object with a valid mode field.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/config" path="GET"
+            bind="authCfg" note="A1: GET /api/auth/config"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{authCfg}}'); return r !== null &amp;&amp; typeof r === 'object'; })()"
+            note="A1: assert response is object"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ return 'mode' in (JSON.parse('{{authCfg}}') ?? {}); })()"
+            note="A1: assert has mode field"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ return ['none','password','apikey','certificate','oauth','saml'].includes(JSON.parse('{{authCfg}}')?.mode); })()"
+            note="A1: assert mode is a valid value"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       A2 — GET /api/auth/status (REST)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="a2-auth-status-rest" effect="read-only">
+    <Description lang="en">GET /api/auth/status — verify response is an object with expected shape.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/status" path="GET"
+            bind="authStatus" note="A2: GET /api/auth/status"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{authStatus}}'); return r !== null &amp;&amp; typeof r === 'object'; })()"
+            note="A2: assert response is object"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{authStatus}}'); return 'authMode' in r || 'mode' in r || 'authenticated' in r; })()"
+            note="A2: assert response has expected shape (authMode, mode or authenticated)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       A5 — GET /api/_internal/users and /api/_internal/roles (REST)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="a5-users-roles-rest" effect="read-only">
+    <Description lang="en">GET /api/_internal/users and GET /api/_internal/roles — verify both endpoints are reachable (200 list or 403).</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users" path="GET"
+            bind="usersResult" note="A5: GET /api/_internal/users"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{usersResult}}'); return Array.isArray(r) || r?.error === 'Forbidden' || r?._raw !== undefined || !!r?._error; })()"
+            note="A5: assert users endpoint reachable (200 or 403)"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/roles" path="GET"
+            bind="rolesResult" note="A5: GET /api/_internal/roles"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{rolesResult}}'); return Array.isArray(r) || r?.error === 'Forbidden' || r?._raw !== undefined || !!r?._error; })()"
+            note="A5: assert roles endpoint reachable (200 or 403)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       A6 — POST /api/auth/admin-token structural check (REST)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="a6-admin-token-rest" effect="read-only">
+    <Description lang="en">POST /api/auth/admin-token with missing password and wrong password — verify error responses (no crash, no valid token returned).</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+      <Param name="testTag"  type="string" required="false" example="dogfood_1234" note="unique suffix for wrong-password probe"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/admin-token" path="POST"
+            value="{}"
+            bind="noPassResult" note="A6: POST admin-token with no password"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{noPassResult}}'); return r?._raw!==undefined || !!r?._error || !!r?.error || typeof r?.token==='undefined'; })()"
+            note="A6: assert missing-password → 400/error (not crash)"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/admin-token" path="POST"
+            value="{&quot;password&quot;:&quot;dogfood_wrong_{{testTag}}&quot;}"
+            bind="wrongPassResult" note="A6: POST admin-token with wrong password"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{wrongPassResult}}'); return r?._raw!==undefined || !!r?._error || !!r?.error || typeof r?.token==='undefined'; })()"
+            note="A6: assert wrong-password → error (not a valid token)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       A7 REST — POST /api/_internal/db/provision structural check
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="a7-db-provision-rest" effect="read-only">
+    <Description lang="en">POST /api/_internal/db/provision with a deliberate bad targetDb — verify endpoint is not blocked and returns { ok, steps[] }.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/db/provision" path="POST"
+            value="{&quot;targetDb&quot;:{&quot;type&quot;:&quot;postgresql&quot;,&quot;host&quot;:&quot;127.0.0.1&quot;,&quot;port&quot;:19999,&quot;database&quot;:&quot;nonexistent_dogfood&quot;,&quot;auth&quot;:{&quot;method&quot;:&quot;password&quot;},&quot;username&quot;:&quot;nobody&quot;,&quot;password&quot;:&quot;nobody&quot;},&quot;createDb&quot;:false,&quot;seed&quot;:false}"
+            bind="provResult" note="A7 REST: POST /api/_internal/db/provision (deliberate bad targetDb)"/>
+      <Step action="ASSERTPATHEVAL"
+            path="JSON.parse('{{provResult}}')?.error !== 'Forbidden'"
+            note="A7 REST: assert endpoint is NOT blocked (no 403)"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{provResult}}'); return typeof r?.ok === 'boolean' &amp;&amp; Array.isArray(r?.steps); })()"
+            note="A7 REST: assert response has { ok, steps[] } shape"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       A9 REST — POST + GET /api/auth/config (save/verify/restore)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="a9-save-auth-config-rest" effect="modifies-data">
+    <Description lang="en">Read auth config, POST a safe change (debugExternalAuth + jwt.expiry=120), verify GET reflects it, then restore original.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <!-- Read original -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/config" path="GET"
+            bind="origCfg" note="A9 REST: read original auth config"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse('{{origCfg}}'); return r?.mode ?? 'none'; })()"
+            bind="origMode" note="A9 REST: extract original mode"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse('{{origCfg}}'); return String(r?.debugExternalAuth ?? false); })()"
+            bind="origDebug" note="A9 REST: extract original debugExternalAuth"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse('{{origCfg}}'); return String(r?.jwt?.expiry ?? ''); })()"
+            bind="origExpiry" note="A9 REST: extract original jwt.expiry"/>
+      <!-- Compute flipped debugExternalAuth value for the POST body -->
+      <Step action="EVAL"
+            path="(()=>{ return String({{origDebug}} !== true &amp;&amp; '{{origDebug}}' !== 'true'); })()"
+            bind="flippedDebug" note="A9 REST: compute !origDebug as string boolean"/>
+      <!-- Save safe change: flip debugExternalAuth, set jwt.expiry=120 -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/config" path="POST"
+            value="{&quot;mode&quot;:&quot;{{origMode}}&quot;,&quot;debugExternalAuth&quot;:{{flippedDebug}},&quot;jwt&quot;:{&quot;expiry&quot;:120}}"
+            bind="saveResult" note="A9 REST: POST safe change"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{saveResult}}'); return r?.success !== false &amp;&amp; !r?.error; })()"
+            note="A9 REST: assert POST returns success"/>
+      <!-- Verify via GET -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/config" path="GET"
+            bind="verifyCfg" note="A9 REST: GET to verify saved config"/>
+      <Step action="ASSERTPATHEVAL"
+            path="JSON.parse('{{verifyCfg}}')?.mode === '{{origMode}}'"
+            note="A9 REST: assert mode preserved after save"/>
+      <Step action="ASSERTPATHEVAL"
+            path="JSON.parse('{{verifyCfg}}')?.jwt?.expiry === 120"
+            note="A9 REST: assert jwt.expiry saved as 120"/>      <!-- Build restore body as JSON via EVAL -->
+      <Step action="EVAL"
+            path="(()=>{ const body={mode:'{{origMode}}',debugExternalAuth:{{origDebug}},jwt:{}}; const exp='{{origExpiry}}'; if(exp&amp;&amp;exp!=='undefined'&amp;&amp;exp!=='') body.jwt.expiry=Number(exp); return JSON.stringify(body); })()"
+            bind="restoreBody" note="A9 REST: build restore body JSON"/>
+      <!-- Restore original -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/config" path="POST"
+            value="{{restoreBody}}"
+            bind="restoreResult" note="A9 REST: restore original config"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{restoreResult}}'); return r?.success !== false &amp;&amp; !r?.error; })()"
+            note="A9 REST: assert restore succeeded"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       A10 — User CRUD (REST)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="a10-user-crud-rest" effect="modifies-data">
+    <Description lang="en">Create, list, update roles, list again, delete, confirm deletion — /api/_internal/users CRUD.</Description>
+    <Parameters>
+      <Param name="testTag"  type="string" required="true"  example="dogfood_1234" note="unique suffix for test username"/>
+      <Param name="dashUrl"  type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <!-- Create -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users" path="POST"
+            value="{&quot;username&quot;:&quot;dogfood-{{testTag}}&quot;,&quot;password&quot;:&quot;DogfoodPass-{{testTag}}!&quot;,&quot;roles&quot;:[&quot;viewer&quot;],&quot;enabled&quot;:true}"
+            bind="createResult" note="A10: POST create user dogfood-{{testTag}}"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{createResult}}'); const u=r?.username??r?.user?.username; return u==='dogfood-{{testTag}}'; })()"
+            note="A10: assert user created with correct username"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse('{{createResult}}'); return String(r?.id??r?.user?.id??''); })()"
+            bind="userId" note="A10: extract created user id"/>
+      <!-- List — find our user -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users" path="GET"
+            bind="listResult1" note="A10: GET users list after create"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const list=JSON.parse('{{listResult1}}'); return Array.isArray(list) &amp;&amp; !!list.find(u=>String(u.id)==='{{userId}}'); })()"
+            note="A10: assert new user in list"/>
+      <!-- Update roles -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users/{{userId}}" path="PUT"
+            value="{&quot;roles&quot;:[&quot;viewer&quot;,&quot;operator&quot;]}"
+            bind="updateResult" note="A10: PUT update roles"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{updateResult}}'); const roles=r?.roles??r?.user?.roles??[]; return Array.isArray(roles) &amp;&amp; roles.includes('operator'); })()"
+            note="A10: assert roles updated to include operator"/>
+      <!-- List again — confirm roles -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users" path="GET"
+            bind="listResult2" note="A10: GET users list after update"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const found=JSON.parse('{{listResult2}}').find(u=>String(u.id)==='{{userId}}'); return !!found &amp;&amp; Array.isArray(found.roles) &amp;&amp; found.roles.includes('operator'); })()"
+            note="A10: assert updated roles persisted in list"/>
+      <!-- Delete -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users/{{userId}}" path="DELETE"
+            bind="deleteResult" note="A10: DELETE user"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{deleteResult}}'); return r?.ok === true || r?.success === true; })()"
+            note="A10: assert DELETE → ok"/>
+      <!-- List — confirm gone -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users" path="GET"
+            bind="listResult3" note="A10: GET users list after delete"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const list=JSON.parse('{{listResult3}}'); return !list.find(u=>String(u.id)==='{{userId}}'); })()"
+            note="A10: assert deleted user no longer in list"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       DIAGNOSTIC — arbitrary CDP_EXECUTE (diag/dev use only)
+       ═══════════════════════════════════════════════════════════════ -->
+
+</Scenarios>

@@ -1,12 +1,16 @@
-param()
+param(
+    [switch]$CsOnly
+)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# TypeScript compile
-Write-Host "=== Compiling TypeScript ==="
-Set-Location $root
-& npm run compile
-Write-Host "TypeScript exit: $LASTEXITCODE"
+# TypeScript compile (skip when -CsOnly)
+if (-not $CsOnly) {
+    Write-Host "=== Compiling TypeScript ==="
+    Set-Location $root
+    & npm run compile
+    Write-Host "TypeScript exit: $LASTEXITCODE"
+}
 
 # C# compiler
 $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
@@ -126,6 +130,41 @@ if (-not $clExe) {
     Write-Host "SecurityLib exit: $LASTEXITCODE"
     if (Test-Path $secLibDest) {
         Write-Host "Built: $secLibDest"
+
+        # ── Update binaryHashes["SecurityLib.dll"] in security/config.json ──────
+        $secConfigPath = "$root\config\security\config.json"
+        if (Test-Path $secConfigPath) {
+            $hash     = (Get-FileHash $secLibDest -Algorithm SHA256).Hash.ToLower()
+            $fileInfo = Get-Item $secLibDest
+            $cfgText  = Get-Content $secConfigPath -Raw
+            $entry    = [ordered]@{
+                path         = "dist\helpers\SecurityLib.dll"
+                sha256       = $hash
+                size         = $fileInfo.Length
+                lastModified = $fileInfo.LastWriteTimeUtc.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            }
+            $entryJson = ($entry.GetEnumerator() | ForEach-Object {
+                '"' + $_.Key + '": ' + (
+                    if ($_.Value -is [long] -or $_.Value -is [int]) { $_.Value }
+                    else { '"' + $_.Value + '"' }
+                )
+            }) -join ', '
+
+            # Replace or insert SecurityLib.dll entry inside binaryHashes
+            if ($cfgText -match '"SecurityLib\.dll"\s*:') {
+                # Replace existing entry (handles both string hash and object form)
+                $cfgText = $cfgText -replace '(?s)"SecurityLib\.dll"\s*:\s*(?:"[^"]*"|\{[^}]*\})',
+                    ('"SecurityLib.dll": { ' + $entryJson + ' }')
+            } else {
+                # Insert new entry before the closing } of binaryHashes
+                $cfgText = $cfgText -replace '("binaryHashes"\s*:\s*\{)',
+                    ('$1' + "`n    `"SecurityLib.dll`": { " + $entryJson + ' },')
+            }
+            Set-Content $secConfigPath $cfgText -NoNewline
+            Write-Host "Updated SecurityLib.dll hash in config/security/config.json: $hash"
+        } else {
+            Write-Warning "config/security/config.json not found - hash not recorded."
+        }
     } else {
         Write-Warning "SecurityLib.dll was not produced - check compiler output."
     }
@@ -133,24 +172,26 @@ if (-not $clExe) {
 
 
 # -- VSIX packaging (optional  -  requires @vscode/vsce installed) --------------
-Write-Host "=== Packaging VSIX ==="
-$releaseDir = "$root\dist\release"
-New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+if (-not $CsOnly) {
+    Write-Host "=== Packaging VSIX ==="
+    $releaseDir = "$root\dist\release"
+    New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
 
-$vsce = "$root\node_modules\.bin\vsce.cmd"
-if (-not (Test-Path $vsce)) { $vsce = "$root\node_modules\.bin\vsce" }
+    $vsce = "$root\node_modules\.bin\vsce.cmd"
+    if (-not (Test-Path $vsce)) { $vsce = "$root\node_modules\.bin\vsce" }
 
-if (Test-Path $vsce) {
-    & $vsce package --out "$releaseDir" 2>&1
-    Write-Host "vsce package exit: $LASTEXITCODE"
-    $vsix = Get-ChildItem $releaseDir -Filter '*.vsix' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if ($vsix) {
-        Write-Host "VSIX: $($vsix.FullName)  ($([math]::Round($vsix.Length/1MB,2)) MB)"
+    if (Test-Path $vsce) {
+        & $vsce package --out "$releaseDir" 2>&1
+        Write-Host "vsce package exit: $LASTEXITCODE"
+        $vsix = Get-ChildItem $releaseDir -Filter '*.vsix' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($vsix) {
+            Write-Host "VSIX: $($vsix.FullName)  ($([math]::Round($vsix.Length/1MB,2)) MB)"
+        } else {
+            Write-Warning "No .vsix produced  -  check vsce output"
+        }
     } else {
-        Write-Warning "No .vsix produced  -  check vsce output"
+        Write-Warning "vsce not found  -  run 'npm install' to install @vscode/vsce, then re-run build."
     }
-} else {
-    Write-Warning "vsce not found  -  run 'npm install' to install @vscode/vsce, then re-run build."
 }
 
 Write-Host "=== Build complete ==="

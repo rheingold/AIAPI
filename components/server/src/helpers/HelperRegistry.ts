@@ -150,7 +150,15 @@ function parseProcLevels(proc: string): Record<string, string>[] {
   // Strip any leading // — the grammar allows proc to start with '//['
   // e.g. "//[procname:WINWORD.EXE]//[docname:Budget.xlsx]"
   const raw = proc.trim().replace(/^\/\//, '');
-  if (!raw.startsWith('[')) return [{ procname: raw }]; // bare process name
+  if (!raw.startsWith('[')) {
+    // Legacy address forms passed through as-is from scenarios/vars:
+    //   chrome:URL:<u> — BrowserWin tab by URL prefix
+    //   chrome:TITLE:<t> — BrowserWin tab by title
+    //   PAGE:<id> — BrowserWin tab by CDP id
+    //   HANDLE:<n>, PID:<n>, SYSTEM, chrome, …
+    // Return as synthetic { _legacy: raw } so procFilterToTarget can pass through.
+    return [{ _legacy: raw }];
+  }
 
   // Split on // that appears between ] and [
   return raw.split(/\]\s*\/\/\s*\[/).map((seg, i, arr) => {
@@ -178,6 +186,8 @@ function procFilterToTarget(raw: string): string {
   const levels = parseProcLevels(raw);
   for (let i = levels.length - 1; i >= 0; i--) {
     const f = levels[i];
+    // Legacy address string (chrome:URL:..., PAGE:..., HANDLE:..., etc.) — pass through
+    if (f['_legacy'] !== undefined)      return f['_legacy'];
     // L3 — document / tab (most app-specific, highest priority for current wire)
     if (f['docname'])          return `DOCNAME:${f['docname']}`;
     if (f['url'])              return `chrome:URL:${f['url']}`;
@@ -215,7 +225,7 @@ function procFilterToTarget(raw: string): string {
  *
  * Returns '' if path is empty/whitespace.
  */
-function pathToAddress(segments: string): string {
+export function pathToAddress(segments: string): string {
   const s = segments.replace(/^\/+/, '').trim(); // strip leading slashes
   if (!s) return '';
 
@@ -236,6 +246,10 @@ function pathToAddress(segments: string): string {
   // *[@class='X'] → .X
   const cssClass = s.match(/^\*\[@class='([^']+)'\]$/);
   if (cssClass)                              return `.${cssClass[1]}`;
+
+  // *[@data-attr='X'] → [data-attr='X']  (standard CSS attribute selector)
+  const cssDataAttr = s.match(/^\*\[@(data-[\w-]+)='([^']+)'\]$/);
+  if (cssDataAttr)                           return `[${cssDataAttr[1]}='${cssDataAttr[2]}']`;
 
   // ── All other helpers (MSOfficeWin, etc.) — pass canonical path through ──
   // ComPathWalker and similar C# walkers evaluate the canonical form directly.
@@ -298,7 +312,7 @@ export class HelperDaemon {
   private shuttingDown = false;
   /** Monotonically-incrementing request sequence — echoed by HelperCommon as "id" */
   private requestSeq = 0;
-  /** Auth startup phase.  'skip' when SKIP_SESSION_AUTH=true (current dev default). */
+  /** Auth startup phase.  'skip' only when SKIP_SESSION_AUTH=true is explicitly inherited from the environment. */
   private startupPhase: 'skip' | 'awaiting_hello' | 'awaiting_ok' | 'ready' = 'skip';
   /** Resolved immediately (SKIP_SESSION_AUTH=true) or after _auth_ok is received. */
   private readyPromise: Promise<void> = Promise.resolve();
@@ -423,14 +437,16 @@ export class HelperDaemon {
 
   /**
    * Handle the _auth_hello / _auth_ok exchange on the TypeScript (server) side.
-   * Active when SKIP_SESSION_AUTH is NOT set, which happens automatically when
-   * setCryptoCredentials() has been called with a pkBytes value.
+   * Active whenever SKIP_SESSION_AUTH is absent from the daemon environment,
+   * which is now always the case — buildEnv() strips the variable unconditionally.
+   * When no crypto credentials are present the server sends pk:'' and the helper
+   * completes the exchange without HKDF derivation (graceful no-key path).
    *
    * Protocol:
    *   Helper sends: {"action":"_auth_hello","helperNonce":"<b64>","exeHash":"<hex>", ...}
-   *   Server sends: {"action":"_auth","pk":"","serverNonce":"<b64>","securityConfig":"", ...}
+   *   Server sends: {"action":"_auth","pk":"<b64|''>","serverNonce":"<b64>","securityConfig":"<path|''>"}
    *   Helper sends: {"action":"_auth_ok"}
-   *   → readyPromise resolves; normal command traffic begins with HMAC-signed responses.
+   *   → readyPromise resolves; normal command traffic begins (with HMAC signing when key present).
    */
   private handleStartupMessage(json: string): void {
     try {
@@ -441,7 +457,46 @@ export class HelperDaemon {
           this.startupReject?.(new Error(`auth_protocol: expected _auth_hello, got action=${msg.action}`));
           return;
         }
-        // TODO: verify msg.exeHash against security/config.json when SecurityLib is available.
+        // Verify msg.exeHash against security/config.json binaryHashes.
+        const exeHash: string = typeof msg.exeHash === 'string' ? msg.exeHash.toLowerCase() : '';
+        if (exeHash && this.securityConfigPath) {
+          try {
+            const cfgRaw = fs.readFileSync(this.securityConfigPath, 'utf8');
+            const cfg = JSON.parse(cfgRaw) as Record<string, unknown>;
+            const bh = ((cfg?.binaryHashes ?? {}) as Record<string,
+              { path?: string; sha256?: string }>);
+            const exeBasename = path.basename(this.exePath).toLowerCase();
+            let expectedHash: string | null = null;
+            for (const entry of Object.values(bh)) {
+              const entryBasename = entry?.path
+                ? path.basename(entry.path).toLowerCase() : '';
+              if (entryBasename === exeBasename) {
+                expectedHash = (entry.sha256 ?? '').toLowerCase();
+                break;
+              }
+            }
+            if (expectedHash) {
+              if (exeHash !== expectedHash) {
+                globalLogger.warn('HelperDaemon',
+                  `[${path.basename(this.exePath)}] ⚠ exeHash MISMATCH — ` +
+                  `expected ${expectedHash.slice(0, 16)}... ` +
+                  `got ${exeHash.slice(0, 16)}...`);
+                this.startupPhase = 'ready';
+                this.startupReject?.(new Error(
+                  `security: exeHash mismatch for ${path.basename(this.exePath)}`));
+                return;
+              }
+              globalLogger.debug('HelperDaemon',
+                `[${path.basename(this.exePath)}] exeHash verified ✓`);
+            } else {
+              globalLogger.debug('HelperDaemon',
+                `[${path.basename(this.exePath)}] exeHash not in config — unregistered helper`);
+            }
+          } catch (e) {
+            globalLogger.debug('HelperDaemon',
+              `[${path.basename(this.exePath)}] exeHash config read error: ${e}`);
+          }
+        }
         this.pendingHelperNonce = (msg.helperNonce as string) ?? null;
         const serverNonce = crypto.randomBytes(32).toString('base64');
         this.pendingServerNonce = serverNonce;
@@ -563,7 +618,8 @@ export class HelperDaemon {
    * Internal commands (_ping, _schema, _exit) pass empty proc/path/value;
    * C# handles them before any reassembly.
    */
-  call(target: string, command: string, elemPath: string = '', value: string = '', timeoutMs: number = 20000): Promise<any> {
+  call(target: string, command: string, elemPath: string = '', value: string = '', timeoutMs: number = 20000,
+       callerUser: string = '', callerRoles: string = '', scroll: boolean = false): Promise<any> {
     // Append to the serial queue
     let releaseQueue!: () => void;
     const mySlot = this.queueTail;
@@ -589,8 +645,11 @@ export class HelperDaemon {
         // Build the wire JSON with separate fields (§2.7 target wire format).
         // Omit empty path / value to keep messages compact.
         const reqObj: Record<string, string> = { id: reqId, proc: target, action: command };
-        if (elemPath) reqObj.path  = elemPath;
-        if (value)    reqObj.value = value;
+        if (elemPath)   reqObj.path          = elemPath;
+        if (value)      reqObj.value         = value;
+        if (scroll)     reqObj.scroll        = 'true';
+        if (callerUser)  reqObj._caller_user  = callerUser;
+        if (callerRoles) reqObj._caller_roles = callerRoles;
         const body = JSON.stringify(reqObj);
         // Append HMAC field when the session key has been established.
         const wireMsg = this.sessionKey
@@ -849,78 +908,38 @@ export class HelperRegistry {
   // ---------------------------------------------------------------------------
 
   toMcpTools(): any[] {
-    return this.getAll().map(schema => {
-      const modeSummary = schema.window_modes && schema.window_modes.length
-        ? ' Window modes: ' +
-          schema.window_modes.map(m => `${m.mode} (${m.description}; e.g. ${m.examples.join(', ')})`)
-            .join(' | ') + '.'
-        : '';
-      const teardownSummary = schema.teardown_policies && schema.teardown_policies.length
-        ? ' Teardown policies: ' + schema.teardown_policies.join(', ') +
-          '. Default is leave_open (non-destructive). ' +
-          'Ask the user before using discard_doc/discard_tab or close_app.'
-        : '';
-      const cmdHints = schema.commands.map(c => `${c.name}: ${c.description}`).join('; ');
-
-      return {
-        name: schema.toolName,
-        description:
-          `[${schema.helper} v${schema.version}] ${schema.description}` +
-          modeSummary + teardownSummary +
-          ` Available commands: ${schema.commands.map(c => c.name).join(', ')}.`,
-        inputSchema: {
-          type: 'object',
-          properties: {
-            helper: {
-              type: 'string',
-              description:
-                'Which C# helper binary processes this call. ' +
-                'Normally implicit in the tool name and can be omitted. ' +
-                `This tool maps to helper "${schema.helper}".`,
-            },
-            proc: {
-              type: 'string',
-              description:
-                'Container hierarchy: L1 OS process // L2 sub-window // L3 document/tab. ' +
-                'Levels are separated by "//"; each level is a [key:val;key:val] bracket. ' +
-                'Omit to target the active/foreground instance. ' +
-                'Single level examples: ' +
-                '"[pid:1234]"  "[procname:WINWORD*]"  "[handle:0xABCD]"  "[sha256:hex]". ' +
-                'Multi-level: "[procname:WINWORD.EXE]//[docname:Budget.xlsx]" ' +
-                '"[pid:8800]//[url:https://github.com/pulls]" ' +
-                '"[pid:123]//[subwindowhandle:0x2A4]//[tabid:3]". ' +
-                'L3 doc/tab keys: docname url tabid page. ' +
-                'L2 sub-window keys: subwindowhandle frame pane. ' +
-                'L1 OS keys: pid handle hwnd procname sha256 sha512 title.',
-            },
-            action: {
-              type: 'string',
-              enum: schema.commands.map(c => c.name),
-              description: 'Command to execute. ' + cmdHints,
-            },
-            path: {
-              type: 'string',
-              description:
-                'XPath-style element address (L4+). Pure element path — no container info. ' +
-                'Container levels (process, sub-window, document) belong in `proc`. ' +
-                'Leading "//" optional. ' +
-                'Word:       "//body/para[20]"  "//body/bookmark[@name=\'Summary\']" ' +
-                'Excel:      "//sheet[@name=\'Q1\']/cell[@addr=\'B2:D5\']" ' +
-                'PowerPoint: "//slide[2]/shape[@name=\'Title\']" ' +
-                'UIA Win32:  "//Button[@id=\'num1Button\']" ' +
-                'Browser:    "//*[@id=\'compose\']"',
-            },
-            value: {
-              type: 'string',
-              description:
-                'Payload / value to write, apply, or send to the addressed element. ' +
-                'Examples: "Heading 2"  "=SUM(A1:A10)"  "hello world".',
-            },
+    return this.getAll().map(schema => ({
+      name: schema.toolName,
+      description:
+        `[${schema.helper} v${schema.version}] Direct access. ` +
+        `Commands: ${schema.commands.map(c => c.name).join(', ')}. ` +
+        `Call getHelperSchema for per-command docs, or use AutomateUI for routing.`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          helper: {
+            type: 'string',
+            description: `Helper binary — normally omitted. Maps to "${schema.helper}".`,
           },
-          required: ['action'],
+          proc: {
+            type: 'string',
+            description:
+              'Target: "[pid:N]" "[procname:X]" "[handle:H]". ' +
+              'Multi-level: "[procname:WINWORD.EXE]//[docname:Budget.xlsx]". ' +
+              'L1 keys: pid handle hwnd procname title. ' +
+              'L3 keys: docname url tabid. Omit = foreground.',
+          },
+          action: {
+            type: 'string',
+            enum: schema.commands.map(c => c.name),
+            description: 'Command. Call getHelperSchema for details.',
+          },
+          path: { type: 'string', description: 'XPath/CSS element address.' },
+          value: { type: 'string', description: 'Payload to write/send.' },
         },
-      };
-    });
+        required: ['action'],
+      },
+    }));
   }
 
   /**
@@ -936,6 +955,9 @@ export class HelperRegistry {
     elemPath: string = '',
     value: string = '',
     timeoutMs = 20000,
+    callerUser: string = '',
+    callerRoles: string = '',
+    scroll: boolean = false,
   ): Promise<any> {
     const schema = this.schemas.get(helperName);
     if (!schema) throw new Error(`Helper not found: ${helperName}`);
@@ -948,7 +970,7 @@ export class HelperRegistry {
     if (!daemon) throw new Error(`No daemon for helper: ${helperName}`);
 
     const t0     = Date.now();
-    const result = await daemon.call(target, command, elemPath, value, timeoutMs);
+    const result = await daemon.call(target, command, elemPath, value, timeoutMs, callerUser, callerRoles, scroll);
     const durationMs = Date.now() - t0;
 
     globalLogger.info('keywin', `<< ${helperName}  success=${result?.success}`);
@@ -995,15 +1017,17 @@ export class HelperRegistry {
   // ---------------------------------------------------------------------------
 
   private buildEnv(): NodeJS.ProcessEnv {
-    // When crypto credentials are loaded (pkBytes set by setCryptoCredentials),
-    // omit SKIP_SESSION_AUTH so the full _auth_hello/_auth_ok handshake runs.
-    // Without a key (dev / no-security setup) we keep the bypass flag so the
-    // helpers still start without an auth exchange.
-    if (this.pkBytes) {
-      const env = { ...process.env };
-      delete env['SKIP_SESSION_AUTH'];
-      return env;
+    // Pass SKIP_SESSION_AUTH=true **only** when no crypto credentials are
+    // available (no KEY_PASSWORD supplied at startup).  When pkBytes is set
+    // both the TS startup code and the C# daemon run the full
+    // _auth_hello → _auth → _auth_ok handshake with HKDF session-key derivation.
+    // Without credentials the one-shot guard is still enforced via the env var
+    // so that direct CLI invocations (not --listen-stdin) are blocked in
+    // production.
+    const env = { ...process.env };
+    if (!this.pkBytes || this.pkBytes.length === 0) {
+      env['SKIP_SESSION_AUTH'] = 'true';
     }
-    return { ...process.env, SKIP_SESSION_AUTH: 'true' };
+    return env;
   }
 }

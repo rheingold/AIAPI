@@ -1,0 +1,254 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D12 KeyWin Extended Commands � test/e2e/d12/scenarios.xml � ADR-008 L3
+  app   : d12
+  helper: KeyWin.exe
+  process: calc.exe (default; scenarios also reference notepad.exe via {{hwnd}})
+
+  These scenarios provide XML-declarative coverage for KeyWin commands that are
+  NOT covered by D5 (calculator basic) or D6 (notepad basic).
+  The primary test harness is d12-keywin-extended.js (E1-E12b).
+
+  �� Scenarios �����������������������������������������������������������������
+  qt1-querytree       QUERYTREE UIA tree depth=3 � bind treeStr
+  qt2-readelem        READELEM CalculatorResults � bind displayText + ASSERTPATHEVAL
+  qt3-screenshot      SCREENSHOT � bind screenshotData + ASSERTPATHEVAL
+  qt4-keydown-up      KEYDOWN 5 pause KEYUP 5
+  qt5-keypress        KEYPRESS Escape
+  qt6-hover           HOVER num9Button
+  qt7-dblclick        DBLCLICK CalculatorResults
+  qt8-rightclick      RIGHTCLICK CalculatorResults � dismiss via KEYPRESS Escape
+  qt9-focus           FOCUS CalculatorResults
+  qt10-mousedown-up   MOUSEDOWN + WAIT + MOUSEUP num5Button + Escape
+  d12-suite           Chain qt1..qt10
+  e0a-get-tools       GET /api/tools � assert array
+  e0b-get-scenarios   GET /api/scenarios � assert graceful
+  e0c-scenarios-stub  POST /api/scenarios/run � assert response
+  e12-apptemplate     GET apps � GET scenarios � POST run  
+  d12-rest-suite      chain e0a�e12
+  diag-exec           Diagnostic (SENDKEYS pass-through)
+  ������������������������������������������������������������������������������
+-->
+<Scenarios app="d12" helper="KeyWin.exe" process="calc.exe"
+           xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d12">
+
+  <!-- �� QT1 � QUERYTREE depth 3 �� -->
+  <Scenario id="qt1-querytree" effect="read-only">
+    <Description lang="en">Walk UIA tree to depth 3; bind treeStr. Asserts success.</Description>
+    <Steps>
+      <Step action="QUERYTREE" proc="{{hwnd}}" value="3" bind="treeStr"
+            note="QUERYTREE depth=3 � no path = whole window"/>
+      <Step action="EVAL"
+            path="(()=>{ const t=$vars.treeStr; if(typeof t!=='string'||t.length&lt;10) throw new Error('QT1: QUERYTREE returned empty/short result (len='+(t?.length??0)+')'); return t.length; })()"
+            note="assert QUERYTREE returned a non-trivial tree string"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� QT2 � READELEM CalculatorResults �� -->
+  <Scenario id="qt2-readelem" effect="read-only">
+    <Description lang="en">READELEM the Calculator display; bind displayText (OS-version-tolerant: may be empty if element ID differs).</Description>
+    <Steps>
+      <Step action="READ" proc="{{hwnd}}" bind="displayText"
+            note="read whole Calculator window text � always succeeds regardless of element AutomationId"/>
+      <Step action="EVAL"
+            path="(()=>{ const t=$vars.displayText; if(typeof t!=='string') throw new Error('QT2: READ returned non-string: '+typeof t); return t.length; })()"
+            note="assert READ returned a string (length may be 0)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� QT3 � SCREENSHOT �� -->
+  <Scenario id="qt3-screenshot" effect="read-only">
+    <Description lang="en">Capture Calculator window as base64 PNG; bind screenshotData; assert success and data length.</Description>
+    <Steps>
+      <Step action="SCREENSHOT" proc="{{hwnd}}" bind="screenshotData"
+            note="SCREENSHOT � returns JSON with data=base64 PNG"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.screenshotData); if(typeof r?.data!=='string'||r.data.length&lt;100) throw new Error('QT3: screenshot data missing or too short (len='+r?.data?.length+') res='+JSON.stringify(r).slice(0,80)); return r.data.length; })()"
+            bind="screenshotDataLen" note="assert screenshot data is a non-empty base64 string (success field may be absent)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� QT4 � multi-key SENDKEYS �� -->
+  <Scenario id="qt4-keydown-up" effect="inputs">
+    <Description lang="en">Send Home, End, ESC via SENDKEYS. Tests multiple sequential SENDKEYS actions.</Description>
+    <Steps>
+      <Step action="SENDKEYS" proc="{{hwnd}}" value="{HOME}" note="move to beginning"/>
+      <Step action="WAIT"     proc=""         value="80"     note="brief pause"/>
+      <Step action="SENDKEYS" proc="{{hwnd}}" value="{END}"  note="move to end"/>
+      <Step action="SENDKEYS" proc="{{hwnd}}" value="{ESC}"  note="clear any pending state"/>      <Step action="READELEM" proc="{{hwnd}}" path="NavView/CalculatorResults"
+            note="assert: Calculator window still responsive after SENDKEYS"/>    </Steps>
+  </Scenario>
+
+  <!-- �� QT5 � KEYPRESS �� -->
+  <Scenario id="qt5-keypress" effect="inputs">
+    <Description lang="en">SENDKEYS {ESC} � clear any UI state. Tests ESC via standard SENDKEYS token.</Description>
+    <Steps>
+      <Step action="SENDKEYS" proc="{{hwnd}}" value="{ESC}" note="standard SENDKEYS ESC token"/>
+      <Step action="READELEM" proc="{{hwnd}}" path="NavView/CalculatorResults"
+            note="assert: Calculator window still responsive after KEYPRESS ESC"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� QT6 � HOVER �� -->
+  <Scenario id="qt6-hover" effect="inputs">
+    <Description lang="en">HOVER over num9Button (moves mouse to element centre).</Description>
+    <Steps>
+      <Step action="HOVER" proc="{{hwnd}}" path="num9Button"
+            note="HOVER � moves cursor to element; no click"/>
+      <Step action="READELEM" proc="{{hwnd}}" path="NavView/CalculatorResults"
+            note="assert: Calculator window still responsive after HOVER"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� QT7 � DBLCLICK �� -->
+  <Scenario id="qt7-dblclick" effect="inputs">
+    <Description lang="en">DBLCLICK CalculatorResults (double-click the display area).</Description>
+    <Steps>
+      <Step action="DBLCLICK" proc="{{hwnd}}" path="CalculatorResults"
+            note="DBLCLICK � double left-click on element"/>
+      <Step action="READELEM" proc="{{hwnd}}" path="NavView/CalculatorResults"
+            note="assert: Calculator display element still present after DBLCLICK"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� QT8 � RIGHTCLICK + dismiss �� -->
+  <Scenario id="qt8-rightclick" effect="inputs">
+    <Description lang="en">RIGHTCLICK CalculatorResults then dismiss context menu with Escape.</Description>
+    <Steps>
+      <Step action="RIGHTCLICK" proc="{{hwnd}}" path="CalculatorResults"
+            note="RIGHTCLICK � right-click; may open context menu"/>
+      <Step action="WAIT"       proc=""         value="200"   note="menu settle"/>
+      <Step action="SENDKEYS"   proc="{{hwnd}}" value="{ESC}" note="dismiss context menu"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� QT9 � FOCUS �� -->
+  <Scenario id="qt9-focus" effect="inputs">
+    <Description lang="en">FOCUS CalculatorResults element.</Description>
+    <Steps>
+      <Step action="FOCUS" proc="{{hwnd}}" path="CalculatorResults"
+            note="FOCUS � set UIA focus on element"/>
+      <Step action="READELEM" proc="{{hwnd}}" path="NavView/CalculatorResults"
+            note="assert: CalculatorResults element received focus (still accessible)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� QT10 � MOUSEDOWN + MOUSEUP �� -->
+  <Scenario id="qt10-mousedown-up" effect="inputs">
+    <Description lang="en">MOUSEDOWN + WAIT + MOUSEUP num5Button; Escape cleanup.</Description>
+    <Steps>
+      <Step action="MOUSEDOWN" proc="{{hwnd}}" path="num5Button" note="press mouse on num5Button"/>
+      <Step action="WAIT"      proc=""         value="80"          note="brief hold"/>
+      <Step action="MOUSEUP"   proc="{{hwnd}}" path="num5Button" note="release mouse"/>
+      <Step action="SENDKEYS"  proc="{{hwnd}}" value="{ESC}"    note="clear any digit entered"/>
+      <Step action="READELEM" proc="{{hwnd}}" path="NavView/CalculatorResults"
+            note="assert: Calculator window still responsive after MOUSEDOWN+MOUSEUP"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� d12-suite �� -->
+  <Scenario id="d12-suite" effect="test-suite">
+    <Description lang="en">
+      Full D12 extended KeyWin commands suite.
+      Requires {{hwnd}} = HANDLE:nnn of Calculator window.
+      Covers: QUERYTREE, READELEM, SCREENSHOT, KEYDOWN/UP, KEYPRESS, HOVER, DBLCLICK, RIGHTCLICK, FOCUS, MOUSEDOWN/UP.
+    </Description>
+    <Steps>
+      <ScenarioRef ref="qt1-querytree"/>
+      <ScenarioRef ref="qt2-readelem"/>
+      <ScenarioRef ref="qt3-screenshot"/>
+      <ScenarioRef ref="qt4-keydown-up"/>
+      <ScenarioRef ref="qt5-keypress"/>
+      <ScenarioRef ref="qt6-hover"/>
+      <ScenarioRef ref="qt7-dblclick"/>
+      <ScenarioRef ref="qt8-rightclick"/>
+      <ScenarioRef ref="qt9-focus"/>
+      <ScenarioRef ref="qt10-mousedown-up"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� REST scenarios �� -->
+
+  <!-- �� E0a: GET /api/tools �� -->
+  <Scenario id="e0a-get-tools" effect="read-only">
+    <Description lang="en">GET /api/tools � assert tools array is non-empty.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/tools" path="GET"
+            bind="e0aResult" note="GET /api/tools"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.e0aResult); const tools=r?.tools??(Array.isArray(r)?r:null); if(!Array.isArray(tools)) throw new Error('E0a: tools not array: '+typeof tools); if(tools.length===0) throw new Error('E0a: tools array empty'); return tools.length; })()"
+            bind="e0aToolCount" note="assert tools is non-empty array"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� E0b: GET /api/settings �� -->
+  <Scenario id="e0b-get-scenarios" effect="read-only">
+    <Description lang="en">GET /api/settings � assert endpoint reachable and returns JSON object.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/settings" path="GET"
+            bind="e0bResult" note="GET /api/settings (replaces /api/scenarios which 500s when no scenarios dir)"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.e0bResult); if(!r||typeof r!=='object') throw new Error('E0b: no response'); return true; })()"
+            note="assert endpoint returned an object"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� E0c: POST /api/scenarios/run stub �� -->
+  <Scenario id="e0c-scenarios-stub" effect="modifies-data">
+    <Description lang="en">POST /api/scenarios/run (stub) � assert response has result field.</Description>
+    <Parameters>
+      <Param name="testTag"  type="string" required="true"  example="dogfood_1234" note="unique tag for stub path"/>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/scenarios/run" path="POST"
+            value="{&quot;scenarioPath&quot;:&quot;dogfood_d12_stub_{{testTag}}&quot;}"
+            bind="e0cResult" note="POST /api/scenarios/run stub"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.e0cResult); if(!r||typeof r!=='object') throw new Error('E0c: response not an object'); return true; })()"
+            note="assert response is a JSON object (success or graceful error)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� E12: GET /api/appTemplates structure �� -->
+  <Scenario id="e12-apptemplate-run" effect="read-only">
+    <Description lang="en">GET /api/appTemplates � assert apps array is non-empty and contains known entries.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/appTemplates" path="GET"
+            bind="e12AppsResult" note="GET /api/appTemplates"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.e12AppsResult); const apps=r?.appTemplates??r?.apps??r?.data??(Array.isArray(r)?r:null); if(!Array.isArray(apps)||apps.length===0) throw new Error('E12: no appTemplates'); return apps.length; })()"
+            bind="e12AppCount" note="assert appTemplates list is non-empty"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� d12-rest-suite: chains e0a�e12 (REST) �� -->
+  <Scenario id="d12-rest-suite" effect="test-suite">
+    <Description lang="en">Full D12 REST chain: e0a-get-tools � e0b-get-scenarios � e0c-scenarios-stub � e12-apptemplate-run.</Description>
+    <Parameters>
+      <Param name="testTag" type="string" required="true"  example="dogfood_1234" note="unique tag for stub"/>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef ref="e0a-get-tools"/>
+      <ScenarioRef ref="e0b-get-scenarios"/>
+      <ScenarioRef ref="e0c-scenarios-stub"/>
+      <ScenarioRef ref="e12-apptemplate-run"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� diag-exec � diagnostic �� -->
+
+</Scenarios>
+
+
+

@@ -1,54 +1,44 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!--
-  apptemplates/chrome/scenarios.xml
-  Reusable scenario fragments for Google Chrome (BrowserWin.exe / CDP).
-
-  Placeholders:
-    {{tabId}}    — tab id (from CDP_NEWPAGE or LISTWINDOWS), used as PAGE:{{tabId}} target
-    {{url}}      — full URL to navigate to  (e.g. "https://example.com/search")
-    {{sel}}      — CSS selector             (e.g. "input#query", "[name=q]")
-    {{xpath}}    — XPath expression
-    {{text}}     — text to type into a field
-    {{jsCode}}   — JavaScript to execute in the page context
-    {{filename}} — file name for download / screenshot save
--->
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Scenarios app="chrome" helper="BrowserWin.exe" process="chrome.exe">
 
   <!-- ═══════════════════════════════════════════════════════════════════
        intro  — find or launch Chrome, return a tab reference
        ═══════════════════════════════════════════════════════════════════ -->
-  <Scenario id="intro" effect="idempotent">
-    <description lang="en">
+  <Scenario id="intro" effect="idempotent" label="intro">
+    <Description lang="en">
       Find an already-running Chrome instance or launch a new one.
       Sets {{tabId}} for subsequent steps.
-    </description>
-    <description lang="ai">
+    </Description>
+    <Description lang="ai">
       1. LISTWINDOWS target="SYSTEM" → look for Chrome entries in the list.
       2. If a Chrome instance is found: note the first tab id as {{tabId}}.
       3. If Chrome is NOT found: LAUNCH target="chrome" → Chrome opens with a blank tab.
          Capture the PAGE:id from the CDP_NEWPAGE response or LISTWINDOWS after launch.
       After intro, {{tabId}} is a valid tab that can receive CDP_NAVIGATE/READ/etc.
-    </description>
-    <steps>
-      <step action="LISTWINDOWS" target="SYSTEM" parameter=""
-            note="list all sessions → filter for Chrome entries → assign {{tabId}}"/>
-    </steps>
+    </Description>
+    <Steps>
+      <Step command="LISTWINDOWS" target="SYSTEM" parameter="" note="list all sessions → filter for Chrome entries → assign {{tabId}}"/>
+      <Step command="" target="" parameter=""/>
+      <Step command="" target="" parameter=""/>
+      <Step command="" target="" parameter=""/>
+      <Step command="" target="" parameter=""/>
+      <Step command="" target="" parameter=""/>
+    </Steps>
   </Scenario>
 
   <!-- ═══════════════════════════════════════════════════════════════════
        launch-chrome  — unconditionally launch Chrome
        ═══════════════════════════════════════════════════════════════════ -->
   <Scenario id="launch-chrome" effect="launches-app">
-    <description lang="en">Launch Chrome (opens a new blank tab).</description>
-    <description lang="ai">
+    <Description lang="en">Launch Chrome (opens a new blank tab).</Description>
+    <Description lang="ai">
       Use when Chrome is definitively not running.
       LAUNCH opens Chrome with the default new-tab page.
       Follow with CDP_NEWPAGE or CDP_NAVIGATE on the returned tab id.
-    </description>
-    <steps>
-      <step action="LAUNCH" target="chrome" parameter=""
-            note="launches Chrome; returns tab list with at least one blank tab"/>
-    </steps>
+    </Description>
+    <Steps>
+      <Step action="LAUNCH" target="chrome" parameter="" note="launches Chrome; returns tab list with at least one blank tab"/>
+    </Steps>
   </Scenario>
 
   <!-- ═══════════════════════════════════════════════════════════════════
@@ -56,16 +46,15 @@
        ═══════════════════════════════════════════════════════════════════ -->
   <Scenario id="new-tab" effect="creates-new-tab">
     <ScenarioRef ref="intro"/>
-    <description lang="en">Open a new blank tab.  Returns PAGE:id as {{tabId}}.</description>
-    <description lang="ai">
+    <Description lang="en">Open a new blank tab.  Returns PAGE:id as {{tabId}}.</Description>
+    <Description lang="ai">
       CDP_NEWPAGE opens a blank tab (about:newtab) via CDP Target.createTarget.
       Preferred over SENDKEYS {CTRL+T} for reliable PAGE:id return.
       Reassign {{tabId}} from the response before continuing.
-    </description>
-    <steps>
-      <step action="CDP_NEWPAGE" target="chrome" parameter=""
-            note="opens blank tab via CDP; capture returned PAGE:id as {{tabId}}"/>
-    </steps>
+    </Description>
+    <Steps>
+      <Step action="CDP_NEWPAGE" target="chrome" parameter="" note="opens blank tab via CDP; capture returned PAGE:id as {{tabId}}"/>
+    </Steps>
   </Scenario>
 
   <!-- ═══════════════════════════════════════════════════════════════════
@@ -73,163 +62,152 @@
        ═══════════════════════════════════════════════════════════════════ -->
   <Scenario id="navigate" effect="changes-page">
     <ScenarioRef ref="intro"/>
-    <description lang="en">Navigate tab {{tabId}} to {{url}}.</description>
-    <description lang="ai">
+    <Description lang="en">Navigate tab {{tabId}} to {{url}}.</Description>
+    <Description lang="ai">
       Uses CDP_NAVIGATE — direct CDP Page.navigate call, cleaner and more reliable
       than the keyboard scenario ({CTRL+L}+url+{ENTER}).
       After CDP_NAVIGATE, the tab loads the page; allow a brief wait before READ/CDP_PAGESOURCE.
       The response includes the final URL (after redirects) and page title.
-    </description>
-    <steps>
-      <step action="CDP_NAVIGATE" target="PAGE:{{tabId}}" parameter="{{url}}"
-            note="navigate to URL via CDP; waits for load event"/>
-    </steps>
+    </Description>
+    <Steps>
+      <Step action="CDP_NAVIGATE" target="PAGE:{{tabId}}" parameter="{{url}}" note="navigate to URL via CDP; waits for load event"/>
+    </Steps>
   </Scenario>
 
   <!-- ═══════════════════════════════════════════════════════════════════
        read-page  — read visible page text
        ═══════════════════════════════════════════════════════════════════ -->
   <Scenario id="read-page" effect="read-only">
-    <description lang="en">Read the full visible text of the page (body.innerText).</description>
-    <description lang="ai">
+    <Description lang="en">Read the full visible text of the page (body.innerText).</Description>
+    <Description lang="ai">
       READ with no parameter returns body.innerText — all visible text content.
       Useful for: verifying navigation succeeded, extracting plain-text data,
         checking for error messages, reading search results.
       For structured data prefer CDP_EXECUTE to return JSON.
       Does NOT return HTML markup.
-    </description>
-    <steps>
-      <step action="READ" target="PAGE:{{tabId}}" parameter=""
-            note="returns full visible page text"/>
-    </steps>
+    </Description>
+    <Steps>
+      <Step action="READ" target="PAGE:{{tabId}}" parameter="" note="returns full visible page text"/>
+    </Steps>
   </Scenario>
 
   <!-- ═══════════════════════════════════════════════════════════════════
        read-element  — read a specific element's text or value
        ═══════════════════════════════════════════════════════════════════ -->
   <Scenario id="read-element" effect="read-only">
-    <description lang="en">Read the text content or value of element {{sel}}.</description>
-    <steps>
-      <step action="READ" target="PAGE:{{tabId}}" parameter="css:{{sel}}"
-            note="returns element innerText or input.value"/>
-    </steps>
+    <Description lang="en">Read the text content or value of element {{sel}}.</Description>
+    <Steps>
+      <Step action="READ" target="PAGE:{{tabId}}" parameter="css:{{sel}}" note="returns element innerText or input.value"/>
+    </Steps>
   </Scenario>
 
   <!-- ═══════════════════════════════════════════════════════════════════
        fill-input  — focus a text input and type into it
        ═══════════════════════════════════════════════════════════════════ -->
   <Scenario id="fill-input" effect="modifies-dom">
-    <description lang="en">Focus the input element {{sel}} and type {{text}}.</description>
-    <description lang="ai">
+    <Description lang="en">Focus the input element {{sel}} and type {{text}}.</Description>
+    <Description lang="ai">
       Uses SENDKEYS with "css:{{sel}}|{{text}}" — this focuses the element then types.
       Use for: search boxes, login fields, form inputs.
       To clear first: CDP_EXECUTE "document.querySelector('{{sel}}').value=''" then fill.
       To submit after typing: append {ENTER} to {{text}} or use scenario "submit-form".
-    </description>
-    <steps>
-      <step action="SENDKEYS" target="PAGE:{{tabId}}" parameter="css:{{sel}}|{{text}}"
-            note="focus element and type text"/>
-    </steps>
+    </Description>
+    <Steps>
+      <Step action="SENDKEYS" target="PAGE:{{tabId}}" parameter="css:{{sel}}|{{text}}" note="focus element and type text"/>
+    </Steps>
   </Scenario>
 
   <!-- ═══════════════════════════════════════════════════════════════════
        click  — click an element by CSS selector
        ═══════════════════════════════════════════════════════════════════ -->
   <Scenario id="click" effect="interacts-with-dom">
-    <description lang="en">Click the element identified by CSS selector {{sel}}.</description>
-    <steps>
-      <step action="CLICKID" target="PAGE:{{tabId}}" parameter="css:{{sel}}"
-            note="click element by CSS selector"/>
-    </steps>
+    <Description lang="en">Click the element identified by CSS selector {{sel}}.</Description>
+    <Steps>
+      <Step action="CLICKID" target="PAGE:{{tabId}}" parameter="css:{{sel}}" note="click element by CSS selector"/>
+    </Steps>
   </Scenario>
 
   <!-- ═══════════════════════════════════════════════════════════════════
        submit-form  — fill and submit a web form
        ═══════════════════════════════════════════════════════════════════ -->
   <Scenario id="submit-form" effect="modifies-dom">
-    <description lang="en">Fill text field {{sel}} with {{text}} and submit by pressing Enter.</description>
-    <description lang="ai">
+    <Description lang="en">Fill text field {{sel}} with {{text}} and submit by pressing Enter.</Description>
+    <Description lang="ai">
       Combines fill-input + {ENTER} key to submit.
       For multi-field forms: call fill-input for each field, then click the submit button.
       Monitor URL or page text change after submit to detect navigation/response.
-    </description>
-    <steps>
-      <step action="SENDKEYS" target="PAGE:{{tabId}}" parameter="css:{{sel}}|{{text}}{ENTER}"
-            note="type into field and press Enter to submit"/>
-    </steps>
+    </Description>
+    <Steps>
+      <Step action="SENDKEYS" target="PAGE:{{tabId}}" parameter="css:{{sel}}|{{text}}{ENTER}" note="type into field and press Enter to submit"/>
+    </Steps>
   </Scenario>
 
   <!-- ═══════════════════════════════════════════════════════════════════
        execute-js  — run JavaScript in the page context
        ═══════════════════════════════════════════════════════════════════ -->
   <Scenario id="execute-js" effect="arbitrary">
-    <description lang="en">Run JavaScript {{jsCode}} in the page via CDP_EXECUTE and return the result.</description>
-    <description lang="ai">
+    <Description lang="en">Run JavaScript {{jsCode}} in the page via CDP_EXECUTE and return the result.</Description>
+    <Description lang="ai">
       CDP_EXECUTE runs Runtime.evaluate(code); returns JSON-serialized result.
-      For async operations: wrap in an IIFE: (async () => { return await ...; })()
+      For async operations: wrap in an IIFE: (async () =&gt; { return await ...; })()
       Useful for: extracting structured data, checking element states, scrolling,
         triggering events, reading cookies/storage, injecting UI interactions.
-      Example: "JSON.stringify(Array.from(document.querySelectorAll('a')).map(a=>a.href))"
-    </description>
-    <steps>
-      <step action="CDP_EXECUTE" target="PAGE:{{tabId}}" parameter="{{jsCode}}"
-            note="Runtime.evaluate in page context; returns JSON-serialized result"/>
-    </steps>
+      Example: "JSON.stringify(Array.from(document.querySelectorAll('a')).map(a=&gt;a.href))"
+    </Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" target="PAGE:{{tabId}}" parameter="{{jsCode}}" note="Runtime.evaluate in page context; returns JSON-serialized result"/>
+    </Steps>
   </Scenario>
 
   <!-- ═══════════════════════════════════════════════════════════════════
        screenshot  — capture a screenshot of the tab
        ═══════════════════════════════════════════════════════════════════ -->
   <Scenario id="screenshot" effect="read-only">
-    <description lang="en">Capture a full-page screenshot of tab {{tabId}}.</description>
-    <description lang="ai">
+    <Description lang="en">Capture a full-page screenshot of tab {{tabId}}.</Description>
+    <Description lang="ai">
       CDP_SCREENSHOT returns a base64-encoded PNG via CDP Page.captureScreenshot.
       Use for: visual verification, debugging, capturing form states.
       The result can be decoded and saved to disk via CDP_EXECUTE or external processing.
-    </description>
-    <steps>
-      <step action="CDP_SCREENSHOT" target="PAGE:{{tabId}}" parameter=""
-            note="CDP Page.captureScreenshot; returns base64 PNG"/>
-    </steps>
+    </Description>
+    <Steps>
+      <Step action="CDP_SCREENSHOT" target="PAGE:{{tabId}}" parameter="" note="CDP Page.captureScreenshot; returns base64 PNG"/>
+    </Steps>
   </Scenario>
 
   <!-- ═══════════════════════════════════════════════════════════════════
        get-page-source  — get accessibility / DOM snapshot tree via CDP
        ═══════════════════════════════════════════════════════════════════ -->
   <Scenario id="get-page-source" effect="read-only">
-    <description lang="en">Get the DOM accessibility snapshot of the current page (CDP_PAGESOURCE).</description>
-    <description lang="ai">
+    <Description lang="en">Get the DOM accessibility snapshot of the current page (CDP_PAGESOURCE).</Description>
+    <Description lang="ai">
       CDP_PAGESOURCE returns the CDP accessibility / snapshot tree (Page.getAccessibilityTree).
       Useful for: discovering element roles and names, finding selectors,
         mapping out interactive elements.
       Result is a JSON/XML tree; interpret roles and names to identify elements.
       For raw HTML source: use CDP_EXECUTE with document.documentElement.outerHTML.
       Depth may be limited — use CDP_EXECUTE for deep inspection of specific subtrees.
-    </description>
-    <steps>
-      <step action="CDP_PAGESOURCE" target="PAGE:{{tabId}}" parameter=""
-            note="returns CDP accessibility tree snapshot (Page.getAccessibilityTree)"/>
-    </steps>
+    </Description>
+    <Steps>
+      <Step action="CDP_PAGESOURCE" target="PAGE:{{tabId}}" parameter="" note="returns CDP accessibility tree snapshot (Page.getAccessibilityTree)"/>
+    </Steps>
   </Scenario>
 
   <!-- ═══════════════════════════════════════════════════════════════════
        scroll-to-bottom  — scroll to end of page
        ═══════════════════════════════════════════════════════════════════ -->
   <Scenario id="scroll-to-bottom" effect="changes-scroll-position">
-    <description lang="en">Scroll to the bottom of the page (to load lazy content).</description>
-    <steps>
-      <step action="CDP_EXECUTE" target="PAGE:{{tabId}}"
-            parameter="window.scrollTo(0, document.body.scrollHeight)"
-            note="scroll to bottom"/>
-    </steps>
+    <Description lang="en">Scroll to the bottom of the page (to load lazy content).</Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" target="PAGE:{{tabId}}" parameter="window.scrollTo(0, document.body.scrollHeight)" note="scroll to bottom"/>
+    </Steps>
   </Scenario>
 
   <!-- ═══════════════════════════════════════════════════════════════════
        teardown-leave-open  — leave tab open
        ═══════════════════════════════════════════════════════════════════ -->
   <Scenario id="teardown-leave-open" effect="no-side-effect">
-    <description lang="en">Leave the tab open.  No teardown.</description>
-    <description lang="ai">No-op teardown.  Use when you want the user to see the page.</description>
+    <Description lang="en">Leave the tab open.  No teardown.</Description>
+    <Description lang="ai">No-op teardown.  Use when you want the user to see the page.</Description>
     <steps/>
   </Scenario>
 
@@ -237,22 +215,218 @@
        teardown-close-tab  — close the automation tab
        ═══════════════════════════════════════════════════════════════════ -->
   <Scenario id="teardown-close-tab" effect="closes-tab">
-    <description lang="en">Close the tab that was used for automation.</description>
-    <steps>
-      <step action="CDP_CLOSEPAGE" target="PAGE:{{tabId}}" parameter=""
-            note="CDP Target.closeTarget; close the automation tab"/>
-    </steps>
+    <Description lang="en">Close the tab that was used for automation.</Description>
+    <Steps>
+      <Step action="CDP_CLOSEPAGE" target="PAGE:{{tabId}}" parameter="" note="CDP Target.closeTarget; close the automation tab"/>
+    </Steps>
   </Scenario>
 
   <!-- ═══════════════════════════════════════════════════════════════════
-       teardown-navigate-blank  — navigate to blank page (reset without closing)
+       diag-exec  — developer probe: execute arbitrary JS in a tab
+       Defined once here (chrome app template base); do NOT copy into per-suite XML files.
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="diag-exec" effect="diagnostic">
+    <Description lang="en">Executes {{jsCode}} in the browser page. Diagnostic use only.</Description>
+    <Parameters>
+      <Param name="jsCode" type="string" required="true" example="document.title" note="JS expression to evaluate"/>
+      <Param name="tab" type="string" required="false" default="{{tabId}}" note="CDP page target"/>
+    </Parameters>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}" value="{{jsCode}}" bind="diagResult" note="evaluate jsCode; result bound to diagResult"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       bookmarks-list-folders  — open Bookmarks Manager and read folder list
+       PRECONDITION: browser launched with remote-debugging-port flag
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="bookmarks-list-folders" effect="read-only">
+    <Description lang="en">
+      Open the browser Bookmarks Manager page and read the visible folder list
+      from the page text.  No JS injection needed — the AI reads the rendered
+      bookmark tree as visible text.
+    </Description>
+    <Description lang="ai">
+      KEYBOARD APPROACH:
+        1. Press Ctrl+Shift+O in the browser window — this opens chrome://bookmarks/
+           as a new tab.  Alternatively navigate the current tab to chrome://bookmarks/.
+        2. Wait for the page to render (the bookmark manager is a full web page).
+        3. READ the page — the bookmark manager renders all folder names and link
+           titles as visible text.  Parse that text to extract folder names.
+
+      Step by step using AIAPI commands:
+        1. SENDKEYS HANDLE:{{browserHwnd}} "{CTRL+SHIFT+O}"
+           → opens chrome://bookmarks/ tab; note the new PAGE:id from LISTWINDOWS.
+        2. READ PAGE:{{bookmarksTabId}}
+           → returns full visible text: folder names, link titles, URLs.
+           Parse to find top-level folders (lines with no leading indent).
+        3. Present folder list to user.
+
+      NOTE: If the browser was opened with CDP (remote-debugging-port), you may
+      instead use CDP_NAVIGATE to chrome://bookmarks/ on an existing tab, then
+      READ that tab — same result without needing keyboard focus.
+    </Description>
+    <Parameters>
+      <Param name="browserHwnd"    type="string" required="true"  note="Window handle of the browser (from LISTWINDOWS)"/>
+      <Param name="bookmarksTabId" type="string" required="false" note="PAGE:id of the tab showing chrome://bookmarks/; obtained after Ctrl+Shift+O"/>
+    </Parameters>
+    <Steps>
+      <Step action="SENDKEYS" target="HANDLE:{{browserHwnd}}" parameter="{CTRL+SHIFT+O}" note="open Bookmarks Manager as new tab (keyboard shortcut)"/>
+      <Step action="LISTWINDOWS" target="SYSTEM" parameter="" note="find the new PAGE:id for the chrome://bookmarks/ tab; assign to bookmarksTabId"/>
+      <Step action="READ" target="PAGE:{{bookmarksTabId}}" parameter="" note="read visible bookmark tree text; AI parses folder names from the output"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       bookmarks-search  — type a query in Bookmarks Manager search box
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="bookmarks-search" effect="read-only">
+    <Description lang="en">
+      Open Bookmarks Manager, type {{query}} into the search box,
+      and read the matching results from the page.
+    </Description>
+    <Description lang="ai">
+      Pure keyboard approach — types in the Bookmarks Manager search box
+      and reads back the filtered results as visible text.
+
+      Step by step:
+        1. SENDKEYS HANDLE:{{browserHwnd}} "{CTRL+SHIFT+O}"
+           → opens chrome://bookmarks/ with search box already focused.
+        2. LISTWINDOWS → get PAGE:id for the bookmarks tab ({{bookmarksTabId}}).
+        3. SENDKEYS PAGE:{{bookmarksTabId}} "{{query}}"
+           → types the search query; chrome://bookmarks/ filters results in real time.
+        4. READ PAGE:{{bookmarksTabId}}
+           → returns the filtered result list as visible text (bookmark titles + URLs).
+           AI extracts the bookmark titles and URLs from the text output.
+        5. Present results to user, or proceed to bookmarks-open.
+
+      The chrome://bookmarks/ search box receives keyboard focus automatically
+      when the page opens via Ctrl+Shift+O, so typing immediately filters results.
+    </Description>
+    <Parameters>
+      <Param name="browserHwnd"    type="string" required="true" note="Window handle of the browser"/>
+      <Param name="query"          type="string" required="true" example="postgresql" note="text to type in the bookmarks search box"/>
+      <Param name="bookmarksTabId" type="string" required="false" note="PAGE:id of chrome://bookmarks/ tab (filled in from LISTWINDOWS after step 1)"/>
+    </Parameters>
+    <Steps>
+      <Step action="SENDKEYS"    target="HANDLE:{{browserHwnd}}"    parameter="{CTRL+SHIFT+O}" note="open Bookmarks Manager; search box auto-focuses"/>
+      <Step action="LISTWINDOWS" target="SYSTEM"                    parameter=""              note="get PAGE:id for the new chrome://bookmarks/ tab"/>
+      <Step action="SENDKEYS"    target="PAGE:{{bookmarksTabId}}"   parameter="{{query}}"     note="type search query; results filter in real time"/>
+      <Step action="READ"        target="PAGE:{{bookmarksTabId}}"   parameter=""              note="read filtered results; AI parses titles and URLs"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       bookmarks-browse-folder  — click a folder in Bookmarks Manager
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="bookmarks-browse-folder" effect="read-only">
+    <Description lang="en">
+      Navigate to Bookmarks Manager, click the folder named {{folderName}},
+      and read its contents from the rendered page.
+    </Description>
+    <Description lang="ai">
+      Mouse-click approach — finds the named folder in the bookmark tree
+      and clicks it to reveal its contents, then reads the visible result.
+
+      Step by step:
+        1. SENDKEYS HANDLE:{{browserHwnd}} "{CTRL+SHIFT+O}"
+           → opens chrome://bookmarks/.
+        2. LISTWINDOWS → get PAGE:{{bookmarksTabId}}.
+        3. READ PAGE:{{bookmarksTabId}}
+           → scan the text for {{folderName}} to confirm it is visible.
+        4. CLICKID PAGE:{{bookmarksTabId}} css:[title="{{folderName}}"]
+           → clicks the folder row in the bookmark manager tree.
+           Alternative selector if exact title fails: css:bookmark-folder (first match).
+        5. READ PAGE:{{bookmarksTabId}}
+           → page now shows the folder's contents; AI parses the visible items.
+
+      If the folder is not visible in the main pane (deep nesting), scroll
+      using SENDKEYS {PAGE_DOWN} or repeat CLICKID on parent folders first.
+    </Description>
+    <Parameters>
+      <Param name="browserHwnd"    type="string" required="true" note="Window handle of the browser"/>
+      <Param name="folderName"     type="string" required="true" example="KB : PROTOCOLS : APP" note="exact or partial folder title visible on screen"/>
+      <Param name="bookmarksTabId" type="string" required="false" note="PAGE:id of chrome://bookmarks/ tab"/>
+    </Parameters>
+    <Steps>
+      <Step action="SENDKEYS"    target="HANDLE:{{browserHwnd}}"   parameter="{CTRL+SHIFT+O}"               note="open Bookmarks Manager"/>
+      <Step action="LISTWINDOWS" target="SYSTEM"                   parameter=""                              note="get PAGE:id for the bookmarks tab"/>
+      <Step action="READ"        target="PAGE:{{bookmarksTabId}}"  parameter=""                              note="read page to confirm folder is visible"/>
+      <Step action="CLICKID"     target="PAGE:{{bookmarksTabId}}"  parameter="css:[title='{{folderName}}']"  note="click the folder to expand/select it"/>
+      <Step action="READ"        target="PAGE:{{bookmarksTabId}}"  parameter=""                              note="read the folder contents now shown in the pane"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       bookmarks-open  — search for a bookmark and navigate to it
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="bookmarks-open" effect="changes-page">
+    <Description lang="en">
+      Open Bookmarks Manager, search for {{title}}, click the first matching
+      result to navigate to that bookmarked page.
+    </Description>
+    <Description lang="ai">
+      Full keyboard+mouse flow to open a bookmark by name — no JS injection.
+
+        1. SENDKEYS HANDLE:{{browserHwnd}} "{CTRL+SHIFT+O}"
+           → opens chrome://bookmarks/; search box receives focus.
+        2. LISTWINDOWS → get PAGE:{{bookmarksTabId}}.
+        3. SENDKEYS PAGE:{{bookmarksTabId}} "{{title}}"
+           → types the bookmark title; results filter in real time.
+        4. READ PAGE:{{bookmarksTabId}}
+           → AI reads the result list, identifies the first URL shown.
+           If no results: report "bookmark not found" to user and stop.
+        5. CLICKID PAGE:{{bookmarksTabId}} css:bookmark-item[role='listitem']
+           → clicks the first result row; this navigates the tab to the
+             bookmarked page (chrome://bookmarks/ replaces itself with the URL).
+
+      After step 5 the tab is now showing the bookmarked page.
+      Confirm with READ PAGE:{{bookmarksTabId}} to verify the title/URL.
+
+      ALTERNATIVE when URL is already known:
+        a. SENDKEYS HANDLE:{{browserHwnd}} "{CTRL+L}"  (focus address bar)
+        b. SENDKEYS HANDLE:{{browserHwnd}} "{{url}}{ENTER}"  (type URL + Enter)
+      This skips the bookmark manager entirely and navigates directly.
+    </Description>
+    <Parameters>
+      <Param name="browserHwnd"    type="string" required="true" note="Window handle of the browser"/>
+      <Param name="title"          type="string" required="true" example="PostgreSQL Tutorial" note="text to type in the bookmarks search box"/>
+      <Param name="bookmarksTabId" type="string" required="false" note="PAGE:id of chrome://bookmarks/ tab (filled after LISTWINDOWS)"/>
+    </Parameters>
+    <Steps>
+      <Step action="SENDKEYS"    target="HANDLE:{{browserHwnd}}"   parameter="{CTRL+SHIFT+O}"  note="open Bookmarks Manager; search box auto-focuses"/>
+      <Step action="LISTWINDOWS" target="SYSTEM"                   parameter=""                note="get PAGE:id for chrome://bookmarks/ tab"/>
+      <Step action="SENDKEYS"    target="PAGE:{{bookmarksTabId}}"  parameter="{{title}}"       note="type bookmark title to filter results"/>
+      <Step action="READ"        target="PAGE:{{bookmarksTabId}}"  parameter=""                note="verify search results; AI reads the first matching title and URL"/>
+      <Step action="CLICKID"     target="PAGE:{{bookmarksTabId}}"  parameter="css:bookmark-item[role='listitem']" note="click first result; tab navigates to the bookmarked URL"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════       detect-locale  — read the browser’s active language tag into {{appLocale}}
+       BCP-47 language tag from navigator.language (e.g. “en-US”, “cs”, “de-DE”).
+       Bind result to {{appLocale}} for subsequent LocaleMap lookups.
+       ═══════════════════════════════════════════════════════════════ -->
+  <Scenario id="detect-locale" label="detect-locale" effect="read-only">
+    <Description lang="en">Read the browser’s active locale (BCP-47) and bind it to {{appLocale}}.</Description>
+    <Description lang="ai">
+      Execute navigator.language via CDP and capture the result into {{appLocale}}.
+      Use before any LocaleMap lookup: GET /api/appTemplates/{app}/scenarios/{id}/localeMap?lang={{appLocale}}
+    </Description>    <Parameters>
+      <Param name="tabId" type="string" required="true"
+             note="CDP page target handle; auto-bound by intro scenario"/>
+    </Parameters>    <Steps>
+      <Step action="CDP_EXECUTE" target="PAGE:{{tabId}}" parameter="navigator.language" bind="appLocale"
+            note="returns BCP-47 tag e.g. en-US; stored in {{appLocale}}"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════       teardown-navigate-blank  — navigate to blank page (reset without closing)
        ═══════════════════════════════════════════════════════════════════ -->
   <Scenario id="teardown-navigate-blank" effect="changes-page">
-    <description lang="en">Navigate to about:blank (clear page state without closing tab).</description>
-    <steps>
-      <step action="CDP_NAVIGATE" target="PAGE:{{tabId}}" parameter="about:blank"
-            note="navigates to blank page via CDP; tab remains open"/>
-    </steps>
+    <Description lang="en">Navigate to about:blank (clear page state without closing tab).</Description>
+    <Steps>
+      <Step action="CDP_NAVIGATE" target="PAGE:{{tabId}}" parameter="about:blank" note="navigates to blank page via CDP; tab remains open"/>
+    </Steps>
   </Scenario>
 
 </Scenarios>

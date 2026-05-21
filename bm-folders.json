@@ -1,0 +1,1 @@
+﻿{"jsonrpc":"2.0","id":111,"result":{"id":"1303","success":true,"command":"EXEC","result":"[{\"id\":\"0\",\"title\":\"\",\"childCount\":2},{\"id\":\"1\",\"title\":\"Bookmarks bar\",\"parentId\":\"0\",\"childCount\":0},{\"id\":\"2\",\"title\":\"OstatnÃ­ zÃ¡loÅ¾ky\",\"parentId\":\"0\",\"childCount\":0}]"}}

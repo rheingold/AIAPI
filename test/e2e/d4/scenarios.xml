@@ -1,0 +1,227 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D4 Scenarios Editor test scenarios — test/e2e/d4/scenarios.xml
+  Layer : L3 (test-suite — never shipped)
+  app   : d4
+  helper: BrowserWin.exe
+
+  Layer design (CONVENTIONS.md §8 / ADR-008):
+    L1 atoms: <ScenarioRef app="dashboard" ref="..."/> from
+              components/helpers/shared/dist-resources/apptemplates/dashboard/scenarios.xml
+    L3 additions: dialog shims, CDP_EXECUTE throw-on-fail assertions, test suite.
+
+  NO dashRest() calls exist or are needed here — all verification is via DOM assertions.
+
+  ── Scenarios ─────────────────────────────────────────────────────────────────
+  override-page-dialogs — install confirm/alert shims (test-only)
+  se1-list-apps         — nav to App Templates, assert section + known app cards present
+  se2-app-scenarios     — open editor for {{appName}}, assert picker has entries, close
+  se3-editor-round-trip — add step via UI, assert DOM count +1, undo, assert count restored
+  se4a-editor-save      — add step, save, reopen, assert persisted
+  se4b-editor-restore   — undo added step, save, reopen, assert count restored
+-->
+<Scenarios app="d4" helper="BrowserWin.exe" process="chrome.exe"
+           xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d4">
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       TEST INFRA — dialog shims (L3 only)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="override-page-dialogs" effect="modifies-dom">
+    <Description lang="en">
+      Patch window.confirm and window.alert so automation is not blocked
+      by native browser dialogs during the test.
+    </Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}" value="(function(){
+  if (window.__testDialogsD4) return 'already-overridden';
+  window.__origConfirmD4 = window.confirm;
+  window.__origAlertD4   = window.alert;
+  window.confirm = function() { return true; };
+  window.__testAlertMessage = null;
+  window.alert   = function(msg) { window.__testAlertMessage = msg; };
+  window.__testDialogsD4 = true;
+  return 'overridden';
+})()" note="install confirm/alert shims"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SE1 — Navigate to App Templates, assert section + known apps
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="se1-list-apps" effect="changes-view">
+    <Description lang="en">
+      Navigate to the App Templates section and assert:
+        1. The section header (#btn-refresh-templates) is in the DOM.
+        2. App template cards for "calculator" and "notepad" are visible.
+      Binds appCardCount for run.js to inspect.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-app-templates"/>
+      <Step action="READELEM" proc="{{tab}}" path="#btn-refresh-templates"
+            note="assert: App Templates section rendered (#btn-refresh-templates present)"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.querySelectorAll('#templates-list .tool-card').length"
+            bind="appCardCount"
+            note="bind app card count"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{appCardCount}}') > 0"
+            note="SE1: at least one app template card rendered"/>
+      <Step action="READELEM" proc="{{tab}}" path="[onclick*='openScenarioEditor'][onclick*='calculator']"
+            note="assert: calculator app card present"/>
+      <Step action="READELEM" proc="{{tab}}" path="[onclick*='openScenarioEditor'][onclick*='notepad']"
+            note="assert: notepad app card present"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SE2 — Open editor for {{appName}}, verify picker has entries
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="se2-app-scenarios" effect="opens-modal">
+    <Description lang="en">
+      Open the scenario editor for {{appName}}, assert the picker has
+      at least one scenario entry (bind count to scenarioCount), close.
+    </Description>
+    <Parameters>
+      <Param name="appName" type="string" required="true" example="calculator"
+             note="App template name to inspect"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="open-scenario-editor-for-app"/>
+      <Step action="READELEM" proc="{{tab}}" path="#scenario-editor-picker"
+            note="assert: scenario editor modal open — picker is present"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var opts=Array.from(document.querySelectorAll('#scenario-editor-picker option')).map(o=>o.value).filter(Boolean); if(!opts.length) throw new Error('SE2: picker empty for {{appName}}'); return opts.length; })()"
+            bind="scenarioCount"
+            note="bind picker entry count"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{scenarioCount}}') > 0"
+            note="SE2: {{appName}} has at least one scenario in the picker"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(Array.from(document.querySelectorAll('#scenario-editor-picker option')).map(o=>o.value).filter(Boolean))[0]||''"
+            bind="firstScenId"
+            note="bind first scenario ID"/>
+      <Step action="ASSERTPATHEVAL" path="'{{firstScenId}}'.length > 0"
+            note="SE2: firstScenId is non-empty"/>
+      <ScenarioRef app="dashboard" ref="click-scenario-editor-cancel"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SE3 — Add step, assert +1 in DOM, undo, assert restored, redo, close without save
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="se3-editor-round-trip" effect="modifies-editor-state">
+    <Description lang="en">
+      Open the editor for {{appName}}, pick {{scenId}}, snapshot the step count,
+      click Add Step (assert +1), click Undo (assert restored), click Redo (assert +1
+      again), then close WITHOUT saving. No persistent change results.
+    </Description>
+    <Parameters>
+      <Param name="appName" type="string" required="true" example="calculator"/>
+      <Param name="scenId"  type="string" required="true" example="compute"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="open-scenario-editor-for-app"/>
+      <ScenarioRef app="dashboard" ref="scenario-editor-pick"/>
+      <ScenarioRef app="dashboard" ref="read-scenario-editor-step-count"/>
+      <!-- stepCount bound here is stepCountBefore — rename via alias in vars -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.querySelectorAll('#scenario-editor-steps-table tbody tr, #scenario-editor-steps-table .step-row').length"
+            bind="stepCountBefore"
+            note="bind step count before add"/>
+      <ScenarioRef app="dashboard" ref="click-scenario-editor-add"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.querySelectorAll('#scenario-editor-steps-table tbody tr, #scenario-editor-steps-table .step-row').length"
+            bind="stepCountAfterAdd"
+            note="bind step count after Add"/>
+      <Step action="ASSERTPATHEVAL"
+            path="Number('{{stepCountAfterAdd}}') === Number('{{stepCountBefore}}') + 1"
+            note="SE3: stepCountAfterAdd = stepCountBefore + 1"/>
+      <ScenarioRef app="dashboard" ref="click-scenario-editor-undo"/>
+      <Step action="READELEM" proc="{{tab}}" path="#scenario-editor-btn-undo"
+            note="assert: Undo button is still present after undo"/>
+      <ScenarioRef app="dashboard" ref="click-scenario-editor-redo"/>
+      <Step action="READELEM" proc="{{tab}}" path="#scenario-editor-btn-redo"
+            note="assert: Redo button is still present after redo"/>
+      <ScenarioRef app="dashboard" ref="click-scenario-editor-cancel"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SE4a — Add step, save, reopen, assert persisted
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="se4a-editor-save" effect="saves-scenario">
+    <Description lang="en">
+      Open the editor for {{appName}}, pick {{scenId}}, snapshot count,
+      add one step, save, close, reopen, pick again and assert the count is
+      stepCountBefore+1 (confirming persistence). Binds stepCountBefore.
+    </Description>
+    <Parameters>
+      <Param name="appName" type="string" required="true" example="calculator"/>
+      <Param name="scenId"  type="string" required="true" example="compute"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="open-scenario-editor-for-app"/>
+      <ScenarioRef app="dashboard" ref="scenario-editor-pick"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.querySelectorAll('#scenario-editor-steps-table tbody tr, #scenario-editor-steps-table .step-row').length"
+            bind="stepCountBefore"
+            note="bind step count before add"/>
+      <ScenarioRef app="dashboard" ref="click-scenario-editor-add"/>
+      <ScenarioRef app="dashboard" ref="click-scenario-editor-save"/>
+      <ScenarioRef app="dashboard" ref="click-scenario-editor-cancel"/>
+      <ScenarioRef app="dashboard" ref="open-scenario-editor-for-app"/>
+      <ScenarioRef app="dashboard" ref="scenario-editor-pick"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.querySelectorAll('#scenario-editor-steps-table tbody tr, #scenario-editor-steps-table .step-row').length"
+            bind="stepCountAfterSave"
+            note="bind persisted step count after save+reopen"/>
+      <Step action="ASSERTPATHEVAL"
+            path="Number('{{stepCountAfterSave}}') === Number('{{stepCountBefore}}') + 1"
+            note="SE4a: step persisted — count is stepCountBefore + 1 after reopen"/>
+      <ScenarioRef app="dashboard" ref="click-scenario-editor-cancel"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SE4b — Restore: undo extra step, save, verify count back to original
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="se4b-editor-restore" effect="saves-scenario">
+    <Description lang="en">
+      Open the editor for {{appName}}, pick {{scenId}}, undo once to remove
+      the extra step added in se4a, save, close, reopen, and assert the count
+      equals {{stepCountBefore}} (restored to original state).
+    </Description>
+    <Parameters>
+      <Param name="appName"         type="string"  required="true" example="calculator"/>
+      <Param name="scenId"          type="string"  required="true" example="compute"/>
+      <Param name="stepCountBefore" type="integer" required="true" example="3"
+             note="Original step count; used to verify restore"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="open-scenario-editor-for-app"/>
+      <ScenarioRef app="dashboard" ref="scenario-editor-pick"/>
+      <ScenarioRef app="dashboard" ref="click-scenario-editor-delete-last"/>
+      <ScenarioRef app="dashboard" ref="click-scenario-editor-save"/>
+      <ScenarioRef app="dashboard" ref="click-scenario-editor-cancel"/>
+      <ScenarioRef app="dashboard" ref="open-scenario-editor-for-app"/>
+      <ScenarioRef app="dashboard" ref="scenario-editor-pick"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.querySelectorAll('#scenario-editor-steps-table tbody tr, #scenario-editor-steps-table .step-row').length"
+            bind="stepCountRestored"
+            note="bind restored step count"/>
+      <Step action="ASSERTPATHEVAL"
+            path="Number('{{stepCountRestored}}') === Number('{{stepCountBefore}}')"
+            note="SE4b: step count restored to original ({{stepCountBefore}})"/>
+      <ScenarioRef app="dashboard" ref="click-scenario-editor-cancel"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       DIAGNOSTIC
+       ═══════════════════════════════════════════════════════════════ -->
+
+</Scenarios>

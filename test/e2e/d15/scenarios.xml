@@ -1,0 +1,49 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D15 Scenario Execution — test/e2e/d15/scenarios.xml
+  app  : d15
+  Layer: L3 (test — never shipped)
+
+  ── Scenarios ─────────────────────────────────────────────────────────────────
+  sr5-legacy-run     POST /api/scenarios/run (legacy stub) → structured response
+  d15-static-suite   sr5 only
+
+  SR1–SR4, SR6, SR7 remain in JS:
+    SR1–SR4, SR7: PUT dynamic step arrays built from runtime-discovered
+      appName/scenarioId/originalSteps (cannot be expressed in XML).
+    SR6: GET /api/scenarios can return HTTP 500 when folder is absent;
+      XML HTTP_FETCH fails the step on non-2xx so graceful skip needs JS.
+  ─────────────────────────────────────────────────────────────────────────────
+-->
+<Scenarios app="d15" helper="BrowserWin.exe" process="chrome.exe"
+           xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d15">
+
+  <!-- ══ SR5: POST /api/scenarios/run (legacy stub) ═══════════════════════ -->
+  <Scenario id="sr5-legacy-run" effect="read-only">
+    <Description lang="en">POST /api/scenarios/run legacy stub — assert structured response with success field.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/scenarios/run" path="POST"
+            value="{&quot;scenarioPath&quot;:&quot;config/scenarios/dummy.json&quot;}"
+            bind="sr5Result" note="SR5: POST legacy scenarios/run"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.sr5Result); return typeof r?.success==='boolean'||r?.result?.success!==undefined; })()"
+            note="SR5: assert structured response with success field"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ══ d15-static-suite: sr5 only ══════════════════════════════════════ -->
+  <Scenario id="d15-static-suite" effect="test-suite">
+    <Description lang="en">D15 static REST check: sr5 legacy run. SR1–SR4,SR6,SR7 handled in JS (dynamic PUT arrays / graceful HTTP errors).</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef ref="sr5-legacy-run"/>
+    </Steps>
+  </Scenario>
+
+</Scenarios>
+

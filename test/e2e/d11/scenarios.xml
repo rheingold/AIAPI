@@ -1,0 +1,300 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D11 Security Audit Log + Filter Dry-Run scenarios � test/e2e/d11/scenarios.xml
+  app     : d11
+  helper  : BrowserWin.exe
+  process : chrome.exe
+  Layer   : L3 (test � never shipped)
+
+  �� Scenarios ��������������������������������������������������������������
+  sl1-security-log-baseline  GET /api/security/log � assert entries array + fields
+  sl2-security-log-pagination  GET with ?limit=2&offset=0 + offset=2
+  ft1-filter-allow           POST /api/filters/test � assert ALLOW
+  ft2-filter-deny            Add temp DENY rule � test � DELETE cleanup
+  ft3-filter-nomatch         POST /api/filters/test unknown proc � assert ALLOW
+  fb1-filter-bulk            GET filters � POST bulk same � GET again � same count
+  role1-scoped-deny          Add role-scoped DENY � test � DELETE � accept any verdict
+  aod1-allow-over-deny       Add DENY + ALLOW � test both � DELETE both
+  sl-ui-security-section     nav Security, assert all 8 DOM elements + ASSERTPATHEVAL
+  d11-suite                  chain sl1�aod1 (REST only)
+  diag-exec                  diagnostic CDP_EXECUTE
+  ��������������������������������������������������������������������������
+-->
+<Scenarios app="d11" helper="BrowserWin.exe" process="chrome.exe"
+           xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d11">
+
+  <!-- �� SL1: GET /api/security/log baseline ����������������������������� -->
+  <Scenario id="sl1-security-log-baseline" effect="read-only">
+    <Description lang="en">GET /api/security/log � assert entries array, total, offset, limit fields.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/security/log" path="GET"
+            bind="sl1Result" note="GET /api/security/log"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{sl1Result}}'); return Array.isArray(r?.entries) &amp;&amp; typeof r?.total==='number' &amp;&amp; typeof r?.limit==='number'; })()"
+            note="SL1: assert entries array, total and limit fields"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse('{{sl1Result}}'); return r?.total; })()"
+            bind="sl1Total" note="SL1: extract total entry count"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� SL2: GET /api/security/log pagination ��������������������������� -->
+  <Scenario id="sl2-security-log-pagination" effect="read-only">
+    <Description lang="en">GET /api/security/log with limit=2 and offset=2 � assert pagination fields.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/security/log?limit=2&amp;offset=0" path="GET"
+            bind="sl2Page0" note="GET page 0 (limit=2, offset=0)"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{sl2Page0}}'); return (r?.entries?.length??0) &lt;= 2; })()"
+            note="SL2: assert limit=2 respected on page 0"/>
+      <Step action="EVAL"
+            path="(()=>{ return JSON.parse('{{sl2Page0}}')?.entries?.length??0; })()"
+            bind="sl2Page0Count" note="SL2: extract page 0 entry count"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/security/log?limit=2&amp;offset=2" path="GET"
+            bind="sl2Page1" note="GET page 1 (limit=2, offset=2)"/>
+      <Step action="ASSERTPATHEVAL"
+            path="JSON.parse('{{sl2Page1}}')?.offset === 2"
+            note="SL2: assert page 1 offset=2"/>
+      <Step action="EVAL"
+            path="JSON.parse('{{sl2Page1}}')?.offset"
+            bind="sl2Page1Offset" note="SL2: extract page 1 offset"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� FT1: POST /api/filters/test � ALLOW ����������������������������� -->
+  <Scenario id="ft1-filter-allow" effect="read-only">
+    <Description lang="en">POST /api/filters/test with notepad.exe � assert verdict is present (likely ALLOW).</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/filters/test" path="POST"
+            value="{&quot;process&quot;:&quot;notepad.exe&quot;,&quot;helper&quot;:&quot;KeyWin&quot;,&quot;command&quot;:&quot;SENDKEYS&quot;,&quot;parameter&quot;:&quot;hello&quot;}"
+            bind="ft1Result" note="POST /api/filters/test for notepad.exe"/>
+      <Step action="ASSERTPATHEVAL"
+            path="typeof JSON.parse('{{ft1Result}}')?.verdict === 'string'"
+            note="FT1: assert verdict field is present and a string"/>
+      <Step action="EVAL"
+            path="JSON.parse('{{ft1Result}}')?.verdict"
+            bind="ft1Verdict" note="FT1: extract verdict value"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� FT2: POST /api/filters/test � DENY (add temp rule first) �������� -->
+  <Scenario id="ft2-filter-deny" effect="modifies-data">
+    <Description lang="en">Add temporary DENY filter rule, test dry-run � assert DENY, then DELETE rule.</Description>
+    <Parameters>
+      <Param name="testTag" type="string" required="true"  example="dogfood_1234" note="unique suffix for rule process name"/>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/filters" path="POST"
+            value="{&quot;action&quot;:&quot;deny&quot;,&quot;process&quot;:&quot;d11_denytest_{{testTag}}&quot;,&quot;helper&quot;:&quot;*&quot;,&quot;command&quot;:&quot;*&quot;,&quot;pattern&quot;:&quot;*&quot;,&quot;role&quot;:&quot;&quot;,&quot;description&quot;:&quot;d11_ft2_{{testTag}}&quot;}"
+            bind="ft2AddResult" note="POST temp DENY rule"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{ft2AddResult}}'); return !!(r?.filter?.id??r?.id); })()"
+            note="FT2: assert created rule has an id"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse('{{ft2AddResult}}'); return String(r?.filter?.id??r?.id); })()"
+            bind="ft2RuleId" note="FT2: extract created rule id"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/filters/test" path="POST"
+            value="{&quot;process&quot;:&quot;d11_denytest_{{testTag}}&quot;,&quot;helper&quot;:&quot;KeyWin&quot;,&quot;command&quot;:&quot;SENDKEYS&quot;,&quot;parameter&quot;:&quot;x&quot;}"
+            bind="ft2TestResult" note="test dry-run for deny-target process"/>
+      <Step action="ASSERTPATHEVAL"
+            path="JSON.parse('{{ft2TestResult}}')?.verdict === 'DENY'"
+            note="FT2: assert DENY verdict returned"/>
+      <Step action="EVAL"
+            path="JSON.parse('{{ft2TestResult}}')?.verdict"
+            bind="ft2Verdict" note="FT2: extract verdict"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/filters/{{ft2RuleId}}" path="DELETE"
+            bind="ft2DeleteResult" note="FT2: DELETE temp rule"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{ft2DeleteResult}}'); return r?.ok===true||r?.success===true||r?.deleted===true||!r?.error; })()"
+            note="FT2: assert DELETE succeeded"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� FT3: POST /api/filters/test � no-match (ALLOW) ����������������� -->
+  <Scenario id="ft3-filter-nomatch" effect="read-only">
+    <Description lang="en">POST /api/filters/test with unknown process � no rule matches � assert ALLOW.</Description>
+    <Parameters>
+      <Param name="testTag" type="string" required="true"  example="dogfood_1234" note="unique suffix for process name"/>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/filters/test" path="POST"
+            value="{&quot;process&quot;:&quot;d11_nomatch_{{testTag}}&quot;,&quot;helper&quot;:&quot;KeyWin&quot;,&quot;command&quot;:&quot;SET&quot;,&quot;parameter&quot;:&quot;xxx&quot;}"
+            bind="ft3Result" note="POST /api/filters/test � no-match process"/>
+      <Step action="ASSERTPATHEVAL"
+            path="JSON.parse('{{ft3Result}}')?.verdict === 'ALLOW'"
+            note="FT3: assert ALLOW verdict (no matching rule → default ALLOW)"/>
+      <Step action="EVAL"
+            path="JSON.parse('{{ft3Result}}')?.verdict"
+            bind="ft3Verdict" note="FT3: extract verdict"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� FB1: POST /api/filters bulk-replace round-trip ������������������ -->
+  <Scenario id="fb1-filter-bulk" effect="modifies-data">
+    <Description lang="en">GET filters � POST same filters as bulk body � GET again � same count.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/filters" path="GET"
+            bind="fb1GetResult" note="GET current filters"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse('{{fb1GetResult}}'); const arr=r?.filters??r?.data??(Array.isArray(r)?r:[]); return JSON.stringify({filters:arr}); })()"
+            bind="fb1BulkBody" note="FB1: build bulk body with current filters"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse('{{fb1GetResult}}'); const arr=r?.filters??r?.data??(Array.isArray(r)?r:[]); return arr.length; })()"
+            bind="fb1CountBefore" note="FB1: capture filter count before bulk"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/filters" path="POST"
+            value="{{fb1BulkBody}}" bind="fb1BulkResult" note="POST bulk-replace with same filters"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/filters" path="GET"
+            bind="fb1AfterResult" note="GET filters after bulk"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse('{{fb1AfterResult}}'); return (r?.filters??r?.data??(Array.isArray(r)?r:[])).length; })()"
+            bind="fb1CountAfter" note="FB1: extract post-bulk filter count"/>
+      <Step action="ASSERTPATHEVAL"
+            path="Number('{{fb1CountBefore}}') === Number('{{fb1CountAfter}}')"
+            note="FB1: assert filter count unchanged after bulk round-trip"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� ROLE1: Role-scoped DENY � test � DELETE ������������������������� -->
+  <Scenario id="role1-scoped-deny" effect="modifies-data">
+    <Description lang="en">Add role-scoped DENY rule � dry-run test (accept any verdict) � DELETE rule.</Description>
+    <Parameters>
+      <Param name="testTag" type="string" required="true"  example="dogfood_1234" note="unique suffix for rule"/>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/filters" path="POST"
+            value="{&quot;action&quot;:&quot;deny&quot;,&quot;process&quot;:&quot;d11_roledeny_{{testTag}}&quot;,&quot;helper&quot;:&quot;*&quot;,&quot;command&quot;:&quot;*&quot;,&quot;pattern&quot;:&quot;*&quot;,&quot;role&quot;:&quot;dogfood-d11-privileged&quot;,&quot;description&quot;:&quot;d11_role1_{{testTag}}&quot;}"
+            bind="role1AddResult" note="POST role-scoped DENY rule"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{role1AddResult}}'); return !!(r?.filter?.id??r?.id); })()"
+            note="ROLE1: assert created rule has an id"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse('{{role1AddResult}}'); return String(r?.filter?.id??r?.id); })()"
+            bind="role1RuleId" note="ROLE1: extract created rule id"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/filters/test" path="POST"
+            value="{&quot;process&quot;:&quot;d11_roledeny_{{testTag}}&quot;,&quot;helper&quot;:&quot;KeyWin&quot;,&quot;command&quot;:&quot;SENDKEYS&quot;,&quot;parameter&quot;:&quot;x&quot;}"
+            bind="role1TestResult" note="dry-run � caller has no role, so may see ALLOW or DENY"/>
+      <Step action="ASSERTPATHEVAL"
+            path="typeof JSON.parse('{{role1TestResult}}')?.verdict === 'string'"
+            note="ROLE1: assert a verdict was returned (any string)"/>
+      <Step action="EVAL"
+            path="JSON.parse('{{role1TestResult}}')?.verdict"
+            bind="role1Verdict" note="ROLE1: extract verdict"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/filters/{{role1RuleId}}" path="DELETE"
+            bind="role1DeleteResult" note="ROLE1: DELETE role-scoped rule"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{role1DeleteResult}}'); return r?.ok===true||r?.success===true||r?.deleted===true||!r?.error; })()"
+            note="ROLE1: assert DELETE succeeded"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� AOD1: ALLOW rule covers a DENY ���������������������������������� -->
+  <Scenario id="aod1-allow-over-deny" effect="modifies-data">
+    <Description lang="en">Add broad DENY + specific ALLOW � ALLOW process gets ALLOW � non-ALLOW gets DENY � DELETE both.</Description>
+    <Parameters>
+      <Param name="testTag" type="string" required="true"  example="dogfood_1234" note="unique suffix"/>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/filters" path="POST"
+            value="{&quot;action&quot;:&quot;deny&quot;,&quot;process&quot;:&quot;d11_broad_deny_{{testTag}}_*&quot;,&quot;helper&quot;:&quot;*&quot;,&quot;command&quot;:&quot;*&quot;,&quot;pattern&quot;:&quot;*&quot;,&quot;role&quot;:&quot;&quot;,&quot;description&quot;:&quot;d11_aod_deny_{{testTag}}&quot;}"
+            bind="aod1DenyResult" note="POST broad DENY rule"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{aod1DenyResult}}'); return !!(r?.filter?.id??r?.id); })()"
+            note="AOD1: assert broad DENY rule was created"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse('{{aod1DenyResult}}'); return String(r?.filter?.id??r?.id); })()"
+            bind="aod1DenyId" note="AOD1: extract DENY rule id"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/filters" path="POST"
+            value="{&quot;action&quot;:&quot;allow&quot;,&quot;process&quot;:&quot;d11_allow_proc_{{testTag}}&quot;,&quot;helper&quot;:&quot;*&quot;,&quot;command&quot;:&quot;*&quot;,&quot;pattern&quot;:&quot;*&quot;,&quot;role&quot;:&quot;&quot;,&quot;description&quot;:&quot;d11_aod_allow_{{testTag}}&quot;}"
+            bind="aod1AllowResult" note="POST specific ALLOW rule"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{aod1AllowResult}}'); return !!(r?.filter?.id??r?.id); })()"
+            note="AOD1: assert specific ALLOW rule was created"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse('{{aod1AllowResult}}'); return String(r?.filter?.id??r?.id); })()"
+            bind="aod1AllowId" note="AOD1: extract ALLOW rule id"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/filters/test" path="POST"
+            value="{&quot;process&quot;:&quot;d11_allow_proc_{{testTag}}&quot;,&quot;helper&quot;:&quot;KeyWin&quot;,&quot;command&quot;:&quot;SENDKEYS&quot;,&quot;parameter&quot;:&quot;x&quot;}"
+            bind="aod1TestAllow" note="test allow-proc � ALLOW rule should win"/>
+      <Step action="ASSERTPATHEVAL"
+            path="JSON.parse('{{aod1TestAllow}}')?.verdict === 'ALLOW'"
+            note="AOD1: assert ALLOW rule wins for allow-proc"/>
+      <Step action="EVAL"
+            path="JSON.parse('{{aod1TestAllow}}')?.verdict"
+            bind="aod1AllowVerdict" note="AOD1: extract verdict for allow-proc"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/filters/test" path="POST"
+            value="{&quot;process&quot;:&quot;d11_broad_deny_{{testTag}}_other&quot;,&quot;helper&quot;:&quot;KeyWin&quot;,&quot;command&quot;:&quot;SENDKEYS&quot;,&quot;parameter&quot;:&quot;x&quot;}"
+            bind="aod1TestDeny" note="test non-ALLOW proc � broad DENY applies"/>
+      <Step action="ASSERTPATHEVAL"
+            path="JSON.parse('{{aod1TestDeny}}')?.verdict === 'DENY'"
+            note="AOD1: assert broad DENY applies for non-ALLOW proc"/>
+      <Step action="EVAL"
+            path="JSON.parse('{{aod1TestDeny}}')?.verdict"
+            bind="aod1DenyVerdict" note="AOD1: extract verdict for deny-proc"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/filters/{{aod1DenyId}}" path="DELETE"
+            bind="aod1CleanDeny" note="AOD1: DELETE broad DENY rule"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/filters/{{aod1AllowId}}" path="DELETE"
+            bind="aod1CleanAllow" note="AOD1: DELETE specific ALLOW rule"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const d=JSON.parse('{{aod1CleanDeny}}'); const a=JSON.parse('{{aod1CleanAllow}}'); const ok=r=>r?.ok===true||r?.success===true||r?.deleted===true||!r?.error; return ok(d)&amp;&amp;ok(a); })()"
+            note="AOD1: assert both cleanup DELETEs succeeded"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� SL-UI: Security section � all 8 panel elements present ����������� -->
+  <Scenario id="sl-ui-security-section" effect="read-only">
+    <Description lang="en">
+      Navigate to the Security section and assert all 8 expected UI elements are
+      present in the DOM.
+    </Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.querySelector('[data-section=&quot;security&quot;]')?.click()"
+            note="click nav button for security section"/>
+      <Step action="WAIT" proc="" path="600" note="section load settle"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var ids=['#security-log-panel','#security-log-list','#security-log-count','#filter-search','#filter-rules-list','#btn-add-filter','#btn-save-filters','#btn-test-filter']; var missing=ids.filter(s=>!document.querySelector(s)); if(missing.length) throw new Error('D11 SL-UI: missing DOM elements: '+missing.join(', ')); return ids.length; })()"
+            bind="elemCount"
+            note="assert all 8 security section elements present"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{elemCount}}') === 8"
+            note="assert exactly 8 elements found"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� d11-suite: chains sl1�aod1 (REST only, no browser) �������������� -->
+  <Scenario id="d11-suite" effect="test-suite">
+    <Description lang="en">Full D11 REST chain: sl1�aod1. No browser required.</Description>
+    <Parameters>
+      <Param name="testTag" type="string" required="true"  example="dogfood_1234" note="unique tag for temp rules"/>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef ref="sl1-security-log-baseline"/>
+      <ScenarioRef ref="sl2-security-log-pagination"/>
+      <ScenarioRef ref="ft1-filter-allow"/>
+      <ScenarioRef ref="ft2-filter-deny"/>
+      <ScenarioRef ref="ft3-filter-nomatch"/>
+      <ScenarioRef ref="fb1-filter-bulk"/>
+      <ScenarioRef ref="role1-scoped-deny"/>
+      <ScenarioRef ref="aod1-allow-over-deny"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� DIAGNOSTIC ������������������������������������������������������� -->
+
+</Scenarios>

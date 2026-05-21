@@ -18,20 +18,24 @@
   ],
   "icon": "images/icon.png",
   "categories": [
+    "AI",
     "Other"
   ],
   "activationEvents": [
     "onStartupFinished"
   ],
   "main": "./dist/extension.js",
+  "bin": {
+    "aiapi-server": "./dist/start-mcp-server.js"
+  },
   "contributes": {
     "configuration": {
       "title": "AI UI Automation",
       "properties": {
         "aiAutomation.mcpPort": {
           "type": "number",
-          "default": 3457,
-          "description": "Port for MCP JSON-RPC server."
+          "default": 3467,
+          "description": "Port for MCP JSON-RPC server (VSIX). Dev server uses 3457/3458; keep these separate."
         }
       }
     },
@@ -75,6 +79,11 @@
     "publish:vsix": "vsce publish",
     "start:mcp": "node dist/start-mcp-server.js",
     "package:win": "PowerShell -ExecutionPolicy Bypass -File scripts/package-win.ps1",
+    "package:exe": "npm run compile && pkg . --output dist/release/aiapi-server.exe",
+    "package:service": "npm run package:exe && PowerShell -ExecutionPolicy Bypass -File build/service/package-installer.ps1",
+    "service:install": "PowerShell -ExecutionPolicy Bypass -File build/service/install-service.ps1",
+    "service:uninstall": "PowerShell -ExecutionPolicy Bypass -File build/service/uninstall-service.ps1",
+    "service:update": "PowerShell -ExecutionPolicy Bypass -File build/service/update-service.ps1",
     "dev:start:mcp": "npx ts-node components/server/src/start-mcp-server.ts",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile",
@@ -93,12 +102,15 @@
     "@vscode/vsce": "^3.7.1",
     "eslint": "^8.0.0",
     "jest": "^29.0.0",
+    "pkg": "^5.8.1",
     "ts-jest": "^29.0.0",
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@types/pg": "^8.20.0",
     "iconv-lite": "^0.7.2",
     "jsdom": "^24.1.3",
+    "pg": "^8.20.0",
     "ws": "^8.19.0"
   }
 }

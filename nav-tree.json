@@ -1,0 +1,490 @@
+{
+  "id": "",
+  "type": "ControlType.Window",
+  "name": "Kalkulačka",
+  "position": {
+    "x": 8,
+    "y": 68,
+    "width": 800,
+    "height": 666
+  },
+  "properties": {
+    "isEnabled": true,
+    "isOffscreen": false
+  },
+  "actions": [],
+  "children": [
+    {
+      "id": "AppIcon",
+      "type": "ControlType.Image",
+      "name": "",
+      "position": {
+        "x": 24,
+        "y": 74,
+        "width": 20,
+        "height": 20
+      },
+      "properties": {
+        "isEnabled": true,
+        "isOffscreen": false
+      },
+      "actions": []
+    },
+    {
+      "id": "AppName",
+      "type": "ControlType.Text",
+      "name": "Kalkulačka",
+      "position": {
+        "x": 56,
+        "y": 76,
+        "width": 57,
+        "height": 16
+      },
+      "properties": {
+        "isEnabled": true,
+        "isOffscreen": false
+      },
+      "actions": [
+        "setText"
+      ]
+    },
+    {
+      "id": "NavView",
+      "type": "ControlType.Custom",
+      "name": "",
+      "position": {
+        "x": 8,
+        "y": 97,
+        "width": 800,
+        "height": 637
+      },
+      "properties": {
+        "isEnabled": true,
+        "isOffscreen": false
+      },
+      "actions": [],
+      "children": [
+        {
+          "id": "TogglePaneButton",
+          "type": "ControlType.Button",
+          "name": "Otevřít navigaci",
+          "position": {
+            "x": 12,
+            "y": 106,
+            "width": 40,
+            "height": 36
+          },
+          "properties": {
+            "isEnabled": true,
+            "isOffscreen": false
+          },
+          "actions": [
+            "click"
+          ],
+          "children": [
+            {
+              "id": "PaneTitleTextBlock",
+              "type": "ControlType.Text",
+              "name": "",
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": true
+              },
+              "actions": [
+                "setText"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "",
+          "type": "ControlType.Group",
+          "name": "",
+          "position": {
+            "x": 8,
+            "y": 97,
+            "width": 800,
+            "height": 637
+          },
+          "properties": {
+            "isEnabled": true,
+            "isOffscreen": false
+          },
+          "actions": [],
+          "children": [
+            {
+              "id": "CalculatorExpression",
+              "type": "ControlType.Text",
+              "name": "Výraz je ",
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": true
+              },
+              "actions": []
+            },
+            {
+              "id": "CalculatorResults",
+              "type": "ControlType.Text",
+              "name": "Zobrazuje se 0",
+              "position": {
+                "x": 8,
+                "y": 178,
+                "width": 480,
+                "height": 97
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": [
+                "click"
+              ]
+            },
+            {
+              "id": "ScientificAngleOperators",
+              "type": "ControlType.Group",
+              "name": "Operátory úhlu",
+              "position": {
+                "x": 12,
+                "y": 276,
+                "width": 156,
+                "height": 41
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": []
+            },
+            {
+              "id": "MemoryPanel",
+              "type": "ControlType.Group",
+              "name": "Ovládací prvky paměti",
+              "position": {
+                "x": 12,
+                "y": 319,
+                "width": 398,
+                "height": 41
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": []
+            },
+            {
+              "id": "",
+              "type": "ControlType.List",
+              "name": "Panely s vědeckými operátory",
+              "position": {
+                "x": 8,
+                "y": 365,
+                "width": 480,
+                "height": 40
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": []
+            },
+            {
+              "id": "shiftButton",
+              "type": "ControlType.Button",
+              "name": "Inverzní funkce",
+              "position": {
+                "x": 12,
+                "y": 406,
+                "width": 93,
+                "height": 45
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": []
+            },
+            {
+              "id": "piButton",
+              "type": "ControlType.Button",
+              "name": "Pí",
+              "position": {
+                "x": 107,
+                "y": 406,
+                "width": 93,
+                "height": 45
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": [
+                "click"
+              ]
+            },
+            {
+              "id": "eulerButton",
+              "type": "ControlType.Button",
+              "name": "Eulerovo číslo",
+              "position": {
+                "x": 202,
+                "y": 406,
+                "width": 93,
+                "height": 45
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": [
+                "click"
+              ]
+            },
+            {
+              "id": "DisplayControls",
+              "type": "ControlType.Group",
+              "name": "Ovládací prvky zobrazení",
+              "position": {
+                "x": 297,
+                "y": 406,
+                "width": 187,
+                "height": 45
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": []
+            },
+            {
+              "id": "",
+              "type": "ControlType.Group",
+              "name": "Vědecké funkce",
+              "position": {
+                "x": 12,
+                "y": 453,
+                "width": 93,
+                "height": 277
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": []
+            },
+            {
+              "id": "invertButton",
+              "type": "ControlType.Button",
+              "name": "Převrácená hodnota",
+              "position": {
+                "x": 107,
+                "y": 453,
+                "width": 93,
+                "height": 45
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": [
+                "click"
+              ]
+            },
+            {
+              "id": "absButton",
+              "type": "ControlType.Button",
+              "name": "Absolutní hodnota",
+              "position": {
+                "x": 202,
+                "y": 453,
+                "width": 93,
+                "height": 45
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": [
+                "click"
+              ]
+            },
+            {
+              "id": "expButton",
+              "type": "ControlType.Button",
+              "name": "Exponenciální",
+              "position": {
+                "x": 297,
+                "y": 453,
+                "width": 93,
+                "height": 45
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": [
+                "click"
+              ]
+            },
+            {
+              "id": "modButton",
+              "type": "ControlType.Button",
+              "name": "Zbytek po dělení",
+              "position": {
+                "x": 392,
+                "y": 453,
+                "width": 92,
+                "height": 45
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": [
+                "click"
+              ]
+            },
+            {
+              "id": "openParenthesisButton",
+              "type": "ControlType.Button",
+              "name": "Levá závorka",
+              "position": {
+                "x": 107,
+                "y": 500,
+                "width": 93,
+                "height": 44
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": [
+                "click"
+              ]
+            },
+            {
+              "id": "closeParenthesisButton",
+              "type": "ControlType.Button",
+              "name": "Pravá závorka",
+              "position": {
+                "x": 202,
+                "y": 500,
+                "width": 93,
+                "height": 44
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": [
+                "click"
+              ]
+            },
+            {
+              "id": "factorialButton",
+              "type": "ControlType.Button",
+              "name": "Faktoriál",
+              "position": {
+                "x": 297,
+                "y": 500,
+                "width": 93,
+                "height": 44
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": [
+                "click"
+              ]
+            },
+            {
+              "id": "StandardOperators",
+              "type": "ControlType.Group",
+              "name": "Standardní operátory",
+              "position": {
+                "x": 392,
+                "y": 500,
+                "width": 92,
+                "height": 230
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": []
+            },
+            {
+              "id": "negateButton",
+              "type": "ControlType.Button",
+              "name": "Kladné, záporné",
+              "position": {
+                "x": 107,
+                "y": 686,
+                "width": 93,
+                "height": 44
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": [
+                "click"
+              ]
+            },
+            {
+              "id": "NumberPad",
+              "type": "ControlType.Group",
+              "name": "Číselná klávesnice",
+              "position": {
+                "x": 107,
+                "y": 546,
+                "width": 283,
+                "height": 184
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": []
+            },
+            {
+              "id": "DockPanel",
+              "type": "ControlType.Group",
+              "name": "Seznamy historie a paměti",
+              "position": {
+                "x": 488,
+                "y": 97,
+                "width": 320,
+                "height": 637
+              },
+              "properties": {
+                "isEnabled": true,
+                "isOffscreen": false
+              },
+              "actions": []
+            }
+          ]
+        },
+        {
+          "id": "Header",
+          "type": "ControlType.Text",
+          "name": "Režim kalkulačky Vědecká",
+          "position": {
+            "x": 56,
+            "y": 109,
+            "width": 76,
+            "height": 27
+          },
+          "properties": {
+            "isEnabled": true,
+            "isOffscreen": false
+          },
+          "actions": [
+            "setText"
+          ]
+        }
+      ]
+    }
+  ]
+}

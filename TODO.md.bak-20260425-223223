@@ -1,0 +1,1600 @@
+﻿# TODO — AIAPI
+
+> **Legend:** 🔴 blocking · 🟡 parallel-ready · ⚪ backlog · ✅ done
+> Architecture: [`docs/architecture/CODEBASE_MAP.md`](docs/architecture/CODEBASE_MAP.md)
+> Vocabulary: [`CONVENTIONS.md`](CONVENTIONS.md)
+> ADRs: [`docs/architecture/decisions/`](docs/architecture/decisions/)
+
+---
+
+## 📊 Status Snapshot — April 2026
+
+| ID  | Chapter                                        | State       | Key pending items                                      |
+|-----|------------------------------------------------|-------------|--------------------------------------------------------|
+| G-A | 🔴 Security Enforcement Gate                  | 🔴 blocking | auth bypass default, binary hash, caller roles wire    |
+| G-B | 🗄️ Auth Subsystem Wiring                      | 🔴 blocking | U0–U6 all pending                                      |
+| G-C | 🔒 Security Infrastructure (SecurityLib+HKDF) | 🔴 blocking | C++ DLL + HKDF session key not yet built               |
+| G-D | 🧹 KeyWin Purity + XML Self-Sufficiency       | 🟡 active   | ADR-009 + ADR-010; ASSERT step; RESET removal; d5 fix  |
+| S-1 | 🔐 Security & Configuration UI                | 🟡 active   | file-dialog, installer, auth UI panel, log pagination  |
+| S-2 | 🐕 Dogfooding — Self-Test Suite               | 🟡 active   | D1 dashboard test, D2 schema round-trip, D3 filter test|
+| S-3 | 🌐 Web Scraping & Network Tools               | 🟡 active   | fetch_webpage ✅; advanced network protocols pending   |
+| N-0 | 📦 VS Code Extension — VSIX & Marketplace     | ⚪ next     | activate() rewrite, vsce package, .vscodeignore, publisher |
+| N-1 | 📚 App Knowledge Base Extensions              | ⚪ next     | usr layer live, namespacing, embedding vectors         |
+| N-2 | 🎯 Unified Addressing & Input Model           | ⚪ next     | parser, filter engine update, remaining input verbs    |
+| N-3 | 🖥️ Browser Automation — Remaining            | ⚪ next     | alert handling, session auth, CDP/UIA DOM fallbacks    |
+| N-4 | 🔧 Runtime & Daemon Lifecycle                 | ⚪ next     | R1 config migration, minor daemon items                |
+| N-5 | 🍪 Web Fetch — Cookie & Auth Walls            | ⚪ backlog  | consent detection, session cookie jar, POST forms      |
+| N-6 | 🤖 Supervised Scenario Mode (AI agent UX)     | ⚪ backlog  | inline `scenario` body + `supervised` flag on run endpoint; pause-on-fail + session resume |
+| F-1 | 🔧📄 MS Office Automation                     | ⚪ future   | blocked — Office not installed on this machine         |
+| F-2 | 🚀 Deployment & Packaging                     | ⚪ future   | standalone exe, service, installer, Linux, macOS       |
+| F-3 | 🌍 Platform Portability                       | ⚪ future   | separate build machine required                        |
+
+---
+
+## G-D — KeyWin Purity + XML Self-Sufficiency (ADR-009, ADR-010)
+
+> **ADRs:** [ADR-009](docs/architecture/decisions/ADR-009-keywin-app-agnostic.md) · [ADR-010](docs/architecture/decisions/ADR-010-xml-assert-step-collapse-js-harnesses.md)
+> **Trigger (2026-04-18):** Code review found KeyWin.cs contains ~10 Calculator- and Notepad-specific
+> hardcodes (RESET command, `_buttonKeyMap`, `CalculatorResults` AutomationId, Notepad class detection,
+> `=`→Enter mapping) violating the rule that KeyWin must be application-agnostic.
+> Simultaneously, d5 and other JS harnesses contain assertions that belong in XML.
+
+### G-D.1 — Add ASSERT step to xmlScenarioLoader (ADR-010) ✅
+
+- [x] Add `action="ASSERT"` handler in `executeXmlScenario()` in `xmlScenarioLoader.ts`
+  - Form 1 (UIA/DOM path): `proc=` set → call `READELEM path=` on helper → compare `value=` with `op=`
+  - Form 2 (JS eval): no `proc` → boolean eval of `path=` expression (legacy, ASSERTPATHEVAL)
+  - `op=` aliases: `eq`/`neq`/`contains`/`startsWith`/`endsWith`/`matches`/`truthy`
+- [x] Add unit tests for ASSERT in `xmlScenarioLoader.test.ts` (27/27 ✅)
+- [x] Add `ASSERT` to `step action` enum in CONVENTIONS.md §8 layer rules table
+- [x] `ReadElementValue` in WinCommon.cs: added `/`-separated hierarchical tree-path walking
+- [x] D5 paths updated from flat `CalculatorResults` → hierarchical `NavView/CalculatorResults`
+- [x] D6 `path=""` documented: Notepad WinUI3 Document control has no AutomationId → whole-window READ is correct
+
+### G-D.2 — Fix d5/scenarios.xml: remove RESET, add inline assertions ✅
+
+- [x] Replace every `<step action="RESET">` with ESC SENDKEYS (clear)
+- [x] Inline ASSERTPATHEVAL after each READ (C3=32, C4=13, C5=5, C6=0)
+- [x] Use READELEM path="CalculatorResults" consistently (READ path="" was unreliable)
+- [x] Update test comment header: "assertions in XML, JS harness is bootstrap-only"
+- [x] **D5 3/3 ✅ (2026-04-19)**
+
+### G-D.3 — Collapse d5-keywin-calculator.js to 10-line bootstrap ✅
+
+- [x] Removed `parseResult()` and all JS `assert()` calls
+- [x] Reduced `run()` to: `waitReady()` → `runOk('d5', 'd5-suite')`
+- [x] `d5-suite` composite scenario chains C1–C7 in `d5/scenarios.xml`
+
+### G-D.4 — Remove app-specific hardcodes from KeyWin.cs
+
+- [ ] Remove `{RESET}` command entirely: `DetermineCommandType`, `ExtractParameter`, main switch block (lines 2189–2244), API schema entry
+- [ ] Remove `_buttonKeyMap` dictionary (lines 1405–1422) — Calculator-specific button→key fallback
+- [ ] Remove `=` → `{ENTER}` in `BuildSendKeysSequence()` (line 583) — app-specific
+- [ ] Remove `=` → `Enter` in the PostMessage path (line 1090) — app-specific duplicate
+- [ ] In `ReadDisplayText()`: remove `CalculatorResults` preferred-read branch (lines 1544–1594)
+- [ ] In `ReadDisplayText()`: remove "Display is" localization strip (lines 1643–1666)
+- [ ] In `ReadDisplayText()`: remove Notepad window-title detection ("Notepad", "Poznámkový blok") — keep only generic class-based detection (`Edit`, `RichEdit`, `Document` ControlType) if it doesn't require app title knowledge
+- [ ] Verify `CLICKID` on `clearButton` still works via UIA InvokePattern after `_buttonKeyMap` removal
+- [ ] Update API schema `RESET` description → remove from schema command list
+- [x] Rebuild KeyWin.exe and run d5 test suite ✅ (2026-04-20 — tree-path walking in WinCommon.cs)
+
+### G-D.5 — Fix `calculator/scenarios.xml` L1 intro scenario
+
+- [ ] Replace `<Step command="RESET">` in the `intro` scenario with `<Step command="CLICKID" target="{{hwnd}}" parameter="clearButton"/>` + WAIT
+
+### G-D.6 — Fix remaining dN-xxx.js harnesses that have in-JS assertions
+
+**2026-04-22 audit results (d1–d9):**
+- ✅ D1, D2, D4, D5, D6, D7 — clean bootstraps, all assertions in scenarios.xml
+- ✅ D1/D2/D5/D6/D7 refactored to use `test/e2e/_make-suite.js` parametric factory (saves ~15 lines/file)
+- ✅ D8 — `d8-ui-suite` (BrowserWin section) was **orphaned**; now wired into `d8-security-enforcement.js` run()
+- ✅ D8 `scenarios.xml` CDP_EXECUTE uses (sf4 count rows, sf5 read input.value) are ADR-008-compliant (read-only computed values, not UI driving)
+- ⚠️ **D3 VIOLATES ADR-008**: 312-line JS with `dashRest()` for A1/A2/A5/A6/A7REST/A9REST/A10/A11 — must move to `HTTP_FETCH + ASSERT` XML steps
+- ⚠️ **D9 VIOLATES ADR-008**: all HS1–HS8 tests are REST/MCP JS assertions; `d9/scenarios.xml` = placeholder only — must create real `HTTP_FETCH` scenarios and thin bootstrap
+
+- [ ] D3: move `dashRest()` assertion calls to `HTTP_FETCH` + `ASSERT` XML steps (A1, A2, A5, A6, A7 REST half, A9 REST half, A10, A11)
+- [ ] D9: rewrite `d9-helper-schema.js` as thin bootstrap; create `d9/scenarios.xml` with `HTTP_FETCH` steps for HS1–HS8 (listHelpers, getHelperSchema, helpers/reload, helpers/toggle)
+
+**2026-04-22 audit results (D10–D19):**
+- ✅ D10 (31 lines), D11 (31 lines) — thin bootstraps; fixed: `DASH_URL` and label now from `_make-suite.js`
+- ✅ D12 (127 lines) — JS kept for dynamic `LISTWINDOWS`-based handle discovery (`getCalcHandle`/`getNotepadHandle`) — legitimately in JS; `testClickName`/`testFill` are graceful/ok-only; label + DASH_URL fixed
+- ✅ D13 (85 lines) — thin orchestration delegating to scenarios.xml atoms; one inline `ok()` is graceful; label + DASH_URL fixed
+- ❌ **D14 (446 lines) VIOLATES ADR-008** — MSOfficeWin: all `assert()` calls in JS; must move to `HTTP_FETCH + ASSERT` XML steps; keep only graceful Office-not-present detection in JS
+- ❌ **D15 (253 lines) VIOLATES ADR-008** — Scenario Execution: multiple `dashRest()` REST mutations + `assert()` in JS; must rewrite with `HTTP_FETCH` scenarios
+- ❌ **D16 (245 lines) VIOLATES ADR-008** — Extended REST: every assertion is `dashRest()` in JS; pure `HTTP_FETCH` scenario file possible
+- ❌ **D17 (368 lines) VIOLATES ADR-008** — Users/Roles: all CRUD assertions in JS via `dashRest()`; move to `HTTP_FETCH` + `ASSERT` XML steps
+- ❌ **D18 (407 lines) VIOLATES ADR-008** — LibreOfficeWin: same as D14 but LibreOffice; assert() calls in JS
+- ❌ **D19 (358 lines) VIOLATES ADR-008** — Users/Roles DB backend: same as D17 but over DB adapter; move to XML
+
+**No-hardcoded-strings policy (2026-04-22):**
+- `_make-suite.js` factory now derives suite label from `__filename` (no label param)
+- All path `default=` values in `d2/scenarios.xml` d2-suite removed; paths now passed from JS harness via `__dirname`-derived bogus paths
+- D10–D13 DASH_URL de-duplicated; all now import from `_make-suite.DASH_URL`
+
+- [ ] D14: rewrite — keep Office-not-present guard in JS; move all LISTDOCS/NEWDOC/READ/WRITE/FORMAT/FOCUS assertions to d14/scenarios.xml `HTTP_FETCH` or KeyWin/MSOfficeWin scenarios
+- [ ] D15: rewrite — all scenario-execution REST assertions move to `d15/scenarios.xml`; JS becomes a ≤30-line bootstrap
+- [ ] D16: rewrite — pure HTTP_FETCH scenario file; JS becomes a ≤15-line bootstrap calling `d16-suite`
+- [ ] D17: rewrite — users/roles CRUD assertions move to `d17/scenarios.xml`; JS becomes a ≤30-line bootstrap
+- [ ] D18: rewrite — same as D14 but LibreOffice; move all assertions to `d18/scenarios.xml`
+- [ ] D19: rewrite — same as D17 but DB backend; move assertions to `d19/scenarios.xml`
+
+### G-D.7 — Every scenario must end with an ASSERT (policy audit)
+
+Every scenario in every `scenarios.xml` — including functional sub-scenarios (e.g. `nav-to-settings`, `restore-*`) and use-case leaf scenarios (e.g. `bc3-sendkeys`, `ia1-*`) — **must end with at least one `<step action="ASSERT">`** (or `ASSERTPATHEVAL`) that verifies the intended outcome.
+
+**2026-04-25 audit — per-file gap list (test/e2e only):**
+
+| Suite | Scenarios with NO inline assert | Status |
+|-------|--------------------------------|--------|
+| d1  | `diag-exec` (diagnostic — exempt) | ✅ all real scenarios covered |
+| d2  | `override/restore-page-dialogs`, `s2-s8`, `s13`, `s15`, `d2-suite` | ⚠️ most covered by READELEM/ASSERT inline; suites are orchestrators — exempt |
+| d3  | `override-page-dialogs` (no assert retval), `restore-page-dialogs` (no assert retval), `a9-auth-reload` (binds reloadedMode, no assert) | ❌ fix required |
+| d4  | `override/restore-page-dialogs`, `se3-se4b` | these have ASSERTPATHEVAL ✅ — confirmed via audit |
+| d5  | all covered ✅ | ✅ |
+| d6  | all covered ✅ | ✅ |
+| d7  | all covered ✅ | ✅ |
+| d8  | `sf2` (binds sfReadResult, no assert), `sf3` (binds treeStr, no assert), `sf4` (binds filterCount, no assert), `sf5` (binds fillVerify, no assert) | ❌ fix required |
+| d9  | placeholder stub — whole file is ADR-008 violation | ❌ see G-D.6 |
+| d10 | covered by EVAL chains ✅ | ✅ |
+| d11 | covered by EVAL chains ✅ | ✅ |
+| d12 | `qt1` (binds treeStr, no assert); `qt4-qt10` (input commands — no trailing liveness check) | ❌ fix required |
+| d13 | `bc3-sendkeys` (binds sendResult, no assert); `bc11-focus` (binds focusOk, no ASSERTPATHEVAL); `bc4-bc10` input commands (no trailing liveness READELEM) | ❌ fix required |
+| d14-d19 | all stubs — ADR-008 violation | ❌ see G-D.6 |
+
+**Fix tasks:**
+- [x] D8: add inline ASSERTPATHEVAL after sf2/sf3/sf4/sf5 bind steps *(2026-04-25)*
+- [x] D3: add ASSERTPATHEVAL on return value of `override-page-dialogs` and `restore-page-dialogs`; add ASSERTPATHEVAL on `reloadedMode` in `a9-auth-reload` *(2026-04-25)*
+- [x] D12: add EVAL after qt1 treeStr bind; add READELEM liveness check after qt4–qt10 *(2026-04-25)*
+- [x] D13: add ASSERTPATHEVAL to bc3-sendkeys (sendResult) and bc11-focus (focusOk); add READELEM liveness to bc4–bc10 *(2026-04-25)*
+- [ ] config/scenarios/**/*.xml — audit separately (G-D.7b below)
+- [ ] Add a linter rule or comment convention (`<!-- assert-required -->`) to flag future scenarios that omit a final assertion
+
+### G-D.11 — PascalCase all XML element names + parser case-insensitivity (ADR-011) *(2026-04-25)*
+
+> **ADR:** [ADR-011](docs/architecture/decisions/ADR-011-scenario-xml-casing-grammar.md)
+> **Rule:** All element (tag) names → PascalCase. All attribute names → camelCase.
+> Parser normalizes tag names to lowercase at load time (tolerance — not a license for mixed authoring).
+
+**Elements to rename across all XML files:**
+
+| Old | New |
+|---|---|
+| `<steps>` | `<Steps>` |
+| `<step>` | `<Step>` |
+| `<description>` | `<Description>` |
+
+**Files to update:**
+- [ ] `test/e2e/d*/scenarios.xml` (all 19 suites)
+- [ ] `config/scenarios/**/*.xml` (dashboard, calculator, notepad)
+- [ ] `apptemplates/**/*.xml` (shared + windows helper templates)
+
+**Parser:**
+- [ ] `components/server/src/scenario/xmlScenarioLoader.ts` — add tag-name normalization (`.tagName.toLowerCase()`) at the DOM query entry point so mixed-case files are tolerated
+- [ ] `CONVENTIONS.md §8` — update grammar table: PascalCase elements, camelCase attributes
+
+- [ ] Re-run full D1-D19 suite after all changes — confirm 0 failures
+
+### G-D.9 — Relocate `diag-exec` from per-suite XML to app template base *(2026-04-25)*
+
+> **Trigger:** D3/D4/D7 walkthrough revealed that every `d*/scenarios.xml` contains a
+> `<Scenario id="diag-exec">` with no assert and `effect="diagnostic"`. It is never
+> called by any suite orchestrator — dead weight from the dev phase of each suite.
+> Its `{{jsCode}}` param is a call-time parameter (reusable CDP shell), not a local var.
+>
+> **Problem:** copy-pasted in 7+ suites, adds noise, and its assert exemption is a
+> loophole. But the scenario itself *is* useful as an ad-hoc developer probe.
+>
+> **Decision (D7 walkthrough):** Rather than simply deleting it, move it to the
+> *app template base* so it is defined once and available to all apps that inherit
+> from the browser/chrome template. Per-suite copies are redundant and must be removed.
+
+- [ ] Confirm: grep `test/e2e/d*/scenarios.xml` for `id="diag-exec"` — none referenced by any `<ScenarioRef>` in any suite orchestrator
+- [ ] Remove `diag-exec` from every `test/e2e/d*/scenarios.xml` file (d1–d19)
+- [ ] Add `diag-exec` to `components/helpers/shared/dist-resources/apptemplates/chrome/scenarios.xml` — single canonical definition available to all chrome-type apps
+- [ ] For KeyWin-type suites (d5, d6, d12): equivalent `diag-keywin` (SENDKEYS + READ) in the `keywin` app template base (if it doesn't exist already)
+- [ ] After changes: run full D1-D19 suite — confirm 0 failures
+
+---
+
+### G-D.14 — D7 coverage gaps: Security CRUD, wizard fields, toolbar, tools/templates sections *(2026-04-25)*
+
+> **Trigger:** D7 walkthrough + dashboard HTML audit. D7's `bw13-fill-suite` only navigates to
+> the Security section, opens the Add Filter wizard, fills `#filter-description`, and presses ESC.
+> The following dashboard surface is completely untested.
+
+#### Security section — wizard fields (5 inputs never touched)
+- [ ] `bw13c-fill-verify` tests only `#filter-description`. Add scenarios to also FILL:
+  - `#filter-action` — SELECT ALLOW/DENY (use CDP_EXECUTE to set `.value`)
+  - `#filter-process` — INPUT process name (e.g. `calc.exe`)
+  - `#filter-helper` — SELECT helper (`KeyWin.exe`)
+  - `#filter-command` — SELECT command (`CLICKNAME`)
+  - Parameter pattern field (confirm selector)
+- [ ] After filling all fields: click the wizard submit/save button (confirm its id)
+- [ ] ASSERTPATHEVAL that the new filter row appears in `#filter-rules-list` (count > 0 after add)
+
+#### Security section — CRUD lifecycle
+- [ ] `btn-save-filters` — click Save All → assert REST confirms persistence (HTTP_FETCH `GET /api/security/config` → count includes new rule)
+- [ ] Edit an existing filter row → change one field → save → assert updated value in list
+- [ ] Delete a filter row → assert it disappears from `#filter-rules-list`
+
+#### Security section — toolbar (never touched)
+- [ ] `btn-validate-filters` — click → assert some feedback element renders (non-empty)
+- [ ] `btn-filter-table-toggle` — click → assert table mode class toggled (READELEM or CDP_EXECUTE)
+- [ ] `#filter-search` — FILL a term → assert list filters (visible row count changes)
+- [ ] `btn-export-filters` + `btn-import-filters` — at minimum assert buttons are present and clickable
+
+#### Security section — Test Rule panel (never touched)
+- [ ] FILL `#test-process` = `calc.exe`, select `#test-command` = `CLICKNAME`, FILL `#test-parameter` = `num5Button`
+- [ ] Click `btn-test-filter` → assert `#filter-test-result` becomes visible and non-empty
+
+#### Security section — Audit Log (never touched)
+- [ ] Expand `#security-log-panel` (CLICKID or SENDKEYS {ENTER} on summary)
+- [ ] Click Refresh → assert `#security-log-list` has content (non-empty text)
+- [ ] Toggle `#security-log-autorefresh` checkbox → assert checked state
+- [ ] Change `#security-log-pagesize` → assert log reloads
+
+#### Nav sections never visited by D7
+- [ ] `data-section="tools"` → assert `#tools-list` renders ≥1 tool card (non-empty)
+- [ ] `data-section="templates"` → assert `#templates-list` renders ≥1 template entry
+
+**Note:** `settings`=D2, `auth`=D3, `logs`=D1, `scenarios`=D4 — already owned.
+
+---
+
+### G-D.13 — D6 false-positive assertions: {CTRL+A} and {CTRL+Z} not reaching Win11 UWP Notepad editor *(2026-04-25)*
+
+> **Trigger:** D6 walkthrough — step-by-step READ revealed:
+> - After n5 (overwrite): window text is `"Hello DogfoodOverwrite Test"` — `{CTRL+A}` never selected
+>   all; overwrite was **appended**, not replacing.
+> - After n6 (undo ×5): text still `"Hello DogfoodOverwrite Test"` — `{CTRL+Z}` had no effect.
+> - n5 and n6 ASSERT steps pass as **false positives** because the concatenated string happens to
+>   contain both `"Overwrite Test"` and `"Hello Dogfood"`.
+>
+> **Root cause:** KeyWin is sending `{CTRL+A}` / `{CTRL+Z}` to the UWP window frame, not to the
+> inner RichEditD2DPT editor control. Win11 UWP Notepad requires focus to be on the inner text
+> control — the window-level `SENDKEYS` lands on the wrong element.
+
+#### Required fix
+1. Investigate whether KeyWin's `SENDKEYS HANDLE:<hwnd>` targets the window or the focused
+   descendant. If window-level, add `path="Document"` (or the correct AutomationId) to route keys
+   to the editor control.
+2. After fixing, verify n5: `readVal` must equal `"Overwrite Test"` (not include `"Hello Dogfood"`).
+3. Verify n6: `readVal` must equal `"Hello Dogfood"` (original content fully restored).
+4. Harden assertions to be **exclusive**, not just `contains`:
+   - n5: assert `!contains "Hello Dogfood"` AND `contains "Overwrite Test"`
+   - n6: assert `!contains "Overwrite Test"` AND `contains "Hello Dogfood"`
+5. Update `test/e2e/d6/scenarios.xml` accordingly.
+
+**Priority:** High — D6 appears green but tests nothing useful about select-all / undo.
+
+---
+
+### G-D.12 — Locale-invariant assertions: iron rule + escape-hatch locale map (ADR-012) *(2026-04-25)*
+
+> **Trigger:** D5 walkthrough found `cm-to-scientific` asserting `NavView/Header contains "deck"`
+> (Czech substring hack) and `cm-to-standard` asserting `contains "Standardn"` — both break
+> on any non-Czech locale. Numeric results (42, 120, 3) are fine; UI label strings are not.
+
+#### Iron rule (Option C)
+**Assertions on UI display strings are prohibited.** Mode/state confirmation must use structural
+UIA checks — presence/absence of locale-invariant AutomationId controls:
+
+| Instead of | Use |
+|---|---|
+| `NavView/Header contains "Standardn"` | `READ clearEntryButton` → assert non-empty (Standard-only control exists) |
+| `NavView/Header contains "deck"` | `READ factorialButton` → assert non-empty (Scientific-only control exists) |
+
+AutomationIds are locale-invariant by UIA spec. If an app breaks this contract, that is a bug in
+the app, not in the test.
+
+#### Escape hatch (Option A) — locale map in scenario XML
+When a UI label string assert is unavoidable (no structural alternative exists), the scenario
+**must** declare it via a standardised `<LocaleMap>` element and expose it as a queryable
+parameter. Grammar:
+
+```xml
+<Scenario id="my-scenario">
+  <Parameters>
+    <Param name="modeLabel" type="string" required="false" default="Standard"
+           localeMap="my-scenario.modeLabel"/>
+  </Parameters>
+  <LocaleMap param="modeLabel">
+    <Locale lang="en" value="Standard"/>
+    <Locale lang="cs" value="Standardní"/>
+    <Locale lang="de" value="Standard"/>
+    <Locale lang="fr" value="Standard"/>
+  </LocaleMap>
+  ...
+</Scenario>
+```
+
+Rules:
+- `localeMap="scenarioId.paramName"` — globally unique dotted key, queriable via MCP
+- The `<LocaleMap>` default (the `<Param default=...>` value) must be the `en` value
+- An AI agent may resolve the correct locale value by:
+  1. Calling a standardised `detect-locale` shared scenario (see below) to get `{{appLocale}}`
+  2. Querying `GET /api/appTemplates/{app}/scenarios/{id}/localeMap?param=modeLabel&lang={{appLocale}}`
+     → server returns the resolved string → pass as parameter
+
+#### Standardised locale detection
+A shared atom `detect-locale` (in `apptemplates/shared/scenarios.xml` or per-helper):
+- For UIA apps: `READ` the window's `CurrentCulture` UIA property or run a known locale-exposing
+  shell command via `LAUNCH`
+- For browser apps: `CDP_EXECUTE "navigator.language"` → bind `{{appLocale}}`
+- Returns ISO 639-1 code (`en`, `cs`, `de`, …)
+
+#### XML file encoding declaration
+Each scenarios.xml that contains a `<LocaleMap>` with non-ASCII locale strings **must** declare
+its encoding in the XML prolog:
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+```
+(already required by ADR-011; reiterated here as a hard prerequisite for `<LocaleMap>` content)
+
+#### Tasks
+- [ ] Fix D5 `cm-to-standard` and `cm-to-scientific`: replace header-label asserts with structural
+      `READ clearEntryButton` / `READ factorialButton` presence checks — re-run D5, confirm pass
+- [ ] Design `<LocaleMap>` / `<Locale>` element grammar in CONVENTIONS.md §8 and `scenarios.xsd`
+- [ ] Implement `xmlScenarioLoader.ts` `<LocaleMap>` parser: extract map at load time, expose via
+      `GET /api/appTemplates/{app}/scenarios/{id}/localeMap?param=&lang=` REST endpoint
+- [ ] Write `detect-locale` shared atom for BrowserWin (CDP `navigator.language`) and KeyWin
+      (UIA `CurrentCulture` or `cmd /c echo %LANG%`)
+- [ ] Linter: error if `ASSERT value=` contains a non-numeric string and no `localeMap=` is declared
+- [ ] CONVENTIONS.md §8: document iron rule + escape-hatch pattern + `localeMap=` attribute
+
+### G-D.7b — ASSERT audit: config/scenarios/*.xml
+- [ ] Audit `config/scenarios/dashboard/scenarios.xml`, `config/scenarios/calculator/scenarios.xml`, `config/scenarios/notepad/scenarios.xml` for missing trailing ASSERTs (separate task — production scenarios, not test layer)
+
+### G-D.8 — Behavioral-effect assertions for dashboard-touching scenarios *(2026-04-25)*
+
+> **Trigger:** D2 walkthrough revealed that UI round-trip checks (write→DOM-read-back) do not prove
+> the server *acts* on the changed setting. A setting can persist to disk and yet be ignored by the
+> running process — which a DOM assertion can never detect.
+>
+> **Policy:** Every scenario that mutates a dashboard setting that influences server behavior must
+> include a second-stage assertion that confirms the SOFTWARE BEHAVES DIFFERENTLY as a result.
+
+**Required behavioral probes (one per setting category):**
+
+| Setting | Behavioral assertion |
+|---|---|
+| `setting-log-level` → `warn` | After save: POST a request that would emit an INFO log; `GET /api/logs` → assert no new INFO entry appeared |
+| `setting-require-signature` → `true` | After save: attempt to run an unsigned scenario via REST → assert response is a 403 / error (auth gate active) |
+| `setting-require-os-enforcement` → `true` | After save: attempt a tool call without OS-level auth → assert rejected |
+| `setting-helper-paths` → bogus path | After save: `GET /api/status` → assert `helpers.count` dropped to 0 (server rescanned and found nothing); restore real path → count recovers |
+| `setting-scenarios-path` → bogus path | After save: `GET /api/appTemplates` → assert list empty or error; restore → list returns |
+| `setting-token-expiry` → 1 (min) | After save + generate token: decode JWT exp claim → assert expiry ≈ 1 min from now |
+| `setting-port` (MCP port change) | After save + server restart: assert MCP endpoint responds on new port; restore old port |
+| Working directory change | After click-change-dir: `GET /api/settings` → assert `workingDirectory` field matches new value |
+
+**Implementation notes:**
+- All probes must be added as trailing XML steps inside the same scenario that performs the mutation
+- Restore must always follow the behavioral probe before the scenario ends (idempotency)
+- Server-restart probes require a `WAIT` after restart and a subsequent `HTTP_FETCH /health status=ok` liveness check
+- Where a restart is too expensive, use `GET /api/settings` + `EVAL` to cross-check the persisted value instead
+- Tag each new scenario with `effect="mutates-server-config"` so the linter (G-D.7 policy) can exempt them from the current "ends-with-restore" rule
+
+---
+
+## Q-2 — E2E Dogfood Coverage Gaps (all UI controls must have tests)
+
+> **Trigger:** D2 review revealed only ~5% of Settings UI controls are exercised.
+> **Goal:** every input, button, toggle, and visual component in every dashboard tab has a corresponding dogfood assertion.
+> **Current D2 gap:** covers only GET /api/settings field presence, one helper toggle, one no-op POST, stack-leak guard.
+
+### D2 — Settings UI — MISSING COVERAGE
+
+**Known bugs fixed this session:**
+- `lastExecValue()` in `_scenario-runner.js` filtered on `'EXEC'` only, silently missing all `CDP_EXECUTE` step results — FIXED.
+- `setting-scenarios-path` was saved by the server but ignored by `resolveAppTemplateRoots()` — the setting had zero behavioral effect — FIXED: `resolveAppTemplateRoots()` now prepends the configured path.
+- S6 test was saving a nonsense path then doing no behavioral assertion, so it always passed regardless of whether the server used the value — FIXED: S6 now saves a bogus path, asserts `validate` returns `error` for the scenarios check, restores the real path, asserts `validate` no longer errors.
+
+**Coverage requirements — each item below requires a passing dogfood assertion before D2 can be considered done:**
+- [x] `setting-scenarios-path`: save bogus → validate error; save real → validate ok; browse button updates field
+- [x] `setting-log-level`: change → save → REST confirms; reload cancels unsaved change
+- [ ] `setting-port` and `setting-dashboard-port`: assert read-back matches REST (read-only display; no save needed; assert DOM value matches GET /api/settings)
+- [ ] `setting-token-expiry`: type value → save → GET /api/settings confirms round-trip
+- [ ] `setting-helper-paths`: type value → save → read back; browse button updates field
+- [ ] `setting-security-path`: bogus → validate error; real → ok; browse button
+- [ ] `setting-session-dir`: type value → save → read back; browse button
+- [ ] `setting-public-key` / `setting-private-key`: browse button updates field; validate reports present/missing
+- [ ] `setting-require-signature` (checkbox): toggle → save → REST confirms; toggle back
+- [ ] `setting-allow-unsigned-scenarios` (checkbox): toggle → save → REST confirms; toggle back
+- [ ] `setting-require-os-enforcement` (checkbox): toggle → save → REST confirms; toggle back
+- [ ] `#btn-validate-config`: click → assert checks array non-empty with status fields in DOM
+- [ ] **Working directory** — type a new path → verify REST reflects it; press "Change" button → verify; restore original
+- [ ] **Scan for helpers** button → assert helper list returned; verify log entry via GET /api/logs
+- [ ] **Reload helpers** button → assert helpers/reload returns success:true; check helpers list
+- [ ] **Per-helper panel** (min. BrowserWin + KeyWin): commands list displayed; schema endpoint returns valid JSON; disable → confirm → re-enable → confirm
+- [ ] **Cancel / Reload** — mutate a field → Cancel → confirm value reverted
+
+### Live Logs tab — NO TESTS AT ALL
+
+- [ ] Logs tab: open → assert log lines visible in DOM
+- [ ] Filter checkboxes: uncheck INFO → INFO lines disappear; re-check → reappear
+- [ ] Clear logs button → DOM log list emptied
+- [ ] Export logs button → download triggered or content returned
+
+### D3 / D10 — audit same completeness for Auth UI and Server Foundations tabs
+
+---
+
+## UX Finetuning Backlog (non-blocking, pre-release polish)
+
+- [ ] **Menu order**: "Settings" first, "Live Logs" last (currently reversed)
+- [ ] **Settings — Server control**: add Restart server button; add orange "Regenerate Security Wizard" button (disabled outside admin mode) to redo full security setup (keys, passwords, binary hashes)
+- [ ] **Quick Actions cleanup**: keep only "Enter Admin Mode" bottom-left; move "Restart server" → Settings; move "Clear logs / Export logs" → Logs tab; remove the rest
+- [ ] **Working directory input**: replace overflowing bespoke component with a standard CSS `<input type="text">` matching all other inputs on the same page
+
+---
+
+# PART I — BLOCKING (v1.0 gate items)
+
+---
+
+## G-A — 🔴 Security Enforcement Gate
+
+> Must complete before Windows 1.0 package is cut.
+
+### G-A1 — Remove `SKIP_SESSION_AUTH` default bypass 🔴
+- [ ] In `HelperCommon.cs` `RunAuthHandshake(skipAuth)`: change callers so `skipAuth = false`
+  unless `SKIP_SESSION_AUTH=true` env var is **explicitly set by the operator**.
+  - Handshake code is complete; the flag exists; the default just needs flipping.
+  - Production installers must **not** set this env var.
+  - Dev: set it in `.env` / `launch.json` as explicit opt-in.
+
+### G-A2 — SecurityLib.dll post-build hash 🟡
+- [ ] Add PowerShell step at end of `build-all.ps1` after SecurityLib.dll is built:
+  ```powershell
+  $hash = (Get-FileHash $secLibDest -Algorithm SHA256).Hash.ToLower()
+  # write to security/config.json under binaryHashes["SecurityLib.dll"]
+  ```
+  `sec_validate_signature_self()` already reads this value; needs population.
+
+### G-A3 — `_caller_user` / `_caller_roles` wire protocol 🟡
+- [ ] `HelperRegistry.ts`: append `_caller_user` + `_caller_roles` to every helper request JSON.
+  Values from `AuthMiddleware.getContext(req)`. Roles as comma-separated string.
+- [ ] `HelperCommon.cs` (all 3 listeners): extract these fields before dispatch; pass into
+  `SecurityLib.ValidateAction()` as `callerUser` / `callerRoles`.
+- [ ] `SecurityLib.cpp` `sec_validate_action()`: add `callerUser` / `callerRoles` params;
+  filter rules with `role` field skip when caller lacks that role.
+- [ ] Update P/Invoke wrapper in `HelperCommon.cs`.
+- [ ] Document reserved field names in `CONVENTIONS.md §4`.
+
+---
+
+## G-B — 🗄️ Auth Subsystem — Wiring & Completion
+
+> Architecture is fully designed (`src/auth/`, `src/settings/`) — what follows is wiring,
+> config completeness, dashboard UI, and test coverage.
+> PostgreSQL will be installed on request for DB-backed tests.
+
+### U0 — `AuthConfig` type completeness
+- [ ] Add `users.db: DbConfig` sub-field to `AuthConfig` in `src/auth/types.ts`
+  so the user store can use a **different** DB connection than the settings adapter.
+- [ ] Add `settings.source: 'json' | 'db'` + `settings.db: DbConfig` twin fields to
+  the top-level `DashboardSettings` shape so the settings backend is selectable
+  at install/setup time (not only at code level).
+- [ ] Ensure `SettingsManager` factory reads those fields and wires `DbSettingsAdapter`
+  or `JsonSettingsAdapter` accordingly — currently it always uses JSON.
+
+### U1 — Auth provider endpoint wiring
+> Both redirect-based providers are implemented but their HTTP routes are not registered.
+
+- [ ] Register routes in `httpServerWithDashboard.ts`:
+  - `GET  /api/auth/oauth/redirect`  → `OAuthProvider.getRedirectUrl()`
+  - `GET  /api/auth/oauth/callback`  → `OAuthProvider.authenticate({ oauthCode, oauthState })`
+  - `GET  /api/auth/saml/redirect`   → `SamlProvider.getRedirectUrl()`
+  - `POST /api/auth/saml/callback`   → `SamlProvider.authenticate({ samlResponse, samlRelayState })`
+  - `POST /api/auth/login`           → `PasswordAuthProvider.authenticate({ username, password })`
+  - `POST /api/auth/apikey`          → `ApiKeyAuthProvider.authenticate({ apiKey })`
+  - `POST /api/auth/refresh`         → `JwtService.verify()` → issue new token
+  - `POST /api/auth/logout`          → invalidate JWT (`jti` blocklist or short expiry)
+- [ ] `AuthMiddleware`: for every request extract and verify JWT if present;
+  fall back to per-request credential check if no JWT header.
+- [ ] Wire `AuthService.initAuth(cfg)` from `start-mcp-server.ts` so it selects the
+  correct `IAuthProvider` and `IUserStore` based on `auth.mode` and
+  `auth.users.storeSource` at startup.
+
+### U2 — `_internal` pseudo-helper filter enforcement
+> `Permission` type supports `helper: "_internal"` and `operation: "access" |
+> "settings_change" | "access_logs"` — but `securityFilter.ts` does not yet enforce these.
+
+- [ ] `securityFilter.ts`: before dispatching `_internal` REST endpoints, evaluate
+  filter rules where `helper === "_internal"`:
+  - `access` → any `GET /api/_internal/*` read operation
+  - `settings_change` → any `POST/PUT/DELETE /api/_internal/*` or `POST /api/settings/*`
+  - `access_logs` → `GET /api/security/log`, `GET /api/session/*`
+- [ ] Default policy for `_internal`: DENY unless effective role has a matching ALLOW rule
+  (role `admin` gets full `*` by default at setup).
+- [ ] Expose `_internal` as a selectable "helper" in the Dashboard Security filter wizard.
+
+### U3 — Role-aware filter evaluation (depends on G-A3)
+- [ ] Dashboard: assign filter rule a `role` field via the wizard.
+- [ ] Test: user without role → rule skipped (default-deny takes over).
+- [ ] Test: user with role → rule applied.
+
+### U4 — DbUserStore + DbSettingsAdapter integration tests
+> PostgreSQL will be installed first; others follow as CI matrix jobs.
+
+- [ ] `npm install pg` (PostgreSQL driver)
+- [ ] Configure `config/dashboard-settings.json`:
+  `"auth": {"users": {"storeSource":"db","db":{"type":"postgresql",...}}}`
+- [ ] Verify `DbUserStore` creates tables on first run
+  (`aiapi_users`, `aiapi_roles`, `aiapi_user_roles`, `aiapi_apikeys`)
+- [ ] Test: create user → assign role → login via password → receive JWT →
+  call `GET /api/_internal/users` with JWT → round-trip verified
+- [ ] `DbSettingsAdapter`: same DB connection; `aiapi_settings` table; test get/set round-trip
+- [ ] Repeat tests for MSSQL, MySQL, Oracle when machines available
+- [ ] Test all 5 DB auth methods for PostgreSQL:
+  - `password` (username + password in config)
+  - `certificate` (client TLS cert = settings-signing cert)
+  - `integrated` (Kerberos/SSPI on Windows domain)
+  - `impersonation` (Windows impersonation, MSSQL only)
+  - `constant` (raw connection string — documented as "abusable", warn in logs)
+
+### U5 — Auth provider tests
+- [ ] Unit tests: `PasswordAuthProvider` — correct password ✓, wrong ✗, locked user ✗
+- [ ] Unit tests: `ApiKeyAuthProvider` — valid key ✓, revoked key ✗
+- [ ] Unit tests: `JwtService` — issue / verify / expiry / tamper detection
+- [ ] Unit tests: `AuthService` — factory selects correct provider per `auth.mode`
+- [ ] Integration test: `OAuthProvider` — mock IdP returns code → token → userInfo →
+  user provisioned → JWT; `usernamePath` + `groupsPath` extraction verified
+- [ ] Integration test: `SamlProvider` — mock IdP POSTs SAMLResponse → signature verified
+  → user provisioned → JWT; `samlify` absent → fallback warning logged
+- [ ] Integration test: `CertificateAuthProvider` — mTLS handshake → CN extracted → user
+  looked up → JWT; invalid cert → 401
+- [ ] Verify `auth.debugExternalAuth = true` writes sanitised req/resp bodies to logger
+  (credentials redacted)
+
+### U6 — Dashboard auth configuration UI
+- [ ] New **"Auth"** panel (or sub-tab of Settings) with:
+  - Auth mode selector: None / Password / API Key / Certificate / OAuth / SAML
+  - JWT settings: enabled toggle, expiry minutes, secret (masked)
+  - Password settings: bcrypt rounds
+  - OAuth form: clientId, clientSecret (masked), authorizationUrl, tokenUrl,
+    userInfoUrl, scope, callbackUrl, usernamePath, groupsPath, PKCE toggle
+  - SAML form: entryPoint, issuer, SP cert (upload), IdP cert (upload),
+    privateKey (masked), callbackUrl, usernamePath, groupsPath, signatureAlgorithm
+  - Debug external auth toggle
+  - User store source: JSON (path field) / DB (shows DbConfig form)
+  - DB form: engine selector, host, port, database, auth method + fields
+- [ ] **"Users & Roles"** sub-panel (requires `auth.mode ≠ "none"`):
+  - User list: username, enabled toggle, roles, API key count
+  - Inline "Add user" form: username, password (masked), initial roles
+  - Role list: name, description, permissions matrix
+  - API key management per user: generate (shown once), revoke
+- [ ] `POST /api/auth/config` — save auth section of dashboard settings (re-sign JSON)
+- [ ] Docs: add auth config example to `docs/guides/SERVER_GUIDE.md`
+
+---
+
+## G-E — 🔏 PKI Signing Chain (Scenarios, Trees, Binaries)
+
+> **Links to existing items:** G-A2 (SecurityLib.dll post-build hash), G-A3 (caller
+> roles wire), G-C (SecurityLib API), S-1 `setting-require-signature` checkbox,
+> `setting-allow-unsigned-scenarios` checkbox.
+
+### Design Principles
+- **Minimum terminals:** re-use X.509 concepts everywhere; no custom crypto.
+- **4-level chain:** Root CA → Open-source intermediate → Enterprise intermediate → Leaf.
+  Deployments may skip intermediate levels; chain depth is 1…4.
+- **Objects signed:** `.exe` binaries (already hash-tracked in G-A2), `scenarios.xml`,
+  `tree.xml`; future: compiled `embeddings/*.bin`.
+- **Bundled root:** a default trusted root CA cert is bundled in the app and in SecurityLib;
+  operators may add additional trusted roots via `security/config.json`.
+
+### Certificate Chain Tasks
+- [ ] Decide key format: RSA-4096 or ECDSA P-384 leaf certs (P-384 preferred — smaller).
+  Document in `docs/architecture/SECURITY_ARCHITECTURE.md`.
+- [ ] `tools/pki/` — PowerShell scripts to generate the full 4-cert chain for development:
+  - `New-AIAPIRootCA.ps1` — self-signed root
+  - `New-AIAPIIntermediate.ps1` — intermediate (one or two hops)
+  - `New-AIAPILeafCert.ps1` — per-team leaf signing cert
+- [ ] Store certs in `security/pki/` (PEM); add to `.gitignore` (live keys never committed).
+- [ ] `SignatureVerificationManager.ts` (new file):
+  - `verifyXmlFile(path, certChain)` — detached CMS / XMLDSig signature
+  - `verifyExecutable(path)` — wrap G-A2 `sec_validate_signature()` + cert chain check
+  - `getTrustChain(leafCert)` — build and validate the chain up to bundled root
+
+### Event Hook API
+- [ ] `SignatureVerificationManager` emits typed events:
+  ```ts
+  onSignatureWarning(detail: { path: string; reason: string }): void
+  onSignatureError(detail: { path: string; reason: string }): void
+  onUnsignedLoaded(detail: { path: string; type: 'scenario'|'tree'|'exe' }): void
+  ```
+- [ ] Per-deployment UI dispatch (no new terminals — adapters only):
+  - **VSCode extension**: `vscode.window.showWarningMessage` / `showErrorMessage`
+  - **CLI standalone**: `process.stderr.write()`
+  - **Windows Service**: Windows Event Log via `SecurityLib.LogEvent()`
+  - **Linux daemon**: `syslog(LOG_WARNING, ...)`
+
+### Wire to Existing Settings
+- [ ] `setting-require-signature` (S-1 checkbox, already tracked): when ON, unsigned
+  files MUST be rejected (`onSignatureError` fires; load aborted).
+- [ ] `setting-allow-unsigned-scenarios` (S-1 checkbox, already tracked): when ON,
+  `onUnsignedLoaded` fires as warning only; load continues.
+- [ ] `security/config.json` new key `"trustedRoots": ["path/to/extra-root.pem"]` —
+  merged with bundled root in `SignatureVerificationManager`.
+
+### Integration Points
+- [ ] `XmlScenarioLoader.load()` — call `verifyXmlFile(scenarioPath, chain)` before parse;
+  emit `onUnsignedLoaded` if no sig, `onSignatureError` if invalid sig.
+- [ ] `XmlScenarioLoader.loadTree()` equivalent for `tree.xml`.
+- [ ] `HelperRegistry.ts` helper startup — call `verifyExecutable(exePath)` before spawn;
+  `onSignatureError` → refuse to start helper.
+- [ ] `sec_validate_signature()` in SecurityLib.cpp (G-A2): extend to accept optional
+  PEM cert chain; verify that the signing cert chains to a trusted root.
+- [ ] Dashboard Security tab — new row in audit log for every signature event;
+  "Signing" sub-panel showing chain status per loaded file.
+- [ ] Unit tests: valid chain passes; expired leaf → error; untrusted root → error;
+  unsigned file → warning-or-deny depending on setting.
+
+---
+
+## G-C — 🔒 Security Infrastructure (SecurityLib.dll + Helper HKDF Auth)
+
+> SecurityLib provides the crypto primitives (`sec_load`, `sec_hkdf_sha256`,
+> `sec_validate_action`) that the Helper HKDF Auth handshake depends on.
+> These two topics are inseparable and tracked here together.
+
+### Why a Native C++ DLL
+- Must work cross-platform (future Linux helpers in other languages)
+- C# helpers load it via P/Invoke; future Python/Node helpers via ctypes/N-API
+- DLL's own hash stored in `security/config.json` — helpers verify DLL hash BEFORE loading
+
+### SecurityLib API
+
+```cpp
+int  sec_load(const char* configPath, const char* password);
+int  sec_validate_signature(const char* exePath);
+int  sec_validate_action(const char* action, const char* target,
+       const char* processName, const char* processPath,
+       const char* processHash, int processId,
+       const char* callerUser, const char* callerRoles);
+     // returns: SEC_ALLOW(1) | SEC_DENY(0) | SEC_ASK(2) | SEC_ERROR(<0)
+int  sec_hkdf_sha256(const uint8_t* ikm, int ikmLen,
+       const uint8_t* salt, int saltLen,
+       const char* info, uint8_t* out, int outLen);
+int  sec_get_session_key(uint8_t* outKey, int keyLen);
+void sec_unload();
+```
+
+### SecurityLib Implementation Tasks
+- [ ] Create `components/helpers/shared/src/security/SecurityLib.cpp` + `SecurityLib.h`
+- [ ] `sec_load()`: parse `security/config.json`, verify `config.json.sig` with embedded
+  public key, decrypt `private.key.enc` (PBKDF2 + AES-256-GCM)
+- [ ] `sec_validate_signature()`: SHA-256 the exe, compare to hash in config
+- [ ] `sec_validate_action()`: evaluate filter rules; include `callerUser` / `callerRoles`
+- [ ] `sec_hkdf_sha256()`: HKDF-SHA256 via Windows `BCryptKeyDerivation`
+- [ ] `sec_validate_signature_self()` — called at main() start; exit 77 on hash mismatch
+- [ ] Build as `.dll` (Windows) / `.so` (Linux/macOS) from build scripts
+- [ ] P/Invoke declarations in `HelperCommon.cs`
+- [ ] Store DLL's own SHA-256 in `security/config.json` (verified before loading)
+- [ ] Update `scripts/build-win-tools.ps1` to compile `SecurityLib.dll`
+
+### Enforcement Rule
+Every helper calls `sec_validate_action()` BEFORE executing any command.
+If `SEC_DENY` → return `{"success":false,"error":"SECURITY_FILTER_DENY"}` without executing.
+`SEC_ASK` → treat as DENY for now (future: OS dialog).
+MCP server ALSO applies filters for defense-in-depth.
+
+### Helper HKDF Auth Handshake
+
+```
+[Helper]                                  [MCP Server]
+  │  1. sec_validate_signature(selfPath)   │  (private.key.enc decrypted on startup;
+  │     — verify own exe + DLL hashes      │   password from user / Windows DPAPI)
+  │
+  ├── {"action":"_auth_hello",
+  │    "helperNonce":"<base64 32B>",
+  │    "exeHash":"<sha256-hex>",
+  │    "dllHash":"<sha256-hex>"}       ──> │  verify exeHash against config.json entry
+  │
+  │ <── {"action":"_auth",           <──   │  raw decrypted RSA private key (never on disk)
+  │      "pk":"<base64-pkcs8-raw>",
+  │      "serverNonce":"<base64 32B>",
+  │      "securityConfig":"<path>",
+  │      "helperExePath":"<path>"}
+  │
+  │  2. sec_load(pk_bytes, configPath)
+  │  3. HKDF(ikm=pk, salt=SHA256(serverNonce||helperNonce),
+  │        info="AIAPI-v1-session") → sessionKey [both sides derive same key]
+  │
+  ├── {"action":"_auth_ok"}           ──>  │  All further messages HMAC-signed
+```
+
+### Helper Auth Implementation Tasks
+- [x] `CertificateManager.ts`: `getRawPrivateKeyBytes()` — decrypted PKCS#8 bytes in memory
+- [x] `HelperRegistry.ts`: `HelperDaemon` has `startupPhase` / `readyPromise` /
+  `handleStartupMessage()` stub for full auth flow
+- [x] `HelperCommon.cs`: `RunAuthHandshake(skipAuth)` added; called in `--listen-stdin`
+  branch before `RunStdinListener()`
+- [ ] `HelperRegistry.ts`: complete exeHash verification + PK loading (requires SecurityLib)
+- [ ] `HelperRegistry.ts`: remove `MCP_SESSION_TOKEN`, `MCP_SESSION_SECRET`,
+  `SKIP_SESSION_AUTH` env vars once SecurityLib path is wired
+- [ ] All subsequent messages: `"hmac":"HMAC-SHA256(sessionKey, JSON-body)"`;
+  helper rejects messages with invalid HMAC
+- [ ] MCP server startup: prompt for password; optionally persist via Windows DPAPI
+  `ProtectedData.Protect(entropy:machineSID)` for restart-free operation
+
+
+---
+
+# PART II — ACTIVE SPRINT
+
+---
+
+## S-1 — 🔐 Security & Configuration UI
+
+**Goal:** User-friendly configuration, security management, and scenario editing.
+
+### Unit & Integration Test Coverage (current state)
+- [x] `wildcardMatch` — 19 tests (`src/utils/wildcardMatch.test.ts`)
+- [x] `xmlScenarioLoader` — 27 tests (`src/scenario/xmlScenarioLoader.test.ts`)
+  _jsdom v28 ESM-only deps → solved via `src/__mocks__/jsdom-mock.js` + `moduleNameMapper`_
+- [x] `Logger` — 18 tests (`src/utils/Logger.test.ts`)
+- [x] `filterEval` — 33 tests (`src/utils/filterEval.test.ts`)
+  _extracted `evaluateFilterRules()` from duplicate private loops_
+- [x] `securityFilter` — 40 tests (`src/server/securityFilter.test.ts`)
+  _admin-token bypass, advanced filter eval, read-only exemption, permissive default_
+- [x] MCP server integration — 39 tests (`src/server/mcpServer.integration.test.ts`)
+  _HTTP transport, JSON-RPC compliance, MCP core, tools/call, admin token API, filter wire_
+- [x] `SessionTokenManager` — 16 tests (`src/security/SessionTokenManager.test.ts`)
+- [x] MCP server perf — 7 tests (`src/server/mcpServer.perf.test.ts`)
+  _p95<200ms serial, 0 errors concurrent (20/50/100), memory growth <20MB/200 reqs_
+- [ ] **UI Tests** — dashboard using AIAPI itself (dogfooding): see S-2
+- [ ] **End-to-End Tests** — full workflow from UI to execution
+
+### Settings Tab
+- [x] Paths, ports, key files, helper search paths, session token expiry, log level
+- [x] Remember last browsed locations per field (localStorage)
+- [x] Helper Discovery: scan, list, enable/disable toggle, view schema popup
+- [ ] **Real native file/folder dialog integration (Windows API)**
+  (placeholder prompts today; needs WinAPI `GetOpenFileName` / `SHBrowseForFolder`)
+
+### Security Tab — Filters
+- [x] Filter wizard: action, process, helper, command (risk-grouped), pattern, live preview
+- [x] Quick-Edit table: inline select/input per cell, move-up/down, delete
+- [x] Binary hash / process path / window title criteria
+- [x] Pre-defined command template dropdown; parameter autocomplete from helper schemas
+- [x] Test filter dry-run; Validate All; Import / Export JSON
+- [x] `/regex/` and `/regex/i` pattern syntax in all pattern fields
+- [x] "Rules by Process" collapsible panel — groups active rules by process
+- [x] Security Audit Log panel — `GET /api/security/log`, auto-refresh 5s, colour-coded
+- [ ] Security audit log: add `?limit=N&offset=N` pagination;
+  persist events to rolling file log (survives server restarts)
+- [ ] XPath-like UI tree path filtering (future, requires N-2 first)
+- [ ] Office/Browser document structure filters (future)
+
+### Privileged Mode ✅
+- [x] Admin Session Token: time-limited, 15-min expiry, bypasses all filters
+- [x] Dashboard: "🔐 Enter Admin Mode", red warning banner, auto-logout
+- [x] Audit logging; whitelisted `/api/config/*`; `--emergency-admin-mode` failsafe
+- [x] Documented in [docs/specs/PRIVILEGED_MODE.md](docs/specs/PRIVILEGED_MODE.md)
+
+### Scenario Editor (Scenarios Tab)
+- [x] Tabular step editor: command / target / parameter / conditional / note fields
+- [x] Step reorder (↑↓), duplicate (🔀), undo/redo (Ctrl+Z/Ctrl+Y), history stack
+- [x] Save/load; import .json / XML; export .json / XML
+- [x] Metadata panel: helper, process, window title, linked assistant, binary checksum
+- [x] Auto-refresh App Templates list after save
+- [x] "Linked filter rules" sidebar per step — shows matching rules, create from step
+- [ ] **Create new template from UI** — "New Template" button/flow; currently no way to create a
+  fresh App Template entry without hand-editing XML or files on disk
+- [ ] **Create new scenario inside a template from UI** — "Add Scenario" action is missing in the
+  editor; user can only edit existing scenarios, not add new ones to the current template
+- [ ] **Column label fixes** — "Target" column header should read **"Target (Path)"**;
+  "Parameter" column header should read **"Param (Value)"**
+- [ ] **Command list refresh** — the `Command` dropdown is missing several valid step actions:
+  `ASSERT`, `ASSERTPATHEVAL`, `READELEM`, `READVAL`, `HTTP_FETCH`, `LISTWINDOWS`, `LAUNCH`,
+  `KILL`, `WAIT`, `CDP_EXECUTE`, `FILL`, `SENDKEYS`; add all commands from CONVENTIONS.md §1
+- [ ] **ASSERT / ASSERTPATHEVAL: OP parameter** — when "ASSERT" is selected as the command, a
+  second `Op` field should appear as a dropdown:
+  `eq` · `neq` · `gt` · `gte` · `lt` · `lte` · `contains` · `matches` · `truthy`;
+  the field is required (no default) to prevent accidentally passing on empty comparison
+- [ ] **Field-level context help / sub-editor hints:**
+  - _Target (Path)_: tooltip explains `HANDLE:<hwnd>` vs `PAGE:<url>` vs bare AutomationId;
+    show wildcard (`*`, `?`) vs `/regex/` syntax; offer autocomplete from `LISTWINDOWS` result
+  - _Linked AI assistant_: `?` icon opens popover explaining what the field does (attaches
+    assistant context to this scenario); no value-list needed (free text)
+  - _Step-Scenario Id_ (for `ScenarioRef`): dropdown populated from the **current template's**
+    scenario `id` attributes; updated live as scenarios are added/renamed
+  - _Conditional_: dropdown `absent` / `present` / (empty = always) with inline explanation
+- [ ] Drag-and-drop step reordering
+- [ ] IntelliSense-style autocomplete: action types, parameter names, valid values
+- [ ] Context-aware suggestions: running apps, element IDs from live UI trees
+
+### Installer & First-Run Setup _(full packaging → F-2; setup wizard tracked here)_
+- [ ] Automatic security setup wizard: generate key files on first run, sign `config.json`,
+  create admin user (ADR-007 steps S4 + S5)
+- [ ] Register file associations (`.aiapi-scenario`)
+
+---
+
+## S-2 — 🐕 Dogfooding — Platform Self-Test
+
+> Key release criterion: AIAPI must configure and validate itself end-to-end
+> using its own BrowserWin + MCP tools.
+
+---
+
+### ⚠️ ARCHITECTURE DECISIONS — READ BEFORE EVERY SESSION
+
+These rules were established during the D2/D3 rewrite sprint and MUST be followed for all D# tests:
+
+#### Rule 1 — NO REST API CALLS IN run.js
+All test logic — including state verification, list checks, round-trips — MUST go through browser UI scenarios.
+`dashRest()` is **FORBIDDEN** in `d#/run.js` for any test assertion.
+Reason: REST calls do not mimic user behaviour and bypass the UI code paths under test.
+ALLOWED exception: `waitReady()` and `checkMcpNoStackLeak()` helpers in `_shared.js` (infrastructure, not tests).
+
+#### Rule 2 — EVERY TEST SECTION IS A SCENARIO
+Every logical check (even "can I see the list of apps?") maps to a `<Scenario>` in `d#/scenarios.xml`.
+`d#/run.js` is thin orchestration only: call `runner.runOk()` per scenario, read bound `vars`, assert on them.
+
+#### Rule 3 — THREE-LAYER SCENARIO HIERARCHY (see CONVENTIONS.md §8)
+Scenarios are distributed across three layers:
+- **L1** — `components/helpers/*/dist-resources/apptemplates/<app>/scenarios.xml`: shipped product primitives. Atomic UI actions only. No test assertions.
+- **L2** — `config/scenarios/<app>/`: use-case workflows assembled from L1 atoms via `<ScenarioRef>`. No test-only content.
+- **L3** — `test/e2e/d#/scenarios.xml`: test-suite layer. References L1/L2 via `<ScenarioRef>`, adds dialog shims and CDP_EXECUTE throw-on-fail assertions.
+
+**Before writing any `<step>` in a `d#/scenarios.xml`:** check whether the equivalent L1 atom already exists in the shipped `scenarios.xml` for that app. If it does → use `<ScenarioRef app="..." ref="..."/>`. If it does not → add it to the L1 file first, then reference it from L3.
+
+#### Rule 4 — SCENARIOS USE UI PRIMITIVES ONLY
+- `CLICKID` for buttons, links, nav items (routes through CDP Input.dispatchMouseEvent — real event chain)
+- `SENDKEYS` for typing
+- `CDP_EXECUTE` ONLY for: assertions (throw on failure), boolean/count reads that READ cannot express, dialog shims
+- `CDP_EXECUTE` is FORBIDDEN as a substitute for clicks (i.e., `el.click()` in CDP_EXECUTE is banned)
+
+#### Rule 5 — NOTE ALL DECISIONS IN THIS FILE
+Every time an architectural decision, test structure agreement, or implementation constraint is established, it MUST be recorded in this section before any code is written.
+
+#### Rule 6 — SCENARIO FILE STRUCTURE
+Each test `D#` consists of exactly:
+```
+test/e2e/d#/scenarios.xml   — all UI interaction atoms as <Scenario> elements
+test/e2e/d#/run.js          — thin orchestration: runner.runOk() + var assertions only
+test/e2e/d#-<name>.js       — 10-line delegator: require('./d#/run').run()
+```
+
+---
+
+### D# Rewrite Progress (scenario-driven format)
+
+| Test | scenarios.xml | run.js | delegator | Status |
+|------|--------------|--------|-----------|--------|
+| D2 — Settings UI          | ✅ | ✅ | ✅ | 42/42 passing |
+| D3 — Auth UI              | ✅ | ✅ | ✅ | 35/35 passing |
+| D4 — Scenarios Editor     | ✅ | ✅ | ✅ | 17/17 passing |
+| D5 — KeyWin Calculator    | ✅ | ✅ | ✅ | 3/3 passing |
+| D6 — KeyWin Notepad       | ✅ | ✅ | ✅ | 3/3 passing |
+| D7 — BrowserWin Chrome    | ❌ | ❌ | ❌ | pending |
+| D8 — Security Enforcement | ❌ | ❌ | ❌ | pending |
+| D9 — Helper Schema        | ❌ | ❌ | ❌ | pending |
+| D10 — Server Foundations  | ❌ | ❌ | ❌ | pending |
+| D11 — Security Audit Log  | ❌ | ❌ | ❌ | pending |
+| D12 — KeyWin Extended     | ❌ | ❌ | ❌ | pending |
+| D13 — BrowserWin Extended | ❌ | ❌ | ❌ | pending |
+| D15 — Scenario Execution  | ❌ | ❌ | ❌ | pending |
+| D16 — Extended REST       | ❌ | ❌ | ❌ | pending |
+| D17 — Users Roles         | ❌ | ❌ | ❌ | pending |
+| D18 — LibreOffice         | ❌ | ❌ | ❌ | pending |
+| D19 — Users Roles DB      | ❌ | ❌ | ❌ | pending |
+
+### ✅ DONE: D3 (35/35), D4 (17/17), D5 (3/3), D6 (3/3) — ADR-008/ADR-010 compliant; all assertions inline in XML.
+### IMMEDIATE NEXT: D7–D19: create d#/scenarios.xml + d#/run.js + delegator for each remaining test.
+
+### ALSO NEEDED — retrofit `<Parameters>` blocks (XSD contract)
+All scenarios that use `{{varName}}` placeholders MUST have a `<Parameters>` block declaring each param (see CONVENTIONS.md §8 and ADR-008 §5a). Current files missing this:
+- [ ] `components/helpers/shared/dist-resources/apptemplates/dashboard/scenarios.xml` — all scenarios with params (e.g. `set-loglevel-select` uses `{{logLevel}}`)
+- [ ] `test/e2e/d2/scenarios.xml` — all scenarios with params (e.g. `s5a-loglevel-set`, `s6-path-field-edit`, `s7-workdir-change`)
+- [ ] `test/e2e/d3/scenarios.xml` — all scenarios with params
+- [ ] `test/e2e/d4/scenarios.xml` — all scenarios (uses `{{appName}}`, `{{scenId}}`)
+- [ ] `test/e2e/d5/scenarios.xml` — all scenarios (uses `{{content}}`, `{{newContent}}`)
+- [ ] `test/e2e/d6/scenarios.xml` — all scenarios (uses `{{content}}`, `{{newContent}}`)
+
+---
+
+### D1 — Dashboard automation test suite (original spec)
+- [ ] Write `tests/integration/test-dogfooding-dashboard.js`:
+  - Launch AIAPI server (`--self-hosted`)
+  - Open dashboard URL via `BrowserWin LAUNCH:chrome`
+  - Settings tab: verify helpers list loads
+  - Security tab: add a filter rule via wizard, verify it appears in Quick-Edit table
+  - Scenarios tab: create a minimal scenario, save, verify in app templates picker
+  - Close browser; verify session log + summary JSON written
+
+### D2 — MCP schema round-trip test (original spec)
+- [ ] Verify: AI issues `getHelperSchema(KeyWin)` → schema returned →
+  AI calls `KeyWin.LISTWINDOWS` → response received
+- [ ] Verify: `executeScenario(app="calculator", scenarioId="compute",
+  params={expression:"3+4"})` → result `"7"`
+
+### D3 — Security filter enforcement test 🟡 (original spec)
+- [ ] Test: add DENY rule for `{SENDKEYS}` on notepad → MCP call blocked →
+  `SECURITY_FILTER_DENY`
+- [ ] Test: admin token bypass → same call succeeds with `X-Admin-Token` header
+- [ ] Test: role-based rule → anonymous denied; user with role allowed
+
+---
+
+## S-3 — 🌐 Web Scraping & Network Tools
+
+**Goal:** `fetch_webpage` MCP tool with security filters; advanced network protocol support.
+
+### Core fetch_webpage ✅ IMPLEMENTED
+- [x] `fetch_webpage` MCP tool: HTTP/HTTPS, text/HTML/element extraction
+- [x] Basic auth and headers; timeout and retry; user-agent customisation
+- [x] Domain whitelist/blacklist; protocol restrictions; content-type filtering
+- [x] Response size limits; rate limiting per domain; header injection prevention
+- [x] Redirect validation and limits
+
+### Advanced Network Protocol Support _(backlog)_
+- [ ] SSH client for secure remote access
+- [ ] FTP/SFTP for file transfer
+- [ ] Telnet for legacy system access
+- [ ] Raw TCP/UDP socket connections
+- [ ] WebSocket support for real-time communication
+- [ ] SMTP for email automation
+- [ ] LDAP for directory service queries
+
+### Security Configurations for Network _(backlog)_
+- [ ] Network access policy configuration
+- [ ] Trusted certificate management; proxy server support with authentication
+- [ ] Extend Security Filters UI to include network operations
+- [ ] Network command audit trails; admin-mode lockdown capability
+
+
+---
+
+# PART III — NEXT SPRINT
+
+---
+
+## N-0 — 📦 VS Code Extension — VSIX & Marketplace
+
+> The extension is the **primary and simplest distribution channel** — any Windows user
+> with VS Code can install a `.vsix` drop-in without Node, build tools, or a service.
+> This chapter tracks the work needed to make that possible.
+
+### Current State
+- [x] Extension scaffolding exists: `src/extension.ts` + `package.json` with
+  `"engines": {"vscode":"^1.75.0"}`, `activationEvents`, `contributes`
+- [x] MCP@IPC command pair (`extension.mcp.callTool`, `extension.mcp.listTools`) registered
+- [x] **`activate()` rewritten** — starts `MCPServer` + `HttpServerWithDashboard` via
+  `process.chdir(context.extensionPath)`; status bar item; output channel; IPC
+  commands relay over loopback HTTP; `deactivate()` stops both servers gracefully.
+
+### N-0.1 — Fix `activate()` to start the real server stack
+- [x] Replace `AutomationEngine`/`HttpServer` in `activate()` with `MCPServer` +
+  `HttpServerWithDashboard` (mirrors `start-mcp-server.ts`)
+- [x] `process.chdir(context.extensionPath)` so all relative paths resolve inside VSIX
+- [x] `extension.mcp.callTool` / `extension.mcp.listTools` relay via loopback HTTP
+  (same tool dispatch, security filter, helper registry exercised)
+- [x] Status bar item: `$(rocket) AIAPI :<port>` with click → open dashboard
+- [x] Output channel `AIAPI` for server logs
+- [x] `deactivate()`: stops `HttpServerWithDashboard` then `MCPServer` gracefully
+
+### N-0.2 — `package.json` cleanup
+- [x] Set `"publisher": "rheingold"`
+- [x] Fix `"repository".url` → `https://github.com/rheingold/AIAPI`
+- [x] Fix `"files"` array — removed entirely (`.vscodeignore` is the correct VSIX mechanism)
+- [x] Bump `"version"` → `0.2.0`
+- [x] Add `"extensionKind": ["ui"]`
+- [x] Add `@vscode/vsce` devDependency + `package:vsix` / `publish:vsix` scripts
+- [x] Remove stale settings: `aiAutomation.enableLegacyHttp`, `aiAutomation.httpPort`
+- [x] Replace 4 old automation commands with `aiAutomation.openDashboard`
+- [ ] Add `"icon"` field (128×128 PNG, not yet created)
+
+### N-0.3 — `.vscodeignore`
+- [x] Created `.vscodeignore` — excludes source, tests, docs, build tooling from VSIX
+- [x] `"files"` array removed from `package.json` (vsce does not allow both)
+- [x] VSIX verified: 237 files, 562 KB — includes `dist/` (204 files), `config/`,
+  `security/`, `components/` apptemplates (12 files), `README.md`, `LICENSE`, `CHANGELOG.md`
+
+### N-0.4 — Build & CI
+- [x] Added `vsce package` step to `build-all.ps1` — outputs
+  `dist/release/ai-ui-automation-<version>.vsix`, graceful skip if vsce missing
+- [x] GitHub Actions workflow `.github/workflows/release.yml`:
+  uploads `.vsix` artifact on every run; creates GitHub Release on `v*` tags
+- [x] `CHANGELOG.md` created, referenced in `package.json` `files`
+- [x] Test install: `code --install-extension dist/release/ai-ui-automation-0.2.0.vsix` —
+  exit 0, `rheingold.ai-ui-automation` listed; stale `undefined_publisher` copy uninstalled
+- [ ] Optional: `vsce publish` from CI with Marketplace PAT secret (after publisher verified)
+
+### N-0.5 — Marketplace listing
+- [ ] `README.md`: add badges (VS Code Marketplace version, installs, rating)
+- [ ] Screenshot or GIF showing dashboard + scenario run in the Marketplace description
+- [ ] `CHANGELOG.md`: document all changes since v0.1.1
+- [ ] Category: `"Other"` → consider `"Programming Languages"` + `"Debuggers"` or
+  `"Machine Learning"` for discoverability
+
+---
+
+## N-1 — 📚 App Knowledge Base — Extensions
+
+**Goal:** Usr override layer, reverse-domain namespace hierarchy, embedding vectors.
+
+### Usr Override Layer _(config/templates/ as first root — already wired, needs docs & test)_
+> Shipped defaults: `components/helpers/*/dist-resources/apptemplates/`
+> User overrides: `config/templates/` (first in `appTemplateRoots`; currently empty)
+
+- [ ] Document `config/templates/` purpose and format in `docs/guides/SERVER_GUIDE.md`
+- [ ] Example: `config/templates/calculator/scenarios.xml` overrides shipped scenarios
+- [ ] Test: server picks usr override first; correctly falls back to shipped default
+
+### R1 — Runtime Directory Migration _(prerequisite: ADR-007 S4 + S5)_
+> Runtime-authored files should not live under the repo root.
+
+- [ ] Migrate `config/` → `runtime/config/`, `security/` → `runtime/keys/`
+- [ ] Update hardcoded path `config/scenarios` → `runtime/config/scenarios` in `mcpServer.ts`
+- [ ] Update `httpServerWithDashboard.ts` settings and apptemplates paths
+- [ ] Update setup wizard (`POST /api/_internal/setup`) to write into `runtime/`
+- [ ] Add `runtime/` to `.gitignore` (mutable user data, not committed)
+- [ ] Add `test/dev-runtime/` tracked stub with dev-time config + keys
+
+### N-1x — Scenario Suggest & Local Override Workflow
+
+> **Goal:** An authorised user can propose step overrides for a specific scenario in their
+> environment without modifying the signed XML on disk.  Overrides are stored as
+> `local-overrides.json`, applied at runtime, and optionally submitted upstream for review.
+
+#### Design constraints
+- No new XML terminals.  Override data reuses `<step>` / `<assert>` / `<Parameters>` vocabulary.
+- Signed canonical XML is never modified client-side.
+- Environment fingerprint reuses child `<assert>` semantics (proc/path/op/value).
+
+#### REST endpoint
+- [ ] `POST /api/scenarios/{app}/{id}/suggest` — body:
+  ```json
+  {
+    "steps": [ /* array of <step>-shaped objects */ ],
+    "fingerprint": [ /* array of <assert>-shaped conditions that define the env */ ],
+    "note": "reason for override"
+  }
+  ```
+  Validates JSON shape; writes `config/overrides/{app}/{id}/local-overrides.json`.
+- [ ] `GET /api/scenarios/{app}/{id}/overrides` — list active local overrides for a scenario.
+- [ ] `DELETE /api/scenarios/{app}/{id}/overrides/{overrideId}` — remove a specific override.
+
+#### LocalOverrideManager (`src/scenario/LocalOverrideManager.ts`)
+- [ ] `load(app, scenarioId)` — reads `local-overrides.json`; returns `LocalOverride[]`.
+- [ ] `findMatchingOverride(scenario, vars)` — evaluates each override's fingerprint
+  (same `evaluateFilterRules`-style logic); returns first matching override or `null`.
+- [ ] `apply(scenario, override)` — substitutes matching steps; preserves unmatched steps.
+
+#### Scenario Runner integration
+- [ ] `executeXmlScenario()`: before dispatch, call `LocalOverrideManager.findMatchingOverride()`;
+  if match found, log `"override applied: {overrideId}"` and swap steps.
+- [ ] Override application is audited: write to `security-audit.jsonl` with
+  `{event:"override_applied", app, scenarioId, overrideId, user, fingerprint}`.
+
+#### Submit-for-review workflow
+- [ ] `POST /api/scenarios/{app}/{id}/overrides/{overrideId}/submit` — packages override +
+  fingerprint + audit trail into a review request JSON; writes to
+  `config/overrides/{app}/{id}/pending/`; optionally POSTs to an upstream URL configured
+  in settings (`settings.overrideReviewUrl`).
+- [ ] Dashboard Scenarios tab: per-scenario "Local Overrides" badge; "Submit for Review" button.
+- [ ] Unit tests: fingerprint match / no-match; step substitution; audit write; submit packaging.
+
+---
+
+### App Template Namespacing _(LOW PRIORITY — reverse-domain hierarchy)_
+
+**Proposed layout:**
+```
+components/helpers/windows/dist-resources/apptemplates/
+  com.microsoft/windows.v11/calculator/   tree.xml  scenarios.xml
+  com.microsoft/windows.v11/notepad/
+components/helpers/shared/dist-resources/apptemplates/
+  com.google/chrome/
+  com.brave/browser/
+config/templates/
+  eu.plachy.aiapi/default/notepad/        ← user overrides / additions
+```
+
+- [ ] Decide separator: `/` subdirectories (preferred) vs `.` flat folder names
+- [ ] Move existing `calculator/`, `notepad/`, `chrome/` under namespace paths
+- [ ] Update `XmlScenarioLoader.load(app, scenarioId)` — `app` is slash-path
+- [ ] Update REST routing: greedy prefix match up to `/scenarios/` or `/tree`
+- [ ] Update `GET /api/appTemplates` to return namespaced ids
+- [ ] Update Dashboard "App Templates" card to render namespace hierarchy as a tree
+- [ ] Update `tree.xsd` + `scenarios.xsd` `app` attribute to allow slash-separated paths
+- [ ] Document resolution order (user namespace beats vendor; OS-specific beats generic)
+
+### Embedding Vectors _(optional)_
+- [ ] Define file format: JSON `[{"id":"...", "label":"...", "vec":[...]}]`
+  or binary `.bin` (float32 LE, prepended JSON header)
+- [ ] CLI: `node tools/embed-tree.js --app calculator --engine openai-ada-002 --out <path>`
+- [ ] `POST /api/appTemplates/{app}/tree/search` — top-K controls by embedding similarity
+- [ ] Multiple engines coexist in same `embeddings/` folder
+
+---
+
+## N-2 — 🎯 Unified Addressing & Input Model
+
+> Two topics merged: the XPath-style address syntax and the unified input verb set
+> are inseparable — the address syntax defines *where* and the input verbs define *what*.
+
+### Unified Action Address Syntax
+
+> ⏰ **PLANNED — NOT YET IMPLEMENTED.** `{CMD:param}` shorthands continue to work as aliases.
+
+**Full format:**
+```
+//[HelperGlob]//[ProcessFilter]//[TreePath...]//action:[Verb]/[Params...]
+```
+
+**Examples:**
+```
+//[ProcName:calc*.exe]//mainWindow/ButtonPanel//action:click/buttonNumPad7
+//[ProcName:notepad.exe]//action:keypress/Ctrl+A
+//Browser*.exe//[tab=0]//document//#username//action:fill/value:admin
+ALLOW //Keys*.exe//[SHA256:abc&ProcName:calc*.exe]//mainWindow//*//action:click
+DENY  //Browser*.exe//[ProcName:brave.exe]//action:exec/*
+```
+
+**Address segment reference:**
+
+| Segment | Syntax | Examples |
+|---|---|---|
+| Helper selector | `//HelperGlob` (first `//` only) | `//Keys*.exe`, `//Browser*.exe` |
+| Process filter | `//[key:val & key:val]` | `//[SHA256:abc&ProcName:calc*.exe&ProcPath:C:\Win\*]` |
+| Named child | `//name` | `//mainWindow1`, `//ButtonOK` |
+| Index child | `//[n]` | `//[0]`, `//[2]` |
+| By attribute | `//[attr=val]` | `//[id=btn-ok]`, `//[class=submitBtn]` |
+| Wildcard (one level) | `//*` | any single node |
+| Deep wildcard | `//**` | any subtree depth |
+| XPath predicate | `//name(xpath:expr)` | `//li(xpath:last())` |
+| Browser tab/frame | `//[tab=n]`, `//[frame=name]` | `//[tab=0]//document` |
+| Action | `//action:[Verb]/[Params]` | `//action:click`, `//action:fill/value:x` |
+
+**Process filter keys:** `ProcName`, `ProcPath`, `SHA256`, `SHA512`, `PID`, `HWND`, `WindowTitle`
+
+**Action verbs:** `click`, `rightclick`, `dblclick`, `hover`, `keypress`, `keydown`, `keyup`,
+`read`, `fill`, `exec`, `scroll`, `check`, `uncheck`
+
+**Implementation tasks:**
+- [ ] Formal ABNF grammar in `docs/specs/ACTION_ADDRESS.md`
+- [ ] `ParseAddress(string addr)` → `AddressNode[]` in `HelperCommon.cs`
+- [ ] Map node types: `HelperSelector`, `ProcessFilter`, `TreeStep`, `ActionStep`
+- [ ] `KeyWin.cs`: accept full address strings (not only bare `{CMD:param}` tokens)
+- [ ] `BrowserWin.cs`: map tree path segments to CSS selector / CDP node ID;
+  handle `(xpath:...)` via `DOM.performSearch`
+- [ ] Add `"addressGrammar"` array to each helper's `_schema` output
+- [ ] `HelperRegistry.ts`: expose merged grammar via `getHelperSchema` MCP tool response
+- [ ] Security filter engine: migrate storage format; implement `MatchAddress(rule, addr)`
+- [ ] Dashboard filter editor: replace freetext pattern with structured address-builder
+
+### Unified Input Verb Model (remaining items)
+
+> **All 12 listed commands already implemented in KeyWin.exe and BrowserWin.exe.**
+> The remaining items are delivery-mode variations and schema confirmation.
+
+- [ ] **`{CLICK:x,y}` / `{CLICK:elementPath}`** — standardise format across both helpers
+- [ ] **`{KEYPRESS:key}` delivery modes:**
+  - `global` — `SendInput` to focused window
+  - `direct` — `PostMessage(WM_KEYDOWN/WM_CHAR)` to specific HWND / JS `dispatchEvent`
+    (specify element: `{KEYPRESS:Enter::#submitBtn}`)
+- [ ] **Mouse delivery modes:**
+  - `sendinput` — `SendInput(INPUT_MOUSE)` global queue
+  - `message` — `PostMessage(WM_LBUTTONDOWN/WM_LBUTTONUP)` direct to HWND
+  - `js` (browser only) — `element.dispatchEvent(new MouseEvent('click'))`
+
+### Unified Tree Node Schema (finalise)
+Every QUERYTREE response from every helper must produce:
+```json
+{
+  "id": "...",  "handle": "0x1A2B",  "path": "//win/...",
+  "type": "Button",  "tag": "BUTTON",  "name": "OK",  "value": "...",
+  "attributes": {},
+  "position": { "x": 0, "y": 0, "width": 100, "height": 30 },
+  "zOrder": 0,  "tabOrder": 0,
+  "events": ["click","change","focus"],
+  "actions": ["click","setValue","readValue"],
+  "children": []
+}
+```
+- [ ] Audit `KeyWin.cs` QUERYTREE output — add any missing fields
+- [ ] Audit `BrowserWin.cs` QUERYTREE output — add any missing fields
+- [ ] Update schema validation test in `test-full-stack-stdin.js`
+
+---
+
+## N-3 — 🖥️ Browser Automation — Remaining & Cross-Platform DOM
+
+**Goal:** Close remaining BrowserWin gaps; implement CDP-less accessibility fallbacks.
+
+### Remaining BrowserWin.exe Items
+- [ ] Alert/popup handling — needs WebSocket CDP event loop
+- [ ] Session token authentication (currently guarded by `SKIP_SESSION_AUTH`)
+- [ ] Internet Explorer: dead; document as Win32/MSAA via `KeyWin.exe` only
+
+### Cross-Platform Browser DOM (CDP-less fallbacks)
+
+#### Chromium WM_GETOBJECT nudge (no debug flags)
+- [ ] Find `Chrome_RenderWidgetHostHWND` child of browser window
+- [ ] Send `WM_GETOBJECT(OBJID_CLIENT)` — triggers Chromium accessibility tree
+- [ ] Re-query UIA tree after 500ms; flag `"mode":"uia_nudge"` in output
+
+#### Firefox ISimpleDOMNode COM traversal (no flags)
+- [ ] `AccessibleObjectFromWindow(renderHwnd, OBJID_CLIENT)` → `IAccessible`
+- [ ] `QueryInterface(IID_ISimpleDOMNode)` → walk with `get_nodeInfo()`, `get_attributes()`
+- [ ] Build same `{id,type,name,...}` JSON as UIA/CDP; flag `"mode":"ia2"`
+- [ ] Use `get_attributes()` to resolve `for=` label→input associations
+
+#### Browser path discovery (Linux / macOS targets)
+- [ ] Linux: `/usr/bin/`, `/usr/local/bin/`, `~/.local/share/`
+- [ ] macOS: `/Applications/`, `~/Applications/`
+
+---
+
+## N-4 — 🔧 Runtime & Daemon Lifecycle
+
+### Runtime Directory Migration (R1)
+> Detailed spec in N-1. Prerequisite: ADR-007 setup wizard steps S4 + S5.
+
+- [ ] Migrate `config/` → `runtime/config/`, `security/` → `runtime/keys/`
+- [ ] Add `runtime/` to `.gitignore`; add `test/dev-runtime/` tracked stub
+
+### Daemon Lifecycle (completed) + Minor Guard
+- [x] `_ping` / `_schema` / `_exit` built-ins ✅
+- [x] `POST /api/helpers/reload` endpoint; dashboard "Reload Helpers" button ✅
+- [x] `--self-hosted` / `--rebuild-first` flags; `reloadHelpers()` test helper ✅
+- [x] Test-session recording: start/finish/JSONL log; auto-screenshot on failure ✅
+- [ ] **Guard:** `--token=` / `--secret=` CLI args — do NOT add them;
+  credential passage is always via `_auth` message (in-pipe auth only)
+
+### Documentation
+- [ ] `docs/api/BROWSER_API.md` — BrowserWin command reference
+- [ ] Update `docs/api/API.md` with all new MCP tools added since last update
+- [ ] Add cross-platform usage examples to `docs/guides/QUICK_REF.md`
+
+---
+
+## N-5 — 🍪 Web Fetch — Cookie Consent & Auth Walls
+
+**Goal:** Navigate sites gating content behind cookie consent dialogs or login walls.
+
+### Cookie Consent / GDPR Popup Detection
+- [ ] Detect common frameworks in fetched HTML:
+  - Google Consent Mode (`consent.google.com`, `fc=allyesundefined`)
+  - CookieBot (`data-cookieconsent` attributes)
+  - OneTrust (`OptanonConsent` cookie / `onetrust` CSS classes)
+  - TrustArc (`truste.com` iframes)
+  - Generic: any `<div>` matching `cookie|consent|gdpr|banner` id/class
+- [ ] Add `consentWall?: ConsentWallInfo` to `WebFetchResult`
+- [ ] Auto-accept strategy (opt-in, disabled by default):
+  - `WebFetchOptions.consentHandling: 'none' | 'auto-accept' | 'report'`
+- [ ] Cookie jar: store `Set-Cookie` across redirect hops; respect `Secure`, `HttpOnly`, `SameSite`
+- [ ] `WebFetchOptions.cookies?: Record<string, string>` for manual injection
+- [ ] Handle Google `302 → consent.google.com/ml?continue=…` — extract and offer direct URL
+
+### Session / State Management
+- [ ] `WebFetchOptions.sessionId?` — persist cookie jar across `fetchWebpage` calls
+- [ ] `clearSession(sessionId)` for AI-managed session reset
+- [ ] `WebFetchOptions.method?: 'GET' | 'POST'`; `WebFetchOptions.body?`
+  (needed for login form submission via `detectLoginForm()`)
+
+
+---
+
+## N-6 — 🤖 Supervised Scenario Mode (AI agent UX) *(2026-04-25)*
+
+> **Trigger:** D6 walkthrough exposed a genuine agent UX gap: scenarios are cheap (one HTTP
+> call, one context payload) but all-or-nothing — a failure at step 17 of 20 loses all live
+> process state (`hwnd`, open windows) and forces a full restart from step 1 including
+> re-launch, wait times, and all side-effects. That is expensive in wall-clock time and
+> side-effects, not just in tokens.
+>
+> **Corrected framing:** The value is **preserving live process state across an assertion
+> failure**, not minimising HTTP round-trips per se. Token savings are a side-effect on
+> the happy path, situational on the failure path.
+>
+> **Design principle:** One existing endpoint, two optional new parameters. No new URL.
+> Inline body and registered-by-id are two parse paths into the same `executeXmlScenario()`
+> executor. Session store is opt-in, timeout-bounded, with explicit cleanup metadata.
+>
+> **ADR required:** ADR-013 (to be written).
+
+### N-6.1 — Extended run endpoint (single endpoint, two new optional params)
+
+The **existing** `POST /api/appTemplates/{app}/scenarios/{scenarioId}/run` gains two optional
+body fields:
+
+```json
+{
+  "params": { "content": "Hello" },
+
+  "scenario": {
+    "steps": [
+      { "action": "LAUNCH",   "proc": "notepad.exe" },
+      { "action": "WAIT",     "value": "3000" },
+      { "action": "SENDKEYS", "proc": "SYSTEM", "value": "{{content}}" },
+      { "action": "ASSERT",   "proc": "SYSTEM", "path": "", "value": "{{content}}", "op": "contains" }
+    ]
+  },
+
+  "supervised": true
+}
+```
+
+Resolution rules (in order):
+
+| `scenario` body | `scenarioId` in URL | Behaviour |
+|---|---|---|
+| absent | registered id | today's behaviour — look up XML on disk |
+| present | any label | use inline body; `scenarioId` is a client-supplied label only |
+| present | with `ScenarioRef` steps | inline body may reference registered scenarios by id — steps are expanded as today |
+
+- `scenario` is **transient** — never stored, never written to disk.
+- Step schema is identical to `<step>` in scenarios.xml (same field names, same actions).
+- `supervised: false` (default) = existing fire-and-forget behaviour, result returned synchronously.
+- `supervised: true` = supervised mode — see N-6.2.
+
+### N-6.2 — Supervised mode: pause-on-fail with session state
+
+When `supervised: true` and an `ASSERT` or `ASSERTPATHEVAL` step fails:
+
+- Execution **pauses** (does not abort, does not undo previous steps; launched processes stay alive).
+- Server holds in-memory session state: full step list, current step index, all bound vars.
+- Returns **HTTP 202**:
+
+```json
+{
+  "sessionId": "ssn_a3f7c9",
+  "status": "paused",
+  "pausedAtStep": 4,
+  "failedStep": {
+    "action": "ASSERT",
+    "error": "expected contains 'Hello', got 'Hello WrongOverwrite'"
+  },
+  "vars": { "hwnd": "HANDLE:2559024", "readVal": "Hello WrongOverwrite" },
+  "stepsRemaining": 3,
+  "expiresIn": 300
+}
+```
+
+- `vars` contains the full live binding — agent uses `hwnd` etc. directly in atomic calls.
+- `expiresIn` (seconds): session auto-abandons on timeout; cleanup kills processes launched by
+  `effect="launches-app"` steps. Default: 300 s, configurable per-call via `"sessionTimeout"`.
+- On **success** (`supervised: true`, no failures): returns HTTP 200 with normal result — no sessionId issued.
+
+### N-6.3 — Atomic intervention while paused
+
+Regular atomic endpoints work unchanged — no session scoping required:
+
+```
+POST /api/apps/d6/execute  { "command": "READ",     "target": "HANDLE:2559024", "parameter": "" }
+POST /api/apps/d6/execute  { "command": "SENDKEYS", "target": "HANDLE:2559024", "value": "{CTRL+Z}" }
+```
+
+The agent correlates its atomic calls to the paused session via the `vars` it received in the 202.
+No special session header or query param is needed — these remain fully stateless.
+
+### N-6.4 — Resume
+
+```
+POST /api/scenarios/sessions/{sessionId}/resume
+{
+  "vars":     { "readVal": "Hello" },   // optional: inject/override vars before continuing
+  "fromStep": 4                         // optional: re-run from step N (default: paused step)
+                                        // fromStep: 0 = restart whole scenario with new vars
+}
+```
+
+- Returns HTTP 200 (normal result) on completion, or another HTTP 202 if it pauses again.
+- `vars` overrides are merged into session state before execution resumes.
+- `fromStep` can go backwards (retry a step) or forwards (skip a step).
+
+### N-6.5 — Session management
+
+```
+GET    /api/scenarios/sessions/{sessionId}   — inspect current state, vars, step index
+DELETE /api/scenarios/sessions/{sessionId}   — abandon session + trigger cleanup
+GET    /api/scenarios/sessions               — list active sessions (admin only)
+```
+
+### N-6.6 — Implementation notes
+
+- Session store: in-memory `Map<sessionId, SessionState>`. No persistence.
+- `SessionState`: `{ scenarioId, steps, currentStep, vars, effectTags, timer, createdAt }`.
+- `effectTags`: collected from all steps that ran (e.g. `launches-app`) — drives cleanup.
+- Cleanup on timeout or DELETE: for each `launches-app` step, call `KILL` on its `proc`.
+- `sessionId`: `ssn_` + 6 random hex chars. Local scope only — no crypto strength needed.
+- Inline step body is parsed into the same internal step object shape as XML — same executor.
+- MCP tool surface: `run_scenario_supervised` wraps the run endpoint; `resume_scenario` wraps
+  the resume endpoint. Both are single structured tool calls for MCP clients.
+
+---
+
+# PART IV — FUTURE
+
+---
+
+## F-1 — 🔧📄 MS Office Automation
+
+> ⏰ **Pre-requisite:** Microsoft Office must be installed before `OfficeWin.exe` can be
+> built or tested (COM Interop assemblies only present when Office is installed).
+
+### OfficeWin.exe Helper
+- [ ] Create `components/helpers/windows/src/OfficeWin.cs`
+- [ ] Follow HelperCommon patterns: `--listen-stdin --persistent`, `--api-schema`,
+  `DispatchCommand()`, `GetSchema()`; add `HelperCommon.cs` to compile line
+- [ ] **Word:** open/create; query structure (paragraphs, tables, headings);
+  insert/modify/format text; table manipulation; find/replace; save as docx/pdf
+- [ ] **Excel:** open/create; read/write cells; apply formulas; format cells;
+  charts; named ranges
+- [ ] **PowerPoint:** open/create; query slides; add/modify text and shapes; themes/layouts
+- [ ] Update `src/providers/officeProvider.ts` to use `OfficeWin.exe`
+- [ ] App templates:
+  - `components/helpers/windows/dist-resources/apptemplates/msword/tree.xml` + `scenarios.xml`
+  - `msexcel/` and `mspowerpoint/` equivalents
+- [ ] Integration tests: `tests/integration/test-office-scenarios.js`
+
+---
+
+## F-2 — 🚀 Deployment & Packaging
+
+> Trigger: after core feature parity stable on Windows (all current Part I–III items done).
+
+### Windows: Standalone Console App
+- [ ] `pkg` or `nexe` to bundle `dist/start-mcp-server.js` + `node_modules` + dashboard assets
+- [ ] Auto-detect `dist/helpers/` helpers relative to bundle; `--port`, `--no-auth`, etc.
+- [ ] CI artifact: `dist/release/aiapi-server-win-x64.exe`
+
+### Windows: Windows Service
+- [ ] NSSM-based service (`scripts/install-service-win.ps1`):
+  ```powershell
+  nssm install AIAPI "C:\Program Files\AIAPI\aiapi-server.exe"
+  nssm set AIAPI Start SERVICE_AUTO_START
+  ```
+- [ ] Windows Event Log integration
+- [ ] Installer + Uninstaller PowerShell scripts
+
+### Windows: System-Tray GUI App
+- [ ] `tools/tray/TrayApp.cs` with `NotifyIcon` + `ContextMenuStrip`
+- [ ] Start / Stop / Restart / Open Dashboard / View Logs / Exit
+- [ ] Icon states: grey (stopped) → green (running) → red (error)
+
+### Windows Installer (MSI / NSIS)
+- [ ] NSIS or WiX script; bundles: `aiapi-server.exe`, `KeyWin.exe`, `BrowserWin.exe`,
+  dashboard assets, `components/helpers/*/dist-resources/apptemplates/`
+- [ ] Install to `C:\Program Files\AIAPI\`; Start Menu shortcut
+- [ ] Optional: install as Windows Service; add firewall rule for ports 3457/3458
+- [ ] Uninstaller: removes service, firewall rule, files (option to keep config + scenarios)
+- [ ] First-run setup wizard: generate key files, sign `config.json`, create admin user
+- [ ] Version injected from `package.json`
+- [ ] CI artifact: `dist/release/aiapi-setup-<version>-win-x64.exe`
+
+### Linux: systemd Daemon _(build on Linux machine)_
+- [ ] `scripts/linux/aiapi.service` unit file
+- [ ] Linux helpers: `KeyLin` (AT-SPI2 / xdotool) + `BrowserLin` (CDP, same as Windows)
+- [ ] `scripts/linux/install.sh`; CI: GitHub Actions `build-linux` job on `ubuntu-latest`
+
+### macOS: launchd Plist _(build on macOS machine)_
+- [ ] `scripts/macos/com.rheingold.aiapi.plist` LaunchAgent
+- [ ] macOS helpers: `KeyMac` (AX API) + `BrowserMac` (CDP)
+- [ ] Code-signing + notarisation for Gatekeeper
+
+### Linux: GUI Tray App (GTK3 / AppIndicator) _(LOW PRIORITY)_
+- [ ] `tools/tray/TrayAppLin.c` using `libappindicator3`
+- [ ] Autostart via `~/.config/autostart/aiapi-tray.desktop`
+
+### Windows: Explorer Shell Extension _(LOW PRIORITY)_
+- [ ] COM in-process extension `tools/shellext/AiapiShellExt.cs`
+- [ ] Right-click → "Automate with AIAPI" sub-menu: Open Dashboard, Run scenario…
+
+---
+
+## F-3 — 🌍 Platform Portability
+
+> Separate build machines required. All fallbacks produce the same unified tree node
+> schema and input verbs defined in N-2.
+
+### Windows Backwards Compatibility — Fallback Chain
+```
+Win10/11:  CDP  →  UIA  →  MSAA IAccessible
+Win7/8:    CDP  →  UIA  →  MSAA  →  IHTMLDocument2 (IE ActiveX)
+WinVista:  UIA  →  MSAA  →  IHTMLDocument2
+WinXP:     MSAA  →  IHTMLDocument2 (IE6/7)  →  WM_GETTEXT + EnumChildWindows
+Win2000:   MSAA (partial)  →  IHTMLDocument2 (IE5)  →  WM_GETTEXT
+Win98/95:  IHTMLDocument2 (IE4+)  →  WM_GETTEXT  →  GetDlgItemText
+Win3.1:    WM_GETTEXT  →  GetDlgItemText  →  nothing
+```
+- [ ] Runtime API detection: probe `UIAutomationCore.dll` before using UIA
+- [ ] `IHTMLDocument2` fallback (Win95+, IE4+): in-process DOM for hosted WebBrowser controls
+- [ ] MSAA `IAccessible` fallback (Win95 + MSAA SDK)
+- [ ] `WM_GETTEXT` / `EnumChildWindows` (Win3.1+, classic Win32 controls only)
+
+### Linux — AT-SPI2 + XDoTool _(FUTURE)_
+```
+Modern (2015+):    CDP  →  AT-SPI2 (D-Bus)  →  XDoTool + XQueryTree
+Older (2005-2015): AT-SPI2  →  XDoTool  →  XQueryTree + XGetWindowProperty
+Classic (1990-2005): XQueryTree + XSendEvent  →  XGetWindowProperty
+```
+- [ ] AT-SPI2 D-Bus tree walker: `org.a11y.atspi.Accessible` C binding
+  (Python ref: `pyatspi`; Firefox exposes full ARIA→AT-SPI2 bridge)
+- [ ] XDoTool-equivalent: `XSendEvent(display, window, KeyPress/ButtonPress)`
+- [ ] WebKitGTK `webkit_web_view_evaluate_javascript` for in-process browser
+
+### macOS — AX API + AppleScript _(FUTURE)_
+```
+Modern (2015+):    CDP  →  AX API (AXUIElement)  →  AppleScript
+Older (2005-2015): AX API  →  AppleScript  →  CGEventPost
+```
+- [ ] AX API walker: `AXUIElementCreateSystemWide()` → `kAXChildrenAttribute`
+- [ ] AppleScript `do JavaScript` (Safari + macOS 10.0+): zero flags, full JS eval
+  ```applescript
+  tell application "Safari"
+    do JavaScript "document.getElementById('x').value" in current tab of front window
+  end tell
+  ```
+- [ ] `CGEventPost`: `CGEventCreateKeyboardEvent` / `CGEventCreateMouseEvent`
+  (Accessibility permission required on macOS 10.15+)
+
+
+---
+
+# ICEBOX — Deferred ideas, not yet decided
+
+> Items here have been discussed and deliberately set aside. Not rejected — just not now.
+> Each entry records **what** was proposed, **why** it was deferred, and **what would need to be true** to thaw it.
+
+## ICE-001 — `<ScenarioMethod>` tag as a grammar-level distinction for parameterized atoms
+
+**Proposed:** Add a second XML tag name `<ScenarioMethod>` (interchangeable with `<Scenario>` at the parser level, purely a syntax signal) to distinguish parameterized building-block scenarios (atoms / "methods") from concrete directly-runnable scenarios.
+
+```xml
+<!-- atom — must be called via <ScenarioRef params=...> -->
+<ScenarioMethod id="diag-exec" effect="diagnostic">
+  <Parameters><Param name="jsCode" required="true"/></Parameters>
+  ...
+</ScenarioMethod>
+
+<!-- concrete — directly runnable, no required params -->
+<Scenario id="se1-list-apps" effect="changes-view">
+  ...
+</Scenario>
+```
+
+**Why deferred:**
+- Migration cost: every existing `d*/scenarios.xml` file needs touching
+- Parser needs to handle two tag names for the same underlying construct
+- The distinction is already structurally encoded: `<Param required="true">` = atom; steps-only-ScenarioRef = suite; everything else = concrete — a linter can enforce this without a grammar change (Option C chosen for now)
+
+**What would thaw it:**
+- If the linter (Option C) proves insufficient in practice — i.e. newcomers repeatedly misread atoms as runnable scenarios despite documentation
+- Or if a formal XML schema / IDE plugin is built that benefits from tag-level discrimination
+- Or if `<ScenarioMethod>` would map cleanly to a generated client API (e.g. TypeScript method signatures auto-generated from the XML)
+
+**Related:** G-D.9 (diag-exec cleanup), ADR-008, ADR-010
+
+---
+
+# APPENDIX — COMPLETED MILESTONES
+
+> These chapters are closed. Details live in git history and the referenced source files.
+> The ✅ items throughout Parts I–IV track incremental completions within each active chapter.
+
+| Milestone | Key files / commits | Notes |
+|---|---|---|
+| **KeyWin.exe core** | `components/helpers/windows/src/KeyWin.cs` | QUERYTREE, READ, LISTWINDOWS, CLICK*, SET, SENDKEYS, LAUNCH, KILL, NEWDOC, ~~RESET~~ (retired ADR-009); KEYDOWN/UP/PRESS, RIGHTCLICK, DBLCLICK, HOVER, MOUSEDOWN/UP, FILL, READELEM, CHECK, UNCHECK |
+| **BrowserWin.exe core** | `components/helpers/shared/src/BrowserWin.cs` | CDP WebSocket (pure .NET 4.5, no NuGet); UIA fallback; LAUNCH, QUERYTREE, CLICK*, FILL, COOKIES, SCREENSHOT, PAGESOURCE, NEWPAGE; all 4 browsers |
+| **HelperCommon.cs** | `components/helpers/shared/src/HelperCommon.cs` | RunStdinListener (one-shot + persistent), RunHttpListener, RunNamedPipeListener, AuthState, IdInjectingWriter, HcJson, ParseArgs |
+| **Unified Helper Communication** | `src/helpers/HelperRegistry.ts` | --listen-stdin (Step 1), persistent daemon + HelperDaemon class (Step 2), named-pipe (Step 3); _ping / _schema / _exit built-ins; auto-restart on crash |
+| **Dynamic Helper API Discovery** | `src/helpers/HelperRegistry.ts` | --api-schema scan on startup; MCP tools `listHelpers`, `getHelperSchema`; enable/disable toggle; schema-command autocomplete in filter wizard |
+| **Command Alignment Audit** | `docs/api/KEYWIN_API.md` | Uniform `{target,command,parameter}` wire shape; `id` correlation via IdInjectingWriter; schema completeness verified for all 11 KeyWin + 16 BrowserWin commands |
+| **Test-Session Recording** | `src/helpers/HelperRegistry.ts` | start/finish/JSONL log; auto-screenshot on BrowserWin failure; `/api/session/*` REST + MCP endpoints |
+| **Test infra (self-hosted)** | `tests/integration/test-full-stack-stdin.js` | --self-hosted, --rebuild-first, reloadHelpers(), testSession helpers; 122 tests passing |
+| **Security Filter System** | `src/utils/filterEval.ts`, `src/server/securityFilter.ts` | DENY-wins evaluation; admin bypass; wildcard + /regex/ patterns; wizard + Quick-Edit UI; binary-hash + process-path criteria; 73 unit tests |
+| **Session Token Auth** | `src/security/SessionTokenManager.ts` | 16 unit tests; admin token generate/validate; 15-min expiry; audit logging |
+| **VS Code Extension scaffold** | `src/extension.ts`, `package.json` | Extension activates; MCP@IPC commands (`extension.mcp.callTool`, `extension.mcp.listTools`) registered and working; `"engines":{"vscode":"^1.75.0"}` + `contributes` defined. **`activate()` rewrite pending** — currently starts stale `AutomationEngine`+`HttpServer`; N-0.1 tracks the fix. |
+| **App Knowledge Base (core)** | `components/helpers/*/dist-resources/apptemplates/` | `tree.xsd`, `scenarios.xsd` defined; calculator, notepad, chrome templates authored; ScenarioRef recursion; XmlScenarioLoader + 27 tests; `executeScenario` MCP tool; REST endpoints; dashboard App Templates card; metadata panel; scenario↔filter sidebar |
+| **Project Folder Reconciliation** | commits `cb37bd0`, `be66ceb`, `63624e2` | `components/tools/` → `components/helpers/`; apptemplates split to shared/windows; multi-root `resolveAppTemplateRoots()`; CONVENTIONS.md, CODEBASE_MAP.md updated; legacy JSON scenarios removed |
+| **MCP Server Integration Tests** | `src/server/mcpServer.integration.test.ts` | 39 tests: HTTP transport, JSON-RPC compliance, MCP core, tools/call, admin token API, security filter wire |
+| **MCP Server Performance Tests** | `src/server/mcpServer.perf.test.ts` | 7 tests: p95<200ms serial; 0 errors at 20/50/100 concurrent; memory growth <20MB |
+| **Scenario Editor** | `static/dashboard.js` | tabular step editor; ↑↓ reorder; 🔀 duplicate; undo/redo with history stack; metadata panel; auto-refresh on save; filter sync sidebar |
+

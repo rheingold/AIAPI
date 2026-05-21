@@ -115,6 +115,40 @@ DENY    KeyWin        [procname:explorer.exe]                           SENDKEYS
 
 ---
 
+## SENDKEYS Key Token Reference
+
+The `SENDKEYS` command (KeyWin / BrowserWin) accepts a `value=` keystroke sequence consisting of literal text and/or the following tokens. `path=` is the **element address** to focus before typing — omit it to send to the window itself.
+
+| Token | Key |
+|-------|-----|
+| `{ENTER}` | Enter / Return |
+| `{ESC}` | Escape |
+| `{TAB}` | Tab |
+| `{BACK}` | Backspace |
+| `{DELETE}` | Delete |
+| `{HOME}` | Home |
+| `{END}` | End |
+| `{PAGEUP}` | Page Up |
+| `{PAGEDOWN}` | Page Down |
+| `{LEFT}` `{RIGHT}` `{UP}` `{DOWN}` | Arrow keys |
+| `{F1}` … `{F12}` | Function keys |
+| `{CTRL+X}` | Ctrl + any key (`{CTRL+A}`, `{CTRL+C}`, `{CTRL+V}`, `{CTRL+Z}`, `{CTRL+S}` …) |
+| `{ALT+X}` | Alt + any key (`{ALT+F4}` …) |
+| `{SHIFT+X}` | Shift + any key |
+| `{+}` | Literal `+` |
+
+Literal printable text and tokens can be freely mixed: `Hello{ENTER}World`
+
+**Field mapping for SENDKEYS:**
+
+| MCP field | Meaning |
+|-----------|---------|
+| `proc` | Target window (HANDLE, PID, process name) |
+| `value` | Keystroke sequence (tokens + literal text) |
+| `path` | *Optional* — element to focus before typing. Omit for window-level input. |
+
+---
+
 ## Common Types
 
 ### UIObject
@@ -754,6 +788,151 @@ Notes:
 - The server accepts either `propertyName` or `property` in `arguments`.
 - Typical `providerName` values: `windows-forms`, `web-ui`, `office-*`.
 ---
+## AI Agent Operating Protocol
+
+> **This section is mandatory reading for every AI agent using this API.**  
+> The protocol described here governs how an agent MUST approach every UI automation task.
+> Ignoring it leads to missed dialogs, race conditions, and silent failures.
+
+### Overview
+
+Every automation task follows one of two branches:
+
+```
+Known operation?  ───YES──→  Execute via executeScenario / ScenarioRef
+                                └── post-execution: verify tree (§ Read-back)
+                  ───NO───→  Exploration loop (see below)
+```
+
+### Exploration loop (mandatory for every unknown sub-action)
+
+Run **all steps of this loop** for each individual action within an exploration session:
+
+#### Step 1 — Read the current tree (BEFORE state)
+
+Call `QUERYTREE` scoped to the smallest subtree containing the target control.
+Bind the result (`bind="tree_before"`).
+
+For **browser / web pages** and **Office documents**, capture BOTH:
+- The native window UIA control tree (KeyWin or BrowserWin UIA fallback)
+- The document DOM tree (QUERYTREE CDP mode or PAGESOURCE)
+
+Compare against the app's `tree.xml` template if one exists.
+
+#### Step 2 — Execute the action (priority order, stop at first success)
+
+| Priority | Method | Condition |
+|----------|--------|-----------|
+| **1st** | `SENDKEYS` (keyboard event) | Always attempt first |
+| **2nd** | `CLICKID` / `CLICKNAME` (mouse click) | When keyboard does not apply |
+| **3rd** | `EXEC` JavaScript | Last resort; browsers / JS-compatible apps only |
+
+Never skip to JS without first attempting keyboard and mouse.
+
+#### Step 3 — Read-back verification (AFTER state)
+
+**3.1 — Primary control read-back** *(always required)*  
+Read the value of the control that was just manipulated.  Assert it matches the intended
+value.  A mismatch means the action failed silently.
+
+**3.2 — Dependent control read-back** *(only when dependency is known)*  
+If the action is specified to cascade to another control (e.g. calculator button → display;
+menu selection → status bar), read that control and assert the expected change.
+
+**3.3 — Tree re-read and diff** *(always required — most critical step)*  
+Re-run `QUERYTREE` on the same scope, bind as `tree_after`.  
+Request a `TREEDIFF` against `tree_before`.  The diff is the authoritative signal:
+
+| Diff result | Required action |
+|-------------|----------------|
+| New `dialog` / `modal` / `popup` node | Handle via `<ConditionalRef>` dismiss; re-read tree |
+| Node matching a known dialog in `tree.xml` | Execute documented dismissal from `tree.xml` |
+| URL/page changed | Re-anchor scope; new `QUERYTREE` from new root |
+| Control value unchanged | Retry with next priority method; log failure if all fail |
+| Unexpected structural change | Stop; capture full tree + PAGESOURCE; update `tree.xml` |
+
+> **Critical for web pages**: new `<div>` overlays, React portals, and toast notifications
+> may appear anywhere in the DOM, not only inside the interacted element's subtree.
+> When the action may affect global layout (modal triggers, toast events), widen the diff
+> scope to the full document.
+
+#### Step 4 — Note the scenario
+
+After completing an exploration session:
+- **User scenario mode**: create or update an L2 scenario in `config/scenarios/<app>/`
+- **Master learning mode**: create or update the L1 apptemplate at
+  `components/helpers/*/dist-resources/apptemplates/<app>/scenarios.xml`
+- Dialog-dismissal sub-sequences → wrap as `<ConditionalRef>` subscenario
+- User-defined local templates may be submitted for signing and distribution
+
+---
+
+### Tree Snapshot Registers (`QUERYTREE` + `TREEDIFF`)
+
+The server maintains a named register store (sliding window of 8 entries) for `QUERYTREE`
+results.  Agents bind named snapshots and compute diffs without transferring large trees
+over the transport.
+
+**Capturing snapshots:**
+
+```json
+{ "action": "QUERYTREE", "proc": "brave.exe", "path": "", "value": "3",
+  "bind": "tree_before" }
+```
+
+**Diffing two snapshots:**
+
+```json
+{ "action": "TREEDIFF", "bind_a": "tree_before", "bind_b": "tree_after",
+  "bind": "tree_diff", "op": "all" }
+```
+
+`op` values: `added` `removed` `changed` `all` (default)
+
+**Diff result shape:**
+
+```json
+{
+  "added":   [ { "path": "…", "node": { … } } ],
+  "removed": [ { "path": "…", "node": { … } } ],
+  "changed": [ { "path": "…", "before": { … }, "after": { … } } ],
+  "summary": "2 added, 0 removed, 1 changed"
+}
+```
+
+> Implementation status: **SPECIFIED — not yet implemented** (`U-TREEDIFF` in TODO.md).
+
+---
+
+### Conditional Scenario Blocks (`<ConditionalRef>`)
+
+Non-deterministic events (Save Password dialogs, update banners, confirmation prompts) are
+handled via conditional subscenarios — not by embedding `if/else` logic in step comments.
+
+**Form A — Inline conditional step** (single step, skipped when condition is falsy):
+
+```xml
+<Step action="SENDKEYS" proc="{{proc}}" value="{ESC}"
+      conditional="{{tree_diff.added | hasType:'dialog'}}"
+      note="dismiss unexpected dialog only if diff shows one appeared"/>
+```
+
+**Form B — Conditional subscenario reference** (entire subscenario skipped when `when=` is falsy):
+
+```xml
+<ConditionalRef ref="dismiss-save-password"
+                when="{{tree_diff.added | hasTitle:'Uložit heslo?'}}"
+                note="run only when diff shows a Save Password dialog"/>
+```
+
+`<ConditionalRef>` uses the same `ref=` / `app=` syntax as `<ScenarioRef>`.
+The referenced subscenario should declare `entryCondition=` for documentation.
+
+> Implementation status: **SPECIFIED — `conditional=` attribute partially supported;
+> `<ConditionalRef>` element not yet implemented** (`U-CONDITIONAL` in TODO.md).
+
+---
+
 ## Version History
 
 **v0.1.0** - Initial release

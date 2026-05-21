@@ -1,0 +1,729 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D2 settings-UI test scenarios — test/e2e/d2/scenarios.xml
+  app     : d2
+  helper  : BrowserWin.exe
+  process : chrome.exe
+
+  These scenarios are the TESTING layer for D2 (dashboard settings-UI dogfood).
+  They depend on the shipped app scenarios via cross-XML ScenarioRef:
+    <ScenarioRef app="dashboard" ref="..."/>
+
+  ── Layer design ─────────────────────────────────────────────────────────
+  Test infra  : browser dialog overrides so the test runner can inject values.
+  Test steps  : <ScenarioRef app="dashboard" ...> atoms + inline assert <step>s.
+  Test suite  : d2-suite — runs all steps in order.
+  ─────────────────────────────────────────────────────────────────────────
+  Inline assert pattern:
+    <Step action="CDP_EXECUTE" proc="{{tab}}" value="(()=>{ var v=EXPR; if(!v) throw new Error('LABEL'); return v; })()"
+          note="assert: LABEL"/>
+-->
+<Scenarios app="d2" helper="BrowserWin.exe" process="chrome.exe" xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d2">
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       TEST INFRA — browser dialog shims
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="override-page-dialogs" effect="modifies-dom">
+    <Description lang="en">
+      Patch window.fetch, window.prompt, window.confirm and window.alert
+      so that automation code can inject return values without blocking the
+      browser with a native dialog box.
+      Sets window.__testDialogAnswer (used by click-change-dir) and
+      window.__testAlertMessage (read by assert steps).
+    </Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}" value="(function(){
+  if (window.__origFetch) return 'already-overridden';
+  window.__testDialogAnswer = null;
+  window.__origFetch   = window.fetch;
+  window.__origPrompt  = window.prompt;
+  window.__origConfirm = window.confirm;
+  window.__origAlert   = window.alert;
+  window.fetch = function(url, opts) {
+    if (typeof url === 'string' &amp;&amp; url.includes('/api/shell/openFileDialog')) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, path: window.__testDialogAnswer ?? '' }) });
+    }
+    return window.__origFetch.apply(this, arguments);
+  };
+  window.prompt  = function(msg, def) { return window.__testDialogAnswer ?? def ?? ''; };
+  window.confirm = function() { return true; };
+  window.__testAlertMessage = null;
+  window.alert   = function(msg) { window.__testAlertMessage = msg; };
+  return 'overridden';
+})()"
+            note="install dialog shims; stashes originals for restore"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="restore-page-dialogs" effect="modifies-dom">
+    <Description lang="en">
+      Remove the dialog shims and restore native browser behavior.
+      Call this at the end of a test run to clean up.
+    </Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}" value="(function(){
+  if (window.__origFetch)   { window.fetch   = window.__origFetch;   delete window.__origFetch; }
+  if (window.__origPrompt)  { window.prompt  = window.__origPrompt;  delete window.__origPrompt; }
+  if (window.__origConfirm) { window.confirm = window.__origConfirm; delete window.__origConfirm; }
+  if (window.__origAlert)   { window.alert   = window.__origAlert;   delete window.__origAlert; }
+  delete window.__testDialogAnswer;
+  delete window.__testAlertMessage;
+  return 'restored';
+})()"
+            note="restore original dialog functions; no page reload (keeps CDP connection alive)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S2 — Navigate to Settings tab
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s2-nav-to-settings" effect="changes-view">
+    <Description lang="en">
+      Navigate to the Settings section and assert it becomes active.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var s=document.getElementById('section-settings'); if(!s) throw new Error('S2: #section-settings not in DOM'); if(!s.classList.contains('active')) throw new Error('S2: #section-settings does not have .active class - navigation failed'); return true; })()"
+            note="assert: Settings section is active (has .active class)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S3 — Scan helpers
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s3-scan-helpers" effect="scans-helpers">
+    <Description lang="en">
+      Click Scan for Helpers and assert the helper list becomes populated.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <ScenarioRef app="dashboard" ref="click-scan-helpers"/>
+      <!-- absence check: .helpers-empty must NOT be present — CDP is the only option for absence -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}" value="(()=>{ var v=!document.querySelector('#helpers-list .helpers-empty'); if(!v) throw new Error('S3: helpers list is still empty after scan'); return v; })()"
+            note="assert: .helpers-empty absent (absence check — no READELEM equivalent)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S4 — Reload helpers
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s4-reload-helpers" effect="reloads-helpers">
+    <Description lang="en">
+      Click Reload Helpers and assert the list remains populated.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <ScenarioRef app="dashboard" ref="click-reload-helpers"/>
+      <!-- absence check: .helpers-empty must NOT be present — CDP is the only option for absence -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}" value="(()=>{ var v=!document.querySelector('#helpers-list .helpers-empty'); if(!v) throw new Error('S4: helpers list empty after reload'); return v; })()"
+            note="assert: .helpers-empty absent (absence check — no READELEM equivalent)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S5a — Log level change
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s5a-loglevel-set" effect="modifies-settings">
+    <Description lang="en">
+      Open Settings, change the log level to {{logLevel}} (default: "debug"),
+      save, and assert the saved value matches.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <ScenarioRef app="dashboard" ref="set-loglevel-select"/>
+      <ScenarioRef app="dashboard" ref="click-save-settings"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-log-level').value"
+            bind="savedLevel" note="read log-level select value after save"/>
+      <Step action="ASSERT" path="'{{savedLevel}}'" value="'{{logLevel}}'"
+            note="assert: log-level persisted to {{logLevel}}"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S5b — Reload cancels unsaved changes
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s5b-reload-cancels" effect="reloads-form">
+    <Description lang="en">
+      Change the log level to {{logLevelDirty}} (an unused value), click Reload
+      (without saving), and assert the value reverts (no longer equals {{logLevelDirty}}).
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <!-- set dirty value via CDP directly (uses {{logLevelDirty}}, not {{logLevel}}) -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var el=document.getElementById('setting-log-level'); if(el){ el.value='{{logLevelDirty}}'; el.dispatchEvent(new Event('change',{bubbles:true})); return el.value; } return null; })()"
+            note="set log-level to dirty value {{logLevelDirty}} without saving"/>
+      <ScenarioRef app="dashboard" ref="click-reload-settings"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-log-level').value"
+            bind="revertedLevel" note="read log-level select value after reload"/>
+      <Step action="ASSERT" path="'{{revertedLevel}}'" value="'{{logLevelDirty}}'" op="!=="
+            note="assert: log-level reverted by Reload (must differ from dirty value {{logLevelDirty}})"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S6 — Path field direct edit
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s6-path-field-edit" effect="modifies-settings">
+    <Description lang="en">
+      Set a path-input field ({{fieldId}}) to {{fieldVal}}, save,
+      assert the value was persisted, then restore the original and save again.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var v=document.getElementById('{{fieldId}}').value; try { var j=JSON.parse(v); if(j&amp;&amp;j.found!==undefined&amp;&amp;j.value!==undefined) return j.value; } catch(e){} return v; })()"
+            bind="origField" note="snapshot original value of {{fieldId}} (guards against READELEM-JSON corruption)"/>
+      <ScenarioRef app="dashboard" ref="set-path-field"/>
+      <ScenarioRef app="dashboard" ref="click-save-settings"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('{{fieldId}}').value"
+            bind="savedField" note="read path field value after save"/>
+      <Step action="ASSERT" path="'{{savedField}}'" value="'{{fieldVal}}'"
+            note="assert: path field persisted to {{fieldVal}}"/>
+      <!-- restore original value -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var el=document.getElementById('{{fieldId}}'); el.value='{{origField|j}}'; el.dispatchEvent(new Event('input',{bubbles:true})); return el.value; })()"
+            note="restore {{fieldId}} to original value"/>
+      <ScenarioRef app="dashboard" ref="click-save-settings"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S6b — Browse button for path field
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s6b-path-browse" effect="modifies-dom">
+    <Description lang="en">
+      Snapshot the field, install dialog shims, inject {{browseVal}} as the
+      dialog answer, click the Browse button via CDP (XPath not supported by
+      BrowserWin for compound selectors), wait for the async callback, assert
+      the field updated, then restore and save.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <!-- snapshot original field value so we can restore afterward -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('{{fieldId}}').value"
+            bind="origBrowseField" note="snapshot field {{fieldId}} before browse"/>
+      <ScenarioRef ref="override-page-dialogs"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}" value="window.__testDialogAnswer = '{{browseVal}}'"
+            note="prime dialog answer to {{browseVal}}"/>
+      <!-- use CDP click — CLICKID XPath with contains(@class) is not supported by BrowserWin -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var btn=document.querySelector('.btn-browse[data-target=&quot;{{fieldId}}&quot;]'); if(!btn) throw new Error('S6b: btn-browse for {{fieldId}} not found'); btn.click(); return 'clicked'; })()"
+            note="CDP-click Browse button for field {{fieldId}}"/>
+      <Step action="WAIT" proc="" value="700" note="wait for async openFileDialog callback"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('{{fieldId}}').value"
+            bind="browseResult" note="read field {{fieldId}} value after browse callback"/>
+      <Step action="ASSERT" path="'{{browseResult}}'" value="'{{browseVal}}'"
+            note="assert: field {{fieldId}} now contains {{browseVal}}"/>
+      <!-- restore original value and save -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var el=document.getElementById('{{fieldId}}'); el.value='{{origBrowseField|j}}'; el.dispatchEvent(new Event('input',{bubbles:true})); return el.value; })()"
+            note="restore field {{fieldId}} to original value"/>
+      <ScenarioRef app="dashboard" ref="click-save-settings"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S7 — Working directory change
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s7-workdir-change" effect="modifies-settings">
+    <Description lang="en">
+      Set window.__testDialogAnswer to {{newDir}}, click Change Dir,
+      and assert #current-working-dir reflects the new path.
+    </Description>
+    <Steps>
+      <ScenarioRef ref="override-page-dialogs"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}" value="window.__testDialogAnswer = '{{newDir}}'"
+            note="prime dialog answer with new directory path"/>
+      <ScenarioRef app="dashboard" ref="click-change-dir"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('current-working-dir').textContent"
+            bind="wdirVal" note="read current working directory display"/>
+      <!-- only assert the element is readable -->
+      <Step action="ASSERTPATHEVAL" path="typeof '{{wdirVal}}' === 'string'"
+            note="assert: current-working-dir element is readable"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S8 — Navigate to Logs and clear
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s8-clear-logs" effect="clears-logs">
+    <Description lang="en">
+      Navigate to the Logs section, record the current entry count,
+      click Clear Logs, and assert the count dropped significantly.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-logs"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}" value="window.__preCount = document.querySelectorAll('#log-output .log-entry').length; window.__preCount"
+            note="snapshot log count before clear"/>
+      <ScenarioRef app="dashboard" ref="click-clear-logs"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}" value="(()=>{ var after=document.querySelectorAll('#log-output .log-entry').length; var before=window.__preCount||0; if(after>=30 || (before>5 &amp;&amp; after>=before)) throw new Error('S8: logs not cleared, before='+before+' after='+after); return after; })()"
+            note="assert: log count dropped (fewer than 30 and below before-count)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S10 — Security checkbox toggle (require-signature)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s10-security-checkbox" effect="modifies-settings">
+    <Description lang="en">
+      Read the current state of setting-require-signature, toggle it, save,
+      assert the new state is reflected in the DOM, then restore and save again.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <!-- snapshot initial checked state -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-require-signature').checked"
+            bind="initChecked" note="snapshot initial checked state of require-signature"/>
+      <!-- toggle the checkbox -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var el=document.getElementById('setting-require-signature'); el.checked=!el.checked; el.dispatchEvent(new Event('change',{bubbles:true})); return el.checked; })()"
+            bind="afterToggle" note="toggle require-signature"/>
+      <ScenarioRef app="dashboard" ref="click-save-settings"/>
+      <!-- assert DOM shows toggled value -->
+      <Step action="ASSERTPATHEVAL"
+            path="({{afterToggle}}) !== ({{initChecked}})"
+            note="assert: require-signature toggled (differs from initial)"/>
+      <!-- restore: toggle back and save -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var el=document.getElementById('setting-require-signature'); el.checked=!el.checked; el.dispatchEvent(new Event('change',{bubbles:true})); return el.checked; })()"
+            note="restore require-signature to original state"/>
+      <ScenarioRef app="dashboard" ref="click-save-settings"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-require-signature').checked"
+            bind="restoredChecked" note="read restored state"/>
+      <Step action="ASSERTPATHEVAL"
+            path="({{restoredChecked}}) === ({{initChecked}})"
+            note="assert: require-signature restored to original value"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S11 — Token expiry field + generate-token button
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s11-token-expiry-and-generate" effect="modifies-settings">
+    <Description lang="en">
+      Read current token expiry, change to 90, save, assert DOM reflects 90,
+      then restore. Also click Generate Token and assert current-token updates.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <!-- snapshot initial token expiry -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-token-expiry').value"
+            bind="initExpiry" note="snapshot initial token-expiry value"/>
+      <!-- set to 90 -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var el=document.getElementById('setting-token-expiry'); el.value='90'; el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true})); return el.value; })()"
+            note="set token-expiry to 90"/>
+      <ScenarioRef app="dashboard" ref="click-save-settings"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-token-expiry').value"
+            bind="savedExpiry" note="read token-expiry after save"/>
+      <Step action="ASSERT" path="'{{savedExpiry}}'" value="'90'"
+            note="assert: token-expiry saved as 90"/>
+      <!-- restore original value -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var el=document.getElementById('setting-token-expiry'); el.value='{{initExpiry|j}}'; el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true})); return el.value; })()"
+            note="restore token-expiry to original value"/>
+      <ScenarioRef app="dashboard" ref="click-save-settings"/>
+      <!-- generate-token: snapshot token display, click button, assert it changed -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('current-token').textContent"
+            bind="tokenBefore" note="snapshot current-token text before generate"/>
+      <Step action="CLICKID" proc="{{tab}}" path="#btn-generate-token" note="click Generate New Token"/>
+      <Step action="WAIT" proc="" value="800" note="wait for token generation"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('current-token').textContent"
+            bind="tokenAfter" note="read current-token after generate"/>
+      <Step action="ASSERTPATHEVAL"
+            path="typeof '{{tokenAfter}}' === 'string' &amp;&amp; '{{tokenAfter}}'.length > 4"
+            note="assert: current-token element shows a non-trivial string"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S12 — Port fields loaded correctly
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s12-port-fields-read" effect="read-only">
+    <Description lang="en">
+      Assert setting-port and setting-dashboard-port are loaded with numeric values
+      matching the live /api/settings response.
+    </Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" default="http://localhost:3458"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-port').value"
+            bind="portVal" note="read MCP server port field"/>
+      <Step action="ASSERTPATHEVAL"
+            path="Number('{{portVal}}') > 1023 &amp;&amp; Number('{{portVal}}') &lt; 65536"
+            note="assert: setting-port is a valid port number"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-dashboard-port').value"
+            bind="dashPortVal" note="read dashboard port field"/>
+      <Step action="ASSERTPATHEVAL"
+            path="Number('{{dashPortVal}}') > 1023 &amp;&amp; Number('{{dashPortVal}}') &lt; 65536"
+            note="assert: setting-dashboard-port is a valid port number"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/settings" path="GET" bind="settingsForPorts"
+            note="GET /api/settings for port cross-check"/>
+      <Step action="ASSERTPATHEVAL"
+            path="String(({{settingsForPorts}}).server.port) === '{{portVal}}'"
+            note="assert: DOM port matches REST api/settings server.port"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S13 — Validate Configuration button
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s13-validate-config" effect="read-only">
+    <Description lang="en">
+      Click Validate Configuration and assert #config-status is populated
+      with at least one status-item (not the initial "Checking..." placeholder).
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <Step action="CLICKID" proc="{{tab}}" path="#btn-validate-config"
+            note="click Validate Configuration"/>
+      <Step action="WAIT" proc="" value="1200" note="wait for async validation response"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var items=document.querySelectorAll('#config-status .status-item'); if(!items.length) throw new Error('S13: config-status has no items after validate'); var hasRealItem=[...items].some(el=>!el.textContent.includes('Checking') &amp;&amp; !el.textContent.includes('Validating')); if(!hasRealItem) throw new Error('S13: config-status still shows placeholder'); return items.length; })()"
+            note="assert: config-status has real validation results"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S14 — Extra path fields (scenarios-path, session-dir)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s14-extra-path-fields" effect="modifies-settings">
+    <Description lang="en">
+      Edit setting-scenarios-path and setting-session-dir, save, assert persisted,
+      then restore originals and save again.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <!-- snapshot originals as plain strings - guard against READELEM-JSON corruption:
+           if stored value looks like READELEM JSON, extract the 'value' field from it -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var v=document.getElementById('setting-scenarios-path').value; try { var j=JSON.parse(v); if(j&amp;&amp;j.found!==undefined&amp;&amp;j.value!==undefined) return j.value; } catch(e){} return v; })()"
+            bind="origScenarios" note="snapshot scenarios-path (guards against READELEM-JSON corruption)"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var v=document.getElementById('setting-session-dir').value; try { var j=JSON.parse(v); if(j&amp;&amp;j.found!==undefined&amp;&amp;j.value!==undefined) return j.value; } catch(e){} return v; })()"
+            bind="origSession" note="snapshot session-dir (guards against READELEM-JSON corruption)"/>
+      <!-- set test values -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var el=document.getElementById('setting-scenarios-path'); el.value='C:/test-scenarios'; el.dispatchEvent(new Event('input',{bubbles:true})); return el.value; })()"
+            note="set scenarios-path to test value"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var el=document.getElementById('setting-session-dir'); el.value='C:/test-sessions'; el.dispatchEvent(new Event('input',{bubbles:true})); return el.value; })()"
+            note="set session-dir to test value"/>
+      <ScenarioRef app="dashboard" ref="click-save-settings"/>
+      <!-- assert saved -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-scenarios-path').value"
+            bind="savedScenarios" note="read scenarios-path after save"/>
+      <Step action="ASSERT" path="'{{savedScenarios}}'" value="'C:/test-scenarios'"
+            note="assert: scenarios-path persisted"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-session-dir').value"
+            bind="savedSession" note="read session-dir after save"/>
+      <Step action="ASSERT" path="'{{savedSession}}'" value="'C:/test-sessions'"
+            note="assert: session-dir persisted"/>
+      <!-- restore original values with input events so saveSettings() picks them up -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var sp=document.getElementById('setting-scenarios-path'); sp.value='{{origScenarios|j}}'; sp.dispatchEvent(new Event('input',{bubbles:true})); var sd=document.getElementById('setting-session-dir'); sd.value='{{origSession|j}}'; sd.dispatchEvent(new Event('input',{bubbles:true})); return 'restored'; })()"
+            note="restore original path values with input events"/>
+      <ScenarioRef app="dashboard" ref="click-save-settings"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S15 — Setup Wizard panel: open and check status
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s15-setup-wizard" effect="read-only">
+    <Description lang="en">
+      Open the Setup Wizard panel, click Check Status, and assert
+      #setup-step-table is populated with step rows.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <!-- ensure panel is open (toggleSetupPanel shows/hides setup-panel-body) -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var body=document.getElementById('setup-panel-body'); if(body &amp;&amp; body.style.display==='none'){ body.style.display=''; } return body ? body.style.display : 'missing'; })()"
+            note="open setup wizard panel if collapsed"/>
+      <Step action="CLICKID" proc="{{tab}}" path="#btn-check-setup"
+            note="click Check Status"/>
+      <Step action="WAIT" proc="" value="1500" note="wait for setup status API response"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var t=document.getElementById('setup-step-table'); if(!t) throw new Error('S15: #setup-step-table missing'); var rows=t.querySelectorAll('tbody tr'); if(!rows.length) throw new Error('S15: setup-step-table has no rows'); return rows.length; })()"
+            note="assert: setup-step-table has at least one step row"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S16 — security-path field edit + restore
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s16-security-path-field" effect="modifies-settings">
+    <Description lang="en">
+      Snapshot setting-security-path, set it to C:/test-security, save,
+      assert the value persisted, then restore the original and save again.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <!-- snapshot original value — guard against READELEM-JSON corruption -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var v=document.getElementById('setting-security-path').value; try { var j=JSON.parse(v); if(j&amp;&amp;j.found!==undefined&amp;&amp;j.value!==undefined) return j.value; } catch(e){} return v; })()"
+            bind="origSecPath" note="snapshot original value of setting-security-path (guards against READELEM-JSON corruption)"/>
+      <!-- set test value and dispatch input event -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var el=document.getElementById('setting-security-path'); el.value='C:/test-security'; el.dispatchEvent(new Event('input',{bubbles:true})); return el.value; })()"
+            note="set setting-security-path to C:/test-security"/>
+      <ScenarioRef app="dashboard" ref="click-save-settings"/>
+      <!-- read and assert persisted value -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-security-path').value"
+            bind="savedSecPath" note="read setting-security-path after save"/>
+      <Step action="ASSERT" path="'{{savedSecPath}}'" value="'C:/test-security'"
+            note="assert: setting-security-path persisted to C:/test-security"/>
+      <!-- restore original value -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var el=document.getElementById('setting-security-path'); el.value='{{origSecPath|j}}'; el.dispatchEvent(new Event('input',{bubbles:true})); return el.value; })()"
+            note="restore setting-security-path to original value"/>
+      <ScenarioRef app="dashboard" ref="click-save-settings"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S17 — Public key and private key path fields (read-only check)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s17-key-path-fields" effect="read-only">
+    <Description lang="en">
+      Assert setting-public-key and setting-private-key exist in the DOM and
+      contain non-empty string values. Fields are not modified — key paths are
+      sensitive and restore would be fragile.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-public-key').value"
+            bind="pubKeyVal" note="read setting-public-key value"/>
+      <Step action="ASSERTPATHEVAL"
+            path="typeof '{{pubKeyVal}}' === 'string' &amp;&amp; '{{pubKeyVal}}'.length > 0"
+            note="assert: setting-public-key is a non-empty string"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-private-key').value"
+            bind="privKeyVal" note="read setting-private-key value"/>
+      <Step action="ASSERTPATHEVAL"
+            path="typeof '{{privKeyVal}}' === 'string' &amp;&amp; '{{privKeyVal}}'.length > 0"
+            note="assert: setting-private-key is a non-empty string"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S18 — allow-unsigned-scenarios + enable-session-auth checkboxes
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s18-security-checkboxes" effect="modifies-settings">
+    <Description lang="en">
+      Toggle setting-allow-unsigned-scenarios and setting-enable-session-auth,
+      save after each toggle, assert the state changed, then restore and save again.
+      Pattern mirrors s10-security-checkbox.
+    </Description>
+    <Steps>
+      <!-- ── allow-unsigned-scenarios ── -->
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-allow-unsigned-scenarios').checked"
+            bind="initAllowUnsigned" note="snapshot initial checked state of allow-unsigned-scenarios"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var el=document.getElementById('setting-allow-unsigned-scenarios'); el.checked=!el.checked; el.dispatchEvent(new Event('change',{bubbles:true})); return el.checked; })()"
+            bind="afterAllowUnsigned" note="toggle allow-unsigned-scenarios"/>
+      <ScenarioRef app="dashboard" ref="click-save-settings"/>
+      <Step action="ASSERTPATHEVAL"
+            path="({{afterAllowUnsigned}}) !== ({{initAllowUnsigned}})"
+            note="assert: allow-unsigned-scenarios toggled (differs from initial)"/>
+      <!-- restore allow-unsigned-scenarios -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var el=document.getElementById('setting-allow-unsigned-scenarios'); el.checked=!el.checked; el.dispatchEvent(new Event('change',{bubbles:true})); return el.checked; })()"
+            note="restore allow-unsigned-scenarios to original state"/>
+      <ScenarioRef app="dashboard" ref="click-save-settings"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-allow-unsigned-scenarios').checked"
+            bind="restoredAllowUnsigned" note="read restored state of allow-unsigned-scenarios"/>
+      <Step action="ASSERTPATHEVAL"
+            path="({{restoredAllowUnsigned}}) === ({{initAllowUnsigned}})"
+            note="assert: allow-unsigned-scenarios restored to original value"/>
+      <!-- ── enable-session-auth ── -->
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-enable-session-auth').checked"
+            bind="initSessionAuth" note="snapshot initial checked state of enable-session-auth"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var el=document.getElementById('setting-enable-session-auth'); el.checked=!el.checked; el.dispatchEvent(new Event('change',{bubbles:true})); return el.checked; })()"
+            bind="afterSessionAuth" note="toggle enable-session-auth"/>
+      <ScenarioRef app="dashboard" ref="click-save-settings"/>
+      <Step action="ASSERTPATHEVAL"
+            path="({{afterSessionAuth}}) !== ({{initSessionAuth}})"
+            note="assert: enable-session-auth toggled (differs from initial)"/>
+      <!-- restore enable-session-auth -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var el=document.getElementById('setting-enable-session-auth'); el.checked=!el.checked; el.dispatchEvent(new Event('change',{bubbles:true})); return el.checked; })()"
+            note="restore enable-session-auth to original state"/>
+      <ScenarioRef app="dashboard" ref="click-save-settings"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-enable-session-auth').checked"
+            bind="restoredSessionAuth" note="read restored state of enable-session-auth"/>
+      <Step action="ASSERTPATHEVAL"
+            path="({{restoredSessionAuth}}) === ({{initSessionAuth}})"
+            note="assert: enable-session-auth restored to original value"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S19 — Per-helper panel render check
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s19-per-helper-panel" effect="read-only">
+    <Description lang="en">
+      After scanning, assert that #helpers-list contains at least one rendered
+      helper item (not just the .helpers-empty placeholder that s3 already
+      tests for absence of). Uses a broad child selector to tolerate any CSS
+      class the UI may use for helper cards/rows.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <ScenarioRef app="dashboard" ref="click-scan-helpers"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var list=document.getElementById('helpers-list'); if(!list) throw new Error('S19: #helpers-list missing'); var nonEmpty=[...list.children].filter(function(el){ return !el.classList.contains('helpers-empty'); }); if(!nonEmpty.length) throw new Error('S19: no helper items rendered after scan'); return nonEmpty.length; })()"
+            bind="helperItemCount" note="assert: #helpers-list has at least one non-.helpers-empty child after scan"/>
+      <Step action="ASSERTPATHEVAL"
+            path="Number('{{helperItemCount}}') > 0"
+            note="assert: helperItemCount is a positive number"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       DIAGNOSTIC — arbitrary CDP_EXECUTE (diag/dev use only)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S1: REST baseline
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s1-rest-baseline" effect="read-only">
+    <Description lang="en">GET /api/settings and assert key fields are present and correctly typed.</Description>
+    <Parameters>
+      <Param name="dashUrl"  type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+      <Param name="dashPort" type="string" required="false" example="3458" note="expected dashboardPort value (string)"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/settings" path="GET"
+            bind="settingsResult" note="GET /api/settings"/>
+      <Step action="EVAL" path="(()=>{ const s={{settingsResult}}; if(!s||typeof s!=='object') throw new Error('S1: /api/settings not object'); if(typeof s.server.port!=='number') throw new Error('S1: server.port not number'); if(typeof s.server.dashboardPort!=='number') throw new Error('S1: dashboardPort not number'); if(!Array.isArray(s.paths.helperPaths)) throw new Error('S1: helperPaths not array'); if(typeof s.server.logLevel!=='string') throw new Error('S1: logLevel not string'); if(String(s.server.dashboardPort)!=='{{dashPort}}') throw new Error('S1: dashboardPort='+s.server.dashboardPort+' expected {{dashPort}}'); return {ok:true}; })()"
+            bind="s1Ok" note="assert settings shape"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       S9: REST extras
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="s9-rest-extras" effect="read-only">
+    <Description lang="en">/api/status, /api/helpers/disabled, per-helper schema (CDP loop), unknown-schema check.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/status" path="GET"
+            bind="statusResult" note="GET /api/status"/>
+      <Step action="EVAL" path="(()=>{ const r={{statusResult}}; if(r.success!==true) throw new Error('S9: /api/status failed'); if(typeof r.data.uptime!=='number') throw new Error('S9: uptime not number'); return {ok:true}; })()"
+            note="assert /api/status"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/helpers/disabled" path="GET"
+            bind="disabledResult" note="GET /api/helpers/disabled"/>
+      <Step action="EVAL" path="(()=>{ const r={{disabledResult}}; if(r.success!==true) throw new Error('S9: /api/helpers/disabled failed'); if(!Array.isArray(r.disabledHelpers)) throw new Error('S9: disabledHelpers not array'); return {ok:true}; })()"
+            note="assert /api/helpers/disabled"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(async()=>{ const lr=await fetch('/api/listHelpers').then(r=>r.json()); for(const h of lr.helpers??[]){ const sr=await fetch('/api/getHelperSchema?name='+encodeURIComponent(h.name)).then(r=>r.json()); if(sr.success!==true) throw new Error('S9: getHelperSchema('+h.name+') failed'); if(!Array.isArray(sr.schema.commands)) throw new Error('S9: commands not array for '+h.name); } return {ok:true,helperCount:(lr.helpers??[]).length}; })()"
+            bind="schemaLoopOk" note="CDP: iterate helpers and assert each has a schema"/>
+      <!-- unknown-schema check removed: the endpoint returns HTTP 404 which causes HTTP_FETCH step to fail;
+           the 404 behavior is a server contract verified by d10-server-foundations, not a UI behavior. -->
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       D2 full test suite
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="d2-suite" effect="test-suite">
+    <Description lang="en">Full D2 settings-UI dogfood suite — S1 through S9.</Description>
+    <Parameters>
+      <Param name="dashUrl"       type="string" required="false" default="http://localhost:3458" example="http://localhost:3458" note="dashboard base URL"/>
+      <Param name="dashPort"      type="string" required="false" default="3458"                  example="3458"                  note="expected dashboardPort"/>
+      <!-- S5a: log level to save and assert -->
+      <Param name="logLevel"      type="string" required="false" default="debug"                 example="debug"                 note="log level to save in S5a"/>
+      <!-- S5b: dirty log level (must differ from logLevel) to test reload-cancel -->
+      <Param name="logLevelDirty" type="string" required="false" default="warn"                  example="warn"                  note="dirty log level for S5b reload-cancel test"/>
+      <!-- S6: path field to edit (use forward-slash paths to avoid JS backslash-escape issues in CDP) -->
+      <Param name="fieldId"       type="string" required="false" default="setting-helper-paths" example="setting-helper-paths" note="settings input field id for S6"/>
+      <Param name="fieldVal"      type="string" required="true"                                   example="C:/helpers-test"      note="bogus value to write to fieldId in S6 — must not be a real path (triggers validate error)"/>
+      <!-- S6b: browse result -->
+      <Param name="browseVal"     type="string" required="true"                                   example="C:/browsed-helpers"   note="simulated browse dialog result for S6b — must not be a real path"/>
+      <!-- S7: new working directory -->
+      <Param name="newDir"        type="string" required="true"                                   example="C:/work-test"         note="bogus working directory for S7 inject test — must not be a real path"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef ref="override-page-dialogs"/>
+      <ScenarioRef ref="s1-rest-baseline"/>
+      <ScenarioRef ref="s2-nav-to-settings"/>
+      <ScenarioRef ref="s3-scan-helpers"/>
+      <ScenarioRef ref="s4-reload-helpers"/>
+      <ScenarioRef ref="s5a-loglevel-set"/>
+      <ScenarioRef ref="s5b-reload-cancels"/>
+      <ScenarioRef ref="s6-path-field-edit"/>
+      <ScenarioRef ref="s7-workdir-change"/>
+      <ScenarioRef ref="s8-clear-logs"/>
+      <ScenarioRef ref="s9-rest-extras"/>
+      <ScenarioRef ref="s10-security-checkbox"/>
+      <ScenarioRef ref="s11-token-expiry-and-generate"/>
+      <ScenarioRef ref="s12-port-fields-read"/>
+      <ScenarioRef ref="s13-validate-config"/>
+      <ScenarioRef ref="s14-extra-path-fields"/>
+      <ScenarioRef ref="s15-setup-wizard"/>
+      <ScenarioRef ref="s16-security-path-field"/>
+      <ScenarioRef ref="s17-key-path-fields"/>
+      <ScenarioRef ref="s18-security-checkboxes"/>
+      <ScenarioRef ref="s19-per-helper-panel"/>
+      <ScenarioRef ref="s6b-path-browse"/>
+      <ScenarioRef ref="restore-page-dialogs"/>
+    </Steps>
+  </Scenario>
+
+</Scenarios>

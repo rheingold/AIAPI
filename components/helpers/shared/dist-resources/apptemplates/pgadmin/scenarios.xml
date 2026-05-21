@@ -1,0 +1,458 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Scenarios app="pgadmin" helper="BrowserWin.exe" process="{{browser}}">
+  <!--
+    pgAdmin 4 web-UI automation scenarios.
+    Helper : BrowserWin.exe
+    Target : browser process hosting pgAdmin (default: brave.exe; override via {{browser}})
+    Login  : credentials read externally (ai_priv/db.json → pgadmin.email / .password)
+
+    Variables expected at runtime:
+      {{pgadmin_url}}   — base URL, e.g. http://192.168.254.16:30056/
+      {{email}}         — pgAdmin login email (ddladmin@localhost.locale)
+      {{password}}      — pgAdmin login password
+      {{browser}}       — browser process name, e.g. brave.exe
+      {{pg_host}}       — PostgreSQL host (192.168.254.16)
+      {{pg_port}}       — PostgreSQL port (5432)
+      {{pg_user}}       — PostgreSQL username (ddladmin)
+      {{pg_password}}   — PostgreSQL password
+
+    CRITICAL — correct pgAdmin API path pattern (discovered via live session):
+      /browser/server_group/obj/                          GET  → [{id, name}]
+      /browser/server/obj/<sgid>/                         POST → register, GET → list
+      /browser/database/nodes/<sgid>/<sid>/               GET  → [{_id, label, connected}]
+      /browser/schema/nodes/<sgid>/<sid>/<dbid>/          GET  → [{_id, label}]
+      /browser/table/nodes/<sgid>/<sid>/<dbid>/<schid>/   GET  → [{_id, label}]
+
+    NOT /children/ — that returns 404/410.
+    NOT /browser/server/nodes/<sgid>/ without a registered server — returns 410.
+
+    STABLE IDs for this installation (do not change unless DB is dropped):
+      sgid  = 2       (server group "Servers" — stable)
+      dbid  = 127376  (database "aiapi_test" — PostgreSQL OID, stable)
+      schid = 2200    (schema "public" — standard pg OID, stable)
+
+    DYNAMIC per session:
+      sid = 3,4,5...  Each POST to register-server creates a NEW entry.
+                      Always read sid from the POST response .node._id.
+
+    CSRF: always read pgAdmin.csrf_token; send as X-pgA-CSRFToken header on every API call.
+    XHR:  must be synchronous (EXEC has no awaitPromise) — use XMLHttpRequest async=false.
+    FILL: React SPA — use HTMLInputElement.prototype.value setter + dispatchEvent('input').
+
+    OPERATIONAL NOTES (verified via live session):
+
+    A. CDP-enabled browser required:
+       BrowserWin EXEC/FILL require --remote-debugging-port=9222 on Brave/Chrome.
+       Only one Brave instance should be running. If two exist, EXEC targets the first
+       found which may be a blocked/unsupported instance. Kill stale processes first.
+
+    B. 'Uložit heslo?' (Save password?) Brave dialog:
+       Fires when pgAdmin tree nodes expand (pgAdmin passes PG password through XHR).
+       Appears as a separate Win32 window (LISTWINDOWS title 'Uložit heslo?').
+       NOT a web modal — cannot be dismissed via CLICKNAME/CLICKID.
+       Use: SENDKEYS HANDLE:{h} {ESC}    (two occurrences per session are normal).
+
+    C. 'Opustit web?' (Leave page?) Brave dialog:
+       Fires if NAVIGATE is sent while on /browser/ (pgAdmin has a beforeunload handler).
+       Cannot be dismissed programmatically via BrowserWin. Solution: do NOT NAVIGATE
+       while on /browser/. Use EXEC: location.href = '...' or REST API instead.
+
+    D. CLICKID fails for .directory-toggle in CDP mode:
+       Use EXEC: document.querySelector('I.directory-toggle').click()
+       For second occurrence: document.querySelectorAll('I.directory-toggle')[1].click()
+
+    E. Connection state is per Flask session:
+       Server DEFINITION persists (pgAdmin SQLite). Connection does NOT survive
+       browser restart. Reconnect by re-POSTing register-server each launch.
+       Symptom if not connected: database/nodes → HTTP 500 'invalid literal for int ... None'.
+
+    F. POST /browser/server/obj/{sgid}/ always creates a NEW server entry (sid++).
+       No standalone reconnect endpoint exists. Dynamic sid must be read from POST response.
+
+    G. LISTWINDOWS must be called after every action that could trigger a dialog.
+       Dialogs block JS execution in CDP — EXEC returns null until dialog is dismissed.
+
+    H. JSON truncation: Never slice responseText before JSON.parse; parse inside EXEC
+       and return a structured object instead of raw text for large responses.
+  -->
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       launch-browser  — start CDP-enabled Brave
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="launch-browser" effect="opens-browser">
+    <Description lang="en">
+      Launch Brave with CDP enabled on port 9222. Required before EXEC/FILL/CLICKID.
+      Do not run if a CDP-enabled browser is already open.
+    </Description>
+    <Description lang="ai">
+      Command (PowerShell): Start-Process brave -ArgumentList "--remote-debugging-port=9222","--user-data-dir=$env:TEMP\aiapi-9222","{{pgadmin_url}}login"
+      Only the instance started with --remote-debugging-port=9222 accepts CDP commands.
+      If two Brave instances exist (one CDP, one normal), proc:'brave.exe' may hit either.
+      Kill all stale Brave processes before launching: Stop-Process -Name brave -ErrorAction SilentlyContinue
+      Wait ~3 s after launch before sending EXEC.
+    </Description>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       login  — open pgAdmin and authenticate
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="login" effect="authenticates">
+    <ScenarioRef ref="launch-browser"/>
+    <Description lang="en">
+      Navigate to the pgAdmin login page, fill email and password, and submit.
+      After success the browser is redirected to /browser/ (the object-explorer page).
+      WARNING: Do NOT use NAVIGATE while already on /browser/ — this triggers
+      the 'Opustit web?' (Leave page?) dialog which cannot be programmatically dismissed.
+    </Description>
+    <Description lang="ai">
+      1. NAVIGATE to {{pgadmin_url}}login — loads the React login form.
+      2. EXEC: use HTMLInputElement.prototype.value setter + input event to fill email
+         (plain FILL does NOT trigger React state updates).
+      3. EXEC: same technique for password field.
+      4. CLICKNAME "Login" — clicks the MUI Login button.
+      5. Wait ~3 s, then EXEC location.href to verify redirect to /browser/.
+      Failure: location.href still contains "login" → wrong credentials or network.
+      After redirect: LISTWINDOWS to confirm no unexpected dialogs before continuing.
+    </Description>
+    <Steps>
+      <Step action="NAVIGATE"   target="{{browser}}" parameter="{{pgadmin_url}}login"
+            note="loads pgAdmin login page; React SPA"/>
+      <Step action="EXEC"       target="{{browser}}"
+            parameter="Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(document.querySelector('[name=email]'),{{email}})||document.querySelector('[name=email]').dispatchEvent(new Event('input',{bubbles:true}))||document.querySelector('[name=email]').value"
+            note="fill email via React-compatible setter"/>
+      <Step action="EXEC"       target="{{browser}}"
+            parameter="Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(document.querySelector('[name=password]'),{{password}})||document.querySelector('[name=password]').dispatchEvent(new Event('input',{bubbles:true}))||document.querySelector('[name=password]').value"
+            note="fill password via React-compatible setter"/>
+      <Step action="CLICKNAME"  target="{{browser}}" parameter="Login"
+            note="clicks the MUI Login button (first button with text 'Login')"/>
+      <Step action="EXEC"       target="{{browser}}" parameter="location.href"
+            note="assert: result must NOT contain 'login'; must contain '/browser/'"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       list-server-groups  — GET /browser/server_group/obj/
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="list-server-groups" effect="read-only">
+    <ScenarioRef ref="login"/>
+    <Description lang="en">
+      GET /browser/server_group/obj/ — returns JSON array of server groups.
+      Default: [{id:2, name:"Servers"}]. Store the relevant group id as {{sgid}}.
+    </Description>
+    <Description lang="ai">
+      Response is a JSON array, NOT wrapped in a .data field.
+      The default group "Servers" typically has id=2.
+      Requires X-pgA-CSRFToken header (read from pgAdmin.csrf_token).
+    </Description>
+    <Steps>
+      <Step action="EXEC" target="{{browser}}"
+            parameter="(function(){var c=pgAdmin.csrf_token;var x=new XMLHttpRequest();x.open('GET','/browser/server_group/obj/',false);x.setRequestHeader('X-pgA-CSRFToken',c);x.setRequestHeader('Accept','application/json');x.send();return x.responseText})()"
+            note="returns [{id, name}]; store Servers group id as {{sgid}} (usually 2)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       register-server  — POST /browser/server/obj/{{sgid}}/
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="register-server" effect="creates-connection">
+    <ScenarioRef ref="list-server-groups"/>
+    <Description lang="en">
+      Register the PostgreSQL server in pgAdmin via POST.
+      IMPORTANT: Each POST call creates a NEW server entry (sid increments).
+      There is no reconnect-only endpoint. This scenario always creates a fresh
+      connection entry. For test environments this is acceptable; for production
+      use, consider deleting stale entries first.
+    </Description>
+    <Description lang="ai">
+      POST /browser/server/obj/{{sgid}}/ with JSON body:
+        {name, host, port, db, username, password, role:'', comment:'', connect_now:true, gid:{{sgid}}}
+      Response on success: {node:{_id:sid, connected:true, label:'name', ...}}
+      CRITICAL: Each POST creates a new duplicate server entry. The returned
+      .node._id is the new sid. Store it as {{sid}} for this session.
+      POST /browser/server/connect/{sid} does NOT exist (returns 404).
+      Server DEFINITION survives browser restart; CONNECTION does not.
+      To reconnect an existing server without creating a duplicate:
+        DELETE /browser/server/obj/{{sgid}}/{{old_sid}}/ first, then POST.
+      Symptom of not being connected: database/nodes returns HTTP 500 with
+        errormsg: 'invalid literal for int() with base 10: None'
+      connect_now:true immediately opens a connection (verifies credentials).
+      CSRF token required in X-pgA-CSRFToken header.
+
+      After the POST, Brave may show 'Uložit heslo?' (Save password?) dialog.
+      Dismiss via SENDKEYS HANDLE:{{pwdlg_handle}} '{ESC}' before proceeding.
+    </Description>
+    <Steps>
+      <Step action="EXEC" target="{{browser}}"
+            parameter="(function(){var c=pgAdmin.csrf_token;var b=JSON.stringify({name:'aiapi-pg',host:'{{pg_host}}',port:{{pg_port}},db:'aiapi_test',username:'{{pg_user}}',password:'{{pg_password}}',role:'',comment:'AIAPI test server',connect_now:true,gid:{{sgid}}});var x=new XMLHttpRequest();x.open('POST','/browser/server/obj/{{sgid}}/',false);x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('X-pgA-CSRFToken',c);x.send(b);return x.responseText})()"
+            note="returns {node:{_id:sid, connected:true}}; store sid from .node._id"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       list-databases  — GET /browser/database/nodes/{{sgid}}/{{sid}}/
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="list-databases" effect="read-only">
+    <ScenarioRef ref="register-server"/>
+    <Description lang="en">
+      List databases on server {{sid}} in server group {{sgid}}.
+      Find "aiapi_test" and store its _id as {{dbid}}.
+    </Description>
+    <Description lang="ai">
+      GET /browser/database/nodes/{{sgid}}/{{sid}}/
+      Response: {data:[{_id, label, connected, _type: 'database', ...}]}  OR  the array directly.
+      Use (d.data||d) to handle both shapes.
+      aiapi_test should appear in the list; its _id field is the pgAdmin DB id.
+      NOT /children/ — that path returns 404.
+    </Description>
+    <Steps>
+      <Step action="EXEC" target="{{browser}}"
+            parameter="(function(){var c=pgAdmin.csrf_token;var x=new XMLHttpRequest();x.open('GET','/browser/database/nodes/{{sgid}}/{{sid}}/',false);x.setRequestHeader('X-pgA-CSRFToken',c);x.setRequestHeader('Accept','application/json');x.send();var d=JSON.parse(x.responseText);return JSON.stringify((d.data||d).map(function(t){return{id:t._id,label:t.label,connected:t.connected}}))})()"
+            note="find aiapi_test entry; store its id as {{dbid}}"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       list-schemas  — GET /browser/schema/nodes/{{sgid}}/{{sid}}/{{dbid}}/
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="list-schemas" effect="read-only">
+    <ScenarioRef ref="list-databases"/>
+    <Description lang="en">
+      List schemas in database {{dbid}} on server {{sid}}.
+      Find "public" schema and store its _id as {{schid}} (typically OID 2200).
+    </Description>
+    <Description lang="ai">
+      GET /browser/schema/nodes/{{sgid}}/{{sid}}/{{dbid}}/
+      Response: array of {_id (OID), label, ...}.
+      "public" schema has OID 2200 on a standard PostgreSQL installation.
+      Store {{schid}} for use in the table listing step.
+    </Description>
+    <Steps>
+      <Step action="EXEC" target="{{browser}}"
+            parameter="(function(){var c=pgAdmin.csrf_token;var x=new XMLHttpRequest();x.open('GET','/browser/schema/nodes/{{sgid}}/{{sid}}/{{dbid}}/',false);x.setRequestHeader('X-pgA-CSRFToken',c);x.setRequestHeader('Accept','application/json');x.send();var d=JSON.parse(x.responseText);return JSON.stringify((d.data||d).map(function(s){return{id:s._id,label:s.label}}))})()"
+            note="find public schema; store its _id as {{schid}} (usually 2200)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       verify-aiapi-tables  — assert all aiapi_* tables exist
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="verify-aiapi-tables" effect="read-only">
+    <ScenarioRef ref="list-schemas"/>
+    <Description lang="en">
+      GET /browser/table/nodes/{{sgid}}/{{sid}}/{{dbid}}/{{schid}}/ — list tables.
+      Assert all five required AIAPI tables exist:
+        aiapi_users, aiapi_roles, aiapi_user_roles, aiapi_apikeys, aiapi_settings.
+      Returns {tables:[...], missing:[], ok:true} on success.
+    </Description>
+    <Description lang="ai">
+      Response: array of {_id, label, ...} where label is the table name.
+      Build the union of all labels, check for the 5 expected names.
+      Return {tables:allTableNames, missing:missingNames, ok:missing.length===0}.
+      ok:true means schema is correct; ok:false means migration was not applied.
+      Note: aiapi_migrations is a 6th table that may also be present — that is OK.
+    </Description>
+    <Steps>
+      <Step action="EXEC" target="{{browser}}"
+            parameter="(function(){var c=pgAdmin.csrf_token;var x=new XMLHttpRequest();x.open('GET','/browser/table/nodes/{{sgid}}/{{sid}}/{{dbid}}/{{schid}}/',false);x.setRequestHeader('X-pgA-CSRFToken',c);x.setRequestHeader('Accept','application/json');x.send();var d=JSON.parse(x.responseText);var tbls=(d.data||d).map(function(t){return t.label});var want=['aiapi_users','aiapi_roles','aiapi_user_roles','aiapi_apikeys','aiapi_settings'];var missing=want.filter(function(n){return tbls.indexOf(n)<0});return JSON.stringify({tables:tbls,missing:missing,ok:missing.length===0})})()"
+            note="assert ok:true; any missing table is a test failure"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       dismiss-save-password  — ESC the Brave credential-manager popup
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="dismiss-save-password" effect="dismisses-dialog">
+    <Description lang="en">
+      Dismiss Brave's 'Uložit heslo?' (Save password?) popup that appears when
+      pgAdmin tree nodes expand (server connection passes password through HTTP).
+    </Description>
+    <Description lang="ai">
+      This dialog appears as a separate Win32 window with title 'Uložit heslo?'
+      in LISTWINDOWS results. It is NOT a web dialog — it is Brave's native
+      credential manager UI. Cannot be dismissed via CLICKNAME (fails).
+      Use SENDKEYS with the dialog's HWND handle and '{ESC}'.
+      May appear TWICE per session: once when Servers group expands, once when
+      the server node itself expands and connects. Handle both occurrences.
+      If the dialog handle is unknown, LISTWINDOWS first and filter by title.
+    </Description>
+    <Steps>
+      <Step action="LISTWINDOWS" target="{{browser}}" parameter="" bind="windows"
+            note="find window with title 'Uložit heslo?' to get its handle"/>
+      <Step action="SENDKEYS" target="HANDLE:{{pwdlg_handle}}" parameter="{ESC}"
+            note="dismiss the Save password? dialog; safe to run even if not present"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       PHASE B — Query Tool
+       Prerequisites: login + register-server + list-databases completed;
+         {{sid}} and {{dbid}} must be bound.
+       ═══════════════════════════════════════════════════════════════════ -->
+
+  <!-- open-query-tool  ─────────────────────────────────────────────── -->
+  <Scenario id="open-query-tool" effect="read-only"
+            label="pgAdmin: open Query Tool for a database">
+    <Description lang="en">
+      Opens the pgAdmin Query Tool for the database identified by {{dbid}} by calling the
+      REST endpoint directly, then confirms the Query Tool iframe has loaded.
+    </Description>
+    <Description lang="ai">
+      Variables required: {{pgadmin_url}}, {{browser}}, {{sgid}}, {{sid}}, {{dbid}}.
+      Variables produced: {{qt_panel_id}} — the Query Tool iframe/panel identifier
+        (extracted from the new iframe's src URL which contains "?id=&lt;panel_id&gt;").
+
+      REST endpoint to open Query Tool:
+        POST {{pgadmin_url}}browser/query_tool/initialize/{{dbid}}/{{schid}}/{{sgid}}/{{sid}}/
+        (no body required; sets a session-side panel; pgAdmin then renders the iframe)
+
+      Alternatively navigate pgAdmin to open via keyboard:
+        - Focus the database node in the tree, then press Alt+Shift+Q (pgAdmin keyboard shortcut)
+        - The Query Tool opens as a new tab panel inside the pgAdmin browser frame.
+
+      The iframe hosting the Query Tool has a src URL that includes "?id=&lt;panel_id&gt;"
+      where panel_id is a hex string like "4af8...".  The src path starts with "/browser/".
+      Use READ selector="iframe[src*='query_tool']" to get the panel element; extract id
+      from its src attribute using a JS snippet.
+
+      IMPORTANT: the Query Tool runs inside an iframe — all subsequent EXEC calls
+      targeting the editor or result grid MUST use the iframe's contentDocument context:
+        document.querySelector('iframe[src*="query_tool"]').contentDocument.querySelector(...)
+
+      STABLE selectors (confirmed via live session pgAdmin 4 / pgAdmin v8+):
+        Query Tool iframe selector: iframe[src*="query_tool"]
+        SQL editor (CodeMirror 6): .cm-editor .cm-content  (contenteditable=true)
+        Execute button: [aria-label="Execute query"]   or  button[data-label="Execute/Refresh"]
+        Result grid rows:  .rdg-row
+        Result grid cells: .rdg-cell
+    </Description>
+    <Steps>
+      <Step action="EXEC" proc="{{browser}}"
+            value="(function(){const f=document.querySelector('iframe[src*=&quot;query_tool&quot;]');return f?f.src:'NOT_FOUND';})()"
+            target="qt_panel_src"
+            note="check if Query Tool iframe already open; returns src URL or NOT_FOUND"/>
+    </Steps>
+  </Scenario>
+
+  <!-- execute-sql  ─────────────────────────────────────────────────── -->
+  <Scenario id="execute-sql" effect="read-write"
+            label="pgAdmin: type SQL and execute in Query Tool">
+    <Description lang="en">
+      Types a SQL statement into the pgAdmin Query Tool editor and clicks Execute.
+      Waits for the result grid to appear.
+    </Description>
+    <Description lang="ai">
+      Variables required: {{browser}}, {{sql}}.
+      Variables produced: none (results read by read-result-grid).
+
+      IMPORTANT: The Query Tool lives inside an iframe.  All DOM access must go via
+      the iframe's contentDocument.  The JS snippet below handles this transparently.
+
+      CodeMirror 6 does NOT support document.execCommand("insertText") in all builds.
+      Reliable approach (confirmed working):
+        1. Focus the .cm-content element.
+        2. Use the CM6 view's dispatch() to insert text:
+           const view = document.querySelector('iframe[src*="query_tool"]')
+                          .contentDocument.querySelector('.cm-editor').CodeMirror;
+           view.dispatch({changes:{from:0,to:view.state.doc.length,insert:'{{sql}}'}});
+        3. Click [aria-label="Execute query"] button.
+
+      Confirmation dialog "Changes will be lost": if {{confirm_discard}} == "yes"
+        click the "Discard" button (selector: button.btn-warning or text "Discard").
+
+      The result grid appears under .rdg (react-data-grid) when the query completes.
+      Wait condition: poll for .rdg-row elements &gt; 0 or a status message element.
+    </Description>
+    <Steps>
+      <Step action="EXEC" proc="{{browser}}"
+            value="(function(){const ifd=document.querySelector('iframe[src*=&quot;query_tool&quot;]').contentDocument;const cm=ifd.querySelector('.cm-editor');if(!cm)return 'EDITOR_NOT_FOUND';const view=cm.CodeMirror||cm.__vue__||null;if(view&amp;&amp;view.dispatch){view.dispatch({changes:{from:0,to:view.state.doc.length,insert:'{{sql}}'}});}else{const ed=ifd.querySelector('.cm-content');ed.focus();document.execCommand('selectAll');document.execCommand('insertText',false,'{{sql}}');}return 'OK';})()"
+            note="type SQL into CM6 editor inside Query Tool iframe"/>
+      <Step action="EXEC" proc="{{browser}}"
+            value="(function(){const ifd=document.querySelector('iframe[src*=&quot;query_tool&quot;]').contentDocument;const btn=ifd.querySelector('[aria-label=&quot;Execute query&quot;]')||ifd.querySelector('button[data-label=&quot;Execute/Refresh&quot;]');if(!btn)return 'EXECUTE_BTN_NOT_FOUND';btn.click();return 'CLICKED';})()"
+            note="click Execute query button"/>
+      <Step action="WAIT" value="1500"
+            note="allow query to execute; for long queries increase this or poll .rdg-row count"/>
+    </Steps>
+  </Scenario>
+
+  <!-- read-result-grid  ────────────────────────────────────────────── -->
+  <Scenario id="read-result-grid" effect="read-only"
+            label="pgAdmin: read rows from Query Tool result grid">
+    <Description lang="en">
+      Reads rows and cells from the pgAdmin Query Tool result grid (react-data-grid).
+      Returns up to {{max_rows}} rows as a JSON array of objects keyed by column header.
+    </Description>
+    <Description lang="ai">
+      Variables required: {{browser}}, {{max_rows}} (default 50).
+      Variables produced: {{result_rows}} — JSON array of row objects.
+
+      react-data-grid (rdg) uses virtualised rendering — only visible rows are in the DOM.
+      To get all rows scroll the grid or use pgAdmin's "Download as CSV" option for large sets.
+      For moderate result sets (&lt;= 500 rows) the DOM approach below is reliable.
+
+      Column headers: .rdg-header-row .rdg-cell  (innerText gives column name)
+      Data rows:      .rdg-row[aria-rowindex]     (skip aria-rowindex="1" = header)
+      Cells in row:   row.querySelectorAll('.rdg-cell')
+
+      Status bar (row count):
+        ifd.querySelector('.sql-editor-status-bar')?.innerText  — shows "X rows" after query.
+
+      STABLE selectors (pgAdmin 4 v8+, react-data-grid 7):
+        .rdg                    — grid root
+        .rdg-header-row         — single header row
+        .rdg-row                — data rows (virtualised!)
+        .rdg-cell               — cell within row
+    </Description>
+    <Steps>
+      <Step action="EXEC" proc="{{browser}}"
+            value="(function(){const ifd=document.querySelector('iframe[src*=&quot;query_tool&quot;]').contentDocument;const headers=[...ifd.querySelectorAll('.rdg-header-row .rdg-cell')].map(c=>c.innerText.trim());const rows=[...ifd.querySelectorAll('.rdg-row')].slice(0,{{max_rows}});return JSON.stringify(rows.map(r=>{const cells=[...r.querySelectorAll('.rdg-cell')].map(c=>c.innerText.trim());const obj={};headers.forEach((h,i)=>obj[h]=cells[i]??'');return obj;}));})()"
+            target="result_rows"
+            note="read visible result grid rows as JSON; max_rows limits DOM scan (virtualisation caveat)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       full-verify  — end-to-end login → register → verify tables
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="full-verify" effect="read-only" label="pgAdmin: full DB table verification">
+    <Description lang="en">
+      Complete e2e: login to pgAdmin → register PostgreSQL server → confirm aiapi_test
+      database exists → confirm all 5 aiapi_* tables are present in the public schema.
+    </Description>
+    <Description lang="ai">
+      Variables required: {{pgadmin_url}}, {{email}}, {{password}}, {{browser}},
+                          {{pg_host}}, {{pg_port}}, {{pg_user}}, {{pg_password}}.
+      Variables produced during execution: {{sgid}}, {{sid}}, {{dbid}}, {{schid}}.
+
+      STABLE IDs for this installation (PostgreSQL OIDs — do not change unless DB dropped):
+        pgadmin_url = http://192.168.254.16:30056/
+        email       = ddladmin@localhost.locale
+        browser     = brave.exe
+        pg_host     = 192.168.254.16
+        pg_port     = 5432
+        pg_user     = ddladmin
+        sgid        = 2        ("Servers" server group — stable)
+        dbid        = 127376   (aiapi_test — stable PostgreSQL OID)
+        schid       = 2200     (public schema OID — stable)
+
+      DYNAMIC per-session:
+        sid changes each time register-server is called (3, 4, 5...)
+        Always read sid from register-server response .node._id
+
+      Verified result: {tables:["aiapi_apikeys","aiapi_migrations","aiapi_roles",
+        "aiapi_settings","aiapi_user_roles","aiapi_users"],missing:[],ok:true}
+
+      Expected LISTWINDOWS events during this scenario:
+        After Servers expand: HANDLE:?? 'Uložit heslo?' — ESC to dismiss
+        After server-node expand: HANDLE:?? 'Uložit heslo?' — ESC to dismiss again
+        Both dismissals needed before tree is fully visible in pgAdmin UI.
+    </Description>
+    <ScenarioRef ref="login"/>
+    <ScenarioRef ref="list-server-groups"/>
+    <ScenarioRef ref="register-server"/>
+    <ScenarioRef ref="list-databases"/>
+    <ScenarioRef ref="list-schemas"/>
+    <ScenarioRef ref="verify-aiapi-tables"/>
+    <Steps/>
+  </Scenario>
+
+</Scenarios>

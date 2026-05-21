@@ -104,6 +104,19 @@ async function rpc(port: number, method: string, params?: unknown, id: number | 
   return JSON.parse(raw);
 }
 
+/** POST a JSON-RPC request with custom HTTP headers. */
+async function rpcH(
+  port: number,
+  method: string,
+  params: unknown,
+  headers: Record<string, string>,
+  id: number | string = 1,
+): Promise<any> {
+  const body = JSON.stringify({ jsonrpc: '2.0', id, method, ...(params !== undefined ? { params } : {}) });
+  const { body: raw } = await httpRequest(port, 'POST', '/', body, headers);
+  return JSON.parse(raw);
+}
+
 // ── test lifecycle ────────────────────────────────────────────────────────────
 
 let port: number;
@@ -468,5 +481,143 @@ describe('Security filter integration', () => {
     const res = await rpc(port, 'tools/call', { name: 'getProviders', arguments: {} });
     expect(res.error).toBeUndefined();
     expect(Array.isArray(res.result)).toBe(true);
+  });
+});
+
+// ─── D2: MCP schema round-trip ───────────────────────────────────────────────
+
+describe('D2 — MCP schema round-trip (getHelperSchema → tool discovery → dispatch)', () => {
+  const D2_SCHEMA = {
+    helper: 'KeyWin.exe',
+    toolName: 'KeyWin',
+    version: '1.0',
+    description: 'D2 test helper',
+    commands: [
+      { name: 'LISTWINDOWS', description: 'List windows', parameters: [] },
+      { name: 'SENDKEYS',    description: 'Send keystrokes', parameters: [{ name: 'value', type: 'string' }] },
+    ],
+    filePath: 'C:/d2/KeyWin.exe',
+  };
+
+  let schemasMap: Map<string, unknown>;
+
+  beforeEach(() => {
+    schemasMap = (srv as any).helperRegistry['schemas'] as Map<string, unknown>;
+    schemasMap.set('KeyWin.exe', D2_SCHEMA);
+  });
+
+  afterEach(() => {
+    schemasMap.delete('KeyWin.exe');
+  });
+
+  it('getHelperSchema returns schema with commands array', async () => {
+    const res = await rpc(port, 'tools/call', {
+      name: 'getHelperSchema',
+      arguments: { helperName: 'KeyWin.exe' },
+    });
+    expect(res.error).toBeUndefined();
+    expect(res.result).toBeDefined();
+    // Schema is returned under result.schema or result directly
+    const schema = res.result?.schema ?? res.result;
+    expect(schema.helper).toBe('KeyWin.exe');
+    expect(Array.isArray(schema.commands)).toBe(true);
+    expect(schema.commands.map((c: any) => c.name)).toContain('LISTWINDOWS');
+    expect(schema.commands.map((c: any) => c.name)).toContain('SENDKEYS');
+  });
+
+  it('getHelperSchema result contains version and description', async () => {
+    const res = await rpc(port, 'tools/call', {
+      name: 'getHelperSchema',
+      arguments: { helperName: 'KeyWin.exe' },
+    });
+    const schema = res.result?.schema ?? res.result;
+    expect(schema.version).toBe('1.0');
+    expect(typeof schema.description).toBe('string');
+  });
+
+  it('tools/list includes KeyWin tool when schema is registered', async () => {
+    const res = await rpc(port, 'tools/list');
+    expect(res.error).toBeUndefined();
+    const names = (res.result?.tools ?? []).map((t: any) => t.name);
+    expect(names).toContain('KeyWin');
+  });
+
+  it('calling KeyWin tool reaches dispatch (not blocked by security filter with no rules)', async () => {
+    // No DENY rules → security filter ALLOW → proceeds to helper execution
+    // Helper binary is fake so it fails at execution, not at filter level
+    const res = await rpc(port, 'tools/call', {
+      name: 'KeyWin',
+      arguments: { proc: 'notepad.exe', action: 'LISTWINDOWS' },
+    });
+    // Should NOT be a security-filter error; may be an execution error for missing binary
+    if (res.error) {
+      expect(res.error.message.toLowerCase()).not.toContain('security filter');
+    }
+  });
+});
+
+// ─── D3: Admin token bypass of security filter ───────────────────────────────
+
+describe('D3 — admin token bypass of security filter', () => {
+  let schemasMap: Map<string, unknown>;
+
+  beforeEach(() => {
+    schemasMap = (srv as any).helperRegistry['schemas'] as Map<string, unknown>;
+    schemasMap.set('KeyWin.exe', FAKE_HELPER_SCHEMA);
+  });
+
+  afterEach(() => {
+    (srv as any).advancedFilters = [];
+    schemasMap.delete('KeyWin.exe');
+  });
+
+  it('DENY_ALL without token → security filter blocked', async () => {
+    (srv as any).advancedFilters = [
+      { id: 1, action: 'deny', process: '*', helper: '*', command: '*', pattern: '*' },
+    ];
+    const res = await rpc(port, 'tools/call', {
+      name: 'KeyWin',
+      arguments: { proc: 'notepad.exe', action: 'SENDKEYS', value: 'hello' },
+    });
+    expect(res.error).toBeDefined();
+    expect(res.error.message.toLowerCase()).toContain('security filter');
+  });
+
+  it('DENY_ALL with valid X-Admin-Token header → filter bypassed (execution fails elsewhere, not at filter)', async () => {
+    (srv as any).advancedFilters = [
+      { id: 1, action: 'deny', process: '*', helper: '*', command: '*', pattern: '*' },
+    ];
+    // Obtain a valid admin token
+    const tokenRes = await httpRequest(
+      port, 'POST', '/api/auth/admin-token',
+      JSON.stringify({ password: 'admin123' }),
+    );
+    const { token } = JSON.parse(tokenRes.body);
+    expect(typeof token).toBe('string');
+
+    // Call with valid token → should NOT be blocked by security filter
+    const res = await rpcH(port, 'tools/call', {
+      name: 'KeyWin',
+      arguments: { proc: 'notepad.exe', action: 'SENDKEYS', value: 'hello' },
+    }, { 'x-admin-token': token });
+
+    // Security filter is bypassed — failure is at execution (fake binary) not at filter level
+    if (res.error) {
+      expect(res.error.message.toLowerCase()).not.toContain('security filter');
+    }
+    // (If some future test wires a real binary this could be res.result — that's also fine)
+  });
+
+  it('DENY_ALL with invalid/expired X-Admin-Token → still blocked by filter', async () => {
+    (srv as any).advancedFilters = [
+      { id: 1, action: 'deny', process: '*', helper: '*', command: '*', pattern: '*' },
+    ];
+    const res = await rpcH(port, 'tools/call', {
+      name: 'KeyWin',
+      arguments: { proc: 'notepad.exe', action: 'SENDKEYS', value: 'hello' },
+    }, { 'x-admin-token': 'invalid-token-xyz' });
+
+    expect(res.error).toBeDefined();
+    expect(res.error.message.toLowerCase()).toContain('security filter');
   });
 });

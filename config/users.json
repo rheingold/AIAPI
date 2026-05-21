@@ -1,0 +1,77 @@
+{
+  "version": "1.0",
+  "users": [
+    {
+      "username": "test_d13_probe",
+      "passwordHash": "pbkdf2:21091c2ce13ea85c6ad082fb1b577c03:e57cc6835289fd2bbad448e23a925ff51309aeaa21450fbfa4c78bd2230edda65a2eac4f7f0fb86f0091864a67a8ad1afdc444e4388a30d7ebdb8ab662376e4f",
+      "apiKeys": [],
+      "roles": [],
+      "enabled": true,
+      "id": "66721b91-2755-4c3e-993b-3ca374dd146d",
+      "createdAt": "2026-04-18T10:10:50.722Z"
+    }
+  ],
+  "roles": [
+    {
+      "id": "role-admin",
+      "name": "admin",
+      "description": "Full access — can manage users, roles, settings and logs",
+      "permissions": [
+        {
+          "helper": "_internal",
+          "operation": "access",
+          "resource": "*"
+        },
+        {
+          "helper": "_internal",
+          "operation": "settings_change",
+          "resource": "*"
+        },
+        {
+          "helper": "_internal",
+          "operation": "access_logs",
+          "resource": "*"
+        },
+        {
+          "helper": "*",
+          "operation": "*",
+          "resource": "*"
+        }
+      ]
+    },
+    {
+      "id": "role-operator",
+      "name": "operator",
+      "description": "Can call helpers but cannot change settings or users",
+      "permissions": [
+        {
+          "helper": "_internal",
+          "operation": "access",
+          "resource": "*"
+        },
+        {
+          "helper": "*",
+          "operation": "*",
+          "resource": "*"
+        }
+      ]
+    },
+    {
+      "id": "role-auditor",
+      "name": "auditor",
+      "description": "Read-only access to logs and status",
+      "permissions": [
+        {
+          "helper": "_internal",
+          "operation": "access",
+          "resource": "*"
+        },
+        {
+          "helper": "_internal",
+          "operation": "access_logs",
+          "resource": "*"
+        }
+      ]
+    }
+  ]
+}

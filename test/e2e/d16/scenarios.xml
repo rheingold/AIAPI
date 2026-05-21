@@ -1,0 +1,196 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D16 Extended REST Coverage — test/e2e/d16/scenarios.xml
+  app  : d16
+  Layer: L3 (test — never shipped)
+
+  ── Scenarios ─────────────────────────────────────────────────────────────────
+  ex1-settings-validate     GET /api/settings/validate → checks[] with status+message
+  ex2-auth-config-roundtrip GET auth/config → POST same mode → GET verify unchanged
+  ex4-setup-status          GET /api/_internal/setup/status → status indicator present
+  ex5-helpers-disabled      GET /api/helpers/disabled → disabledHelpers array
+  ex6-helpers-reload        POST /api/helpers/reload → no error
+  ex7-server-status         GET /api/status → health indicator (uptime/status/running)
+  ex8-auth-config-toggle    GET → POST toggle debugExternalAuth → GET verify → restore
+  d16-suite                 chain ex1,ex2,ex4–ex8
+  ─────────────────────────────────────────────────────────────────────────────
+  EX3 (openFileDialog) is NOT here: it requires a concurrent JS timer to dismiss
+  the native OS dialog via SENDKEYS {ESC}, which cannot be expressed in sequential
+  XML steps.  It is handled in d16-extended-rest.js as a graceful/skip test.
+-->
+<Scenarios app="d16" helper="BrowserWin.exe" process="chrome.exe"
+           xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d16">
+
+  <!-- ══ EX1: GET /api/settings/validate ══════════════════════════════════ -->
+  <Scenario id="ex1-settings-validate" effect="read-only">
+    <Description lang="en">GET /api/settings/validate — assert checks array; every item has status and message fields.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/settings/validate" path="GET"
+            bind="ex1Result" note="EX1: GET /api/settings/validate"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.ex1Result); const c=r?.checks??(Array.isArray(r)?r:null); return Array.isArray(c); })()"
+            note="EX1: assert response has checks array"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.ex1Result); const c=r?.checks??(Array.isArray(r)?r:[]); return c.length===0||c.every(x=>typeof x.status==='string'); })()"
+            note="EX1: assert every check item has status field"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.ex1Result); const c=r?.checks??(Array.isArray(r)?r:[]); return c.length===0||c.every(x=>typeof x.message==='string'); })()"
+            note="EX1: assert every check item has message field"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ══ EX2: POST /api/auth/config round-trip (same-value no-op) ═════════ -->
+  <Scenario id="ex2-auth-config-roundtrip" effect="read-only">
+    <Description lang="en">GET auth/config → POST same mode (no-op) → GET verify mode unchanged.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/config" path="GET"
+            bind="ex2Config" note="EX2: GET current auth config"/>
+      <Step action="ASSERTPATHEVAL"
+            path="typeof JSON.parse($vars.ex2Config)?.mode === 'string'"
+            note="EX2: assert auth config has mode string"/>
+      <Step action="EVAL"
+            path="JSON.parse($vars.ex2Config)?.mode ?? 'none'"
+            bind="authMode" note="EX2: extract auth mode"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/config" path="POST"
+            value="{&quot;mode&quot;:&quot;{{authMode}}&quot;}"
+            bind="ex2PostResult" note="EX2: POST same mode back (no-op)"/>
+      <Step action="ASSERTPATHEVAL"
+            path="!JSON.parse($vars.ex2PostResult)?.error"
+            note="EX2: assert POST accepted without error"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/config" path="GET"
+            bind="ex2After" note="EX2: GET auth config after round-trip"/>
+      <Step action="ASSERTPATHEVAL"
+            path="JSON.parse($vars.ex2After)?.mode === '{{authMode}}'"
+            note="EX2: assert auth mode unchanged after round-trip"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ══ EX4: GET /api/_internal/setup/status ═════════════════════════════ -->
+  <Scenario id="ex4-setup-status" effect="read-only">
+    <Description lang="en">GET /api/_internal/setup/status — assert response contains a recognisable status indicator.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/setup/status" path="GET"
+            bind="ex4Result" note="EX4: GET setup status"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.ex4Result); return typeof r?.setupComplete==='boolean'||typeof r?.status==='string'||typeof r?.complete==='boolean'||r?.success===true||Array.isArray(r?.steps); })()"
+            note="EX4: assert response has a recognisable status field"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ══ EX5: GET /api/helpers/disabled ═══════════════════════════════════ -->
+  <Scenario id="ex5-helpers-disabled" effect="read-only">
+    <Description lang="en">GET /api/helpers/disabled — assert disabledHelpers array in response.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/helpers/disabled" path="GET"
+            bind="ex5Result" note="EX5: GET helpers/disabled"/>
+      <Step action="ASSERTPATHEVAL"
+            path="Array.isArray(JSON.parse($vars.ex5Result)?.disabledHelpers)"
+            note="EX5: assert disabledHelpers is an array"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ══ EX6: POST /api/helpers/reload ════════════════════════════════════ -->
+  <Scenario id="ex6-helpers-reload" effect="read-only">
+    <Description lang="en">POST /api/helpers/reload — non-destructive re-scan; assert no error field.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/helpers/reload" path="POST"
+            value="{}"
+            bind="ex6Result" note="EX6: POST helpers/reload"/>
+      <Step action="ASSERTPATHEVAL"
+            path="!JSON.parse($vars.ex6Result)?.error"
+            note="EX6: assert reload returned no error"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ══ EX7: GET /api/status ══════════════════════════════════════════════ -->
+  <Scenario id="ex7-server-status" effect="read-only">
+    <Description lang="en">GET /api/status — server health; assert uptime or status indicator present.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/status" path="GET"
+            bind="ex7Result" note="EX7: GET /api/status"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.ex7Result); return typeof r?.status==='string'||typeof r?.uptime==='number'||r?.running===true||r?.success===true; })()"
+            note="EX7: assert response has health indicator"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ══ EX8: POST /api/auth/config toggle debugExternalAuth ══════════════ -->
+  <Scenario id="ex8-auth-config-toggle" effect="modifies-data">
+    <Description lang="en">GET auth config → POST with toggled debugExternalAuth → GET verify → POST restore. Idempotent.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/config" path="GET"
+            bind="ex8Config" note="EX8: GET auth config (capture original state)"/>
+      <Step action="ASSERTPATHEVAL"
+            path="typeof JSON.parse($vars.ex8Config)?.mode === 'string'"
+            note="EX8: assert auth config readable"/>
+      <Step action="EVAL"
+            path="JSON.parse($vars.ex8Config)?.mode ?? 'none'"
+            bind="ex8Mode" note="EX8: extract current auth mode"/>
+      <Step action="EVAL"
+            path="!!(JSON.parse($vars.ex8Config)?.debugExternalAuth ?? false)"
+            bind="ex8OrigDbg" note="EX8: capture original debugExternalAuth as bool string"/>
+      <Step action="EVAL"
+            path="!(JSON.parse($vars.ex8Config)?.debugExternalAuth ?? false)"
+            bind="ex8Toggled" note="EX8: compute toggled value"/>
+      <!-- POST with toggled value: {{ex8Toggled}} substitutes as bare true/false JSON boolean -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/config" path="POST"
+            value="{&quot;mode&quot;:&quot;{{ex8Mode}}&quot;,&quot;debugExternalAuth&quot;:{{ex8Toggled}}}"
+            bind="ex8PostResult" note="EX8: POST with toggled debugExternalAuth"/>
+      <Step action="ASSERTPATHEVAL"
+            path="!JSON.parse($vars.ex8PostResult)?.error"
+            note="EX8: assert toggle POST accepted"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/config" path="GET"
+            bind="ex8After" note="EX8: GET after toggle"/>
+      <Step action="ASSERTPATHEVAL"
+            path="JSON.parse($vars.ex8After)?.debugExternalAuth === JSON.parse($vars.ex8Toggled)"
+            note="EX8: assert debugExternalAuth is now toggled value"/>
+      <!-- Restore original value -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/config" path="POST"
+            value="{&quot;mode&quot;:&quot;{{ex8Mode}}&quot;,&quot;debugExternalAuth&quot;:{{ex8OrigDbg}}}"
+            bind="ex8RestoreResult" note="EX8: restore original debugExternalAuth"/>
+      <Step action="ASSERTPATHEVAL"
+            path="!JSON.parse($vars.ex8RestoreResult)?.error"
+            note="EX8: assert restore accepted"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ══ d16-suite: chain ex1,ex2,ex4–ex8 ═════════════════════════════════ -->
+  <Scenario id="d16-suite" effect="test-suite">
+    <Description lang="en">Full D16 Extended REST: ex1,ex2,ex4–ex8. EX3 file-dialog excluded (requires concurrent JS timer).</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef ref="ex1-settings-validate"/>
+      <ScenarioRef ref="ex2-auth-config-roundtrip"/>
+      <ScenarioRef ref="ex4-setup-status"/>
+      <ScenarioRef ref="ex5-helpers-disabled"/>
+      <ScenarioRef ref="ex6-helpers-reload"/>
+      <ScenarioRef ref="ex7-server-status"/>
+      <ScenarioRef ref="ex8-auth-config-toggle"/>
+    </Steps>
+  </Scenario>
+
+</Scenarios>
+

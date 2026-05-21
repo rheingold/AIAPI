@@ -1,0 +1,136 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D8 Security Filter Enforcement � test/e2e/d8/scenarios.xml � ADR-008 L3
+  app   : d8
+  helper: BrowserWin.exe
+  process: chrome.exe
+
+  Layer design (CONVENTIONS.md �8 / ADR-008):
+    L1 atoms : dashboard launch via <ScenarioRef app="dashboard" ref="launch"/>
+    L3 adds  : BrowserWin read/navigation probes for the Security Filters section.
+
+  These BrowserWin scenarios complement the REST-based SF1-SF7 in
+  d8-security-enforcement.js. They verify the dashboard UI reflects security
+  filter state (read-only checks; mutation is done via REST in the JS harness).
+
+  �� Scenarios �����������������������������������������������������������������
+  sf1-security-nav         CLICKID security section nav item
+  sf2-filter-list-read     READ the security panel heading + bind
+  sf3-filter-list-tree     QUERYTREE filter-list section � bind treeStr
+  sf4-filter-count-exec    CDP_EXECUTE count filter rows in DOM � bind count
+  sf5-add-filter-wizard    CLICKID Add Filter � fill description � ESC close
+  d8-ui-suite              Chain sf1 � sf2 � sf3 � sf4 � sf5
+  diag-exec                Diagnostic CDP_EXECUTE
+  ������������������������������������������������������������������������������
+-->
+<Scenarios app="d8" helper="BrowserWin.exe" process="chrome.exe"
+           xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d8">
+
+  <!-- �� SF1 � navigate to Security section �� -->
+  <Scenario id="sf1-security-nav" effect="changes-view">
+    <Description lang="en">CLICKID the Security nav item to open the Security Filters section.</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@data-section='security']"
+            note="click security nav item � data-section='security'"/>
+      <Step action="WAIT" proc="" value="600" note="section load settle"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� SF2 � READ security panel �� -->
+  <Scenario id="sf2-filter-list-read" effect="read-only">
+    <Description lang="en">
+      READ the page/security-section heading text; bind to sfReadResult.
+      Verifies the BrowserWin READ command works on the security view.
+    </Description>
+    <Steps>
+      <Step action="READ" proc="{{tab}}" path="" bind="sfReadResult"
+            note="READ current page metadata; result includes title/url"/>
+      <Step action="ASSERTPATHEVAL" path="'{{sfReadResult}}'.length > 5"
+            note="assert READ returned a non-trivial string"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� SF3 � QUERYTREE security panel �� -->
+  <Scenario id="sf3-filter-list-tree" effect="read-only">
+    <Description lang="en">
+      QUERYTREE the security-filters section (root=#filter-list or document.body) to depth 2.
+      Bind treeStr for run.js to assert the tree contains filter headings.
+    </Description>
+    <Steps>
+      <Step action="QUERYTREE" proc="{{tab}}" path="#security-panel" value="2" bind="treeStr"
+            note="QUERYTREE root=#security-panel depth=2; falls back to body if selector not found"/>
+      <Step action="ASSERTPATHEVAL" path="'{{treeStr}}'.length > 10"
+            note="assert QUERYTREE returned a non-empty tree"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� SF4 � Count filter rows via CDP_EXECUTE �� -->
+  <Scenario id="sf4-filter-count-exec" effect="read-only">
+    <Description lang="en">
+      CDP_EXECUTE: count &lt;tr&gt; or filter-row elements in the security table.
+      Bind filterCount; run.js asserts it is a non-negative integer.
+    </Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(document.querySelectorAll('#filter-table tbody tr, .filter-row, [data-filter-id]').length).toString()"
+            bind="filterCount"
+            note="count filter rows in DOM � selector covers multiple possible dashboard layouts"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{filterCount}}') >= 0"
+            note="assert filterCount is a non-negative integer"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� SF5 � Open Add Filter wizard, fill description, close �� -->
+  <Scenario id="sf5-add-filter-wizard" effect="test-suite">
+    <Description lang="en">
+      Click Add Filter button � fill description with fillValue � close with ESC.
+      Does NOT save the filter. This validates the FILL path for the description field.
+    </Description>
+    <Parameters>
+      <Param name="fillValue" type="string" required="true"
+             example="d8_fill_test_12345" note="test value for filter description field"/>
+    </Parameters>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-add-filter']"
+            note="open Add Filter wizard"/>
+      <Step action="WAIT" proc="" value="400" note="wizard open settle"/>
+      <Step action="FILL" proc="{{tab}}" path="#filter-description" value="{{fillValue}}"
+            note="fill description field"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(document.getElementById('filter-description')||{}).value||''"
+            bind="fillVerify"
+            note="read back input .value to verify FILL � READELEM returns textContent, not .value"/>
+      <Step action="ASSERTPATHEVAL" path="'{{fillVerify}}' === '{{fillValue}}'"
+            note="assert FILL wrote the expected value into the description field"/>
+      <Step action="SENDKEYS" proc="{{tab}}" value="{ESC}"
+            note="dismiss wizard without saving"/>
+      <Step action="WAIT" proc="" value="300" note="dismiss settle"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� d8-ui-suite � full D8 BrowserWin UI suite �� -->
+  <Scenario id="d8-ui-suite" effect="test-suite">
+    <Description lang="en">
+      Full D8 BrowserWin security filter UI suite.
+      Navigates to security section, reads panel, walks DOM tree,
+      counts filter rows, opens wizard, fills description, closes.
+      Requires {{tab}} set by runner.launch() and {{fillValue}} param.
+      REST-based enforcement tests are in d8-security-enforcement.js (SF1-SF7).
+    </Description>
+    <Parameters>
+      <Param name="fillValue" type="string" required="false"
+             example="d8_fill_test" note="test value for wizard fill test"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef ref="sf1-security-nav"/>
+      <ScenarioRef ref="sf2-filter-list-read"/>
+      <ScenarioRef ref="sf3-filter-list-tree"/>
+      <ScenarioRef ref="sf4-filter-count-exec"/>
+      <ScenarioRef ref="sf5-add-filter-wizard"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� diag-exec � diagnostic �� -->
+
+</Scenarios>
+

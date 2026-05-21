@@ -365,21 +365,149 @@ export class WindowsFormsProvider implements IAutomationProvider {
     throw new Error('Failed to list windows: No JSON output found');
   }
 
-  async launchProcess(executable: string, args?: string[]): Promise<any> {
-    const { spawn } = require('child_process');
+async launchProcess(executable: string, args?: string[], options?: { background?: boolean }): Promise<any> {
+    const { spawn, spawnSync } = require('child_process');
+    const path = require('path');
     
-    // Launch detached process
-    const child = spawn(executable, args || [], { 
-      detached: true,
-      stdio: 'ignore'
+    // UI automation tool - ALWAYS launch interactively by default.
+    // If running as service (Session 0), use Task Scheduler to launch in user session.
+    // Only skip interactive mode if explicitly requested with background:true.
+    const isService = process.env.RUNNING_AS_SERVICE === 'true' || 
+                      !process.stdin.isTTY || 
+                      process.env.AIAPI_NON_INTERACTIVE === '1';
+    
+    const shouldLaunchInteractive = !options?.background; // Default: interactive
+    
+    if (shouldLaunchInteractive && isService) {
+      return this.launchInUserSession(executable, args);
+    }
+    
+    return new Promise((resolve, reject) => {
+      try {
+        // Launch detached process
+        const child = spawn(executable, args || [], { 
+          detached: true,
+          stdio: 'ignore',
+          shell: false,  // Don't use shell to avoid command injection
+        });
+        
+        // Check if PID was assigned (indicates spawn succeeded initially)
+        if (!child.pid) {
+          reject(new Error(`Failed to launch ${executable}: No PID assigned (process may not exist or permission denied)`));
+          return;
+        }
+        
+        const pid = child.pid;
+        
+        // Listen for immediate spawn errors
+        child.on('error', (err: Error) => {
+          reject(new Error(`Failed to launch ${executable}: ${err.message}`));
+        });
+        
+        // Give the process 500ms to fail if it's going to fail immediately
+        // (e.g., executable not found, access denied, etc.)
+        setTimeout(() => {
+          // Check if process is still alive by trying to send signal 0 (doesn't kill, just checks)
+          try {
+            process.kill(pid, 0);  // Signal 0 = check if process exists
+            // If we get here, process exists - success!
+            child.unref();
+            resolve({
+              success: true,
+              executable,
+              pid,
+              message: `Launched ${executable}`
+            });
+          } catch (e) {
+            // Process already died - probably a GUI app that can't run in Session 0
+            const hint = isService ? ' (Note: Use background:true only for console apps. GUI apps launch interactively by default)' : '';
+            reject(new Error(`${executable} launched but terminated immediately (PID ${pid})${hint}`));
+          }
+        }, 500);
+        
+      } catch (err: any) {
+        reject(new Error(`Failed to launch ${executable}: ${err.message}`));
+      }
     });
-    child.unref();
+  }
 
+  /**
+   * Launch a process in the active user session (for GUI apps when running as service)
+   * Uses Windows Task Scheduler to escape Session 0 isolation
+   */
+  private async launchInUserSession(executable: string, args?: string[]): Promise<any> {
+    const { spawnSync } = require('child_process');
+    const crypto = require('crypto');
+    
+    // Find active console user
+    const queryUser = spawnSync('query', ['user'], { timeout: 5000 });
+    const queryOutput = queryUser.stdout?.toString() || '';
+    
+    // Parse output like: ">plachy rdp-tcp#0 1 Active" or " username console 1 Active"
+    // Look for any Active session (console or rdp)
+    const activeUserMatch = queryOutput.match(/^\s*>?(\S+)\s+(?:console|rdp-tcp[^\s]*)\s+\d+\s+Active/mi);
+    if (!activeUserMatch) {
+      throw new Error('No active console user found. GUI apps require logged-in user.');
+    }
+    
+    const username = activeUserMatch[1];
+    
+    // Generate unique task name
+    const taskName = `AIAPI_Launch_${crypto.randomBytes(4).toString('hex')}`;
+    
+    // Build command line
+    const cmdLine = args && args.length > 0 
+      ? `${executable} ${args.map(a => `"${a}"`).join(' ')}`
+      : executable;
+    
+    // Create and run a temporary scheduled task that runs in the active console session
+    // /SC ONCE = run once
+    // /RU username = run as the console user
+    // /IT = run interactively (show GUI)
+    // /RL HIGHEST = run with highest privileges available to user
+    const createTask = spawnSync('schtasks', [
+      '/Create',
+      '/TN', taskName,
+      '/TR', cmdLine,
+      '/SC', 'ONCE',
+      '/ST', '00:00',  // Required but ignored with /RUN
+      '/RU', username,
+      '/IT',           // Run interactively
+      '/RL', 'HIGHEST',
+      '/F'             // Force create (overwrite if exists)
+    ], { timeout: 5000 });
+    
+    if (createTask.status !== 0) {
+      const stderr = createTask.stderr?.toString() || '';
+      throw new Error(`Failed to create scheduled task: ${stderr}`);
+    }
+    
+    // Run the task immediately
+    const runTask = spawnSync('schtasks', [
+      '/Run',
+      '/TN', taskName
+    ], { timeout: 5000 });
+    
+    if (runTask.status !== 0) {
+      const stderr = runTask.stderr?.toString() || '';
+      // Try to clean up the task even if run failed
+      spawnSync('schtasks', ['/Delete', '/TN', taskName, '/F'], { timeout: 3000 });
+      throw new Error(`Failed to run scheduled task: ${stderr}`);
+    }
+    
+    // Give the process a moment to start
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Delete the temporary task
+    spawnSync('schtasks', ['/Delete', '/TN', taskName, '/F'], { timeout: 3000 });
+    
+    // Try to find the launched process
+    // Note: We can't easily get the PID, but we can confirm it was launched
     return {
       success: true,
       executable,
-      pid: child.pid,
-      message: `Launched ${executable}`
+      message: `Launched ${executable} in user session via Task Scheduler`,
+      session: 'interactive'
     };
   }
 }

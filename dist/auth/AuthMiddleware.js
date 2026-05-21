@@ -62,6 +62,12 @@ class AuthMiddleware {
         }
         // ── mode = none → synthetic admin context ───────────────────────────────
         if (this.service.mode === 'none') {
+            req[exports.AUTH_CONTEXT_KEY] = {
+                authenticated: true,
+                user: { id: 'system', username: 'anonymous', roles: ['admin'], apiKeys: [], enabled: true, createdAt: '' },
+                effectiveRoles: ['admin'],
+                authMode: 'none',
+            };
             next();
             return;
         }

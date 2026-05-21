@@ -1,0 +1,21 @@
+{
+  "serviceName": "AIAPIService",
+  "displayName": "AI UI Automation API Service",
+  "description": "MCP server for Windows UI automation - provides JSON-RPC API for desktop app automation",
+  "ports": {
+    "mcp": 4457,
+    "dashboard": 4458
+  },
+  "environment": {
+    "NODE_ENV": "production",
+    "MCP_PORT": "4457",
+    "LOG_LEVEL": "info",
+    "SKIP_SECURITY": "false"
+  },
+  "workingDirectory": "C:\\Program Files\\AIAPI",
+  "nodeExecutable": "node.exe",
+  "startScript": "dist\\start-mcp-server.js",
+  "logDirectory": "C:\\ProgramData\\AIAPI\\logs",
+  "autoRestart": true,
+  "restartDelay": 5000
+}

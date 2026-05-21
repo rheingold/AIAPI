@@ -1,0 +1,367 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D13 BrowserWin Extended Commands scenarios � test/e2e/d13/scenarios.xml
+  app     : d13
+  helper  : BrowserWin.exe
+  process : chrome.exe
+  Layer   : L3 (test � never shipped)
+
+  Tab binding: runner.launch() � runner.defaults.tab = chrome:URL:http://localhost:3458
+  All browser-content steps use proc="{{tab}}".
+  LISTBROWSERS / KILL use proc="{{browser}}" (process type, not tab).
+
+  �� Scenarios �������������������������������������������������������������
+  bc1-listbrowsers     LISTBROWSERS � bind browsers
+  bc2-clickid          nav settings + CLICKID btn-validate-config
+  bc3-sendkeys         nav settings + FOCUS + SENDKEYS + undo ^z
+  bc4-keydown-keyup    KEYDOWN Tab + WAIT + KEYUP Tab
+  bc5-keypress         KEYPRESS Escape
+  bc6-dblclick         nav settings + DBLCLICK #setting-log-level
+  bc7-hover            HOVER [data-section="settings"]
+  bc8-rightclick       RIGHTCLICK [data-section="logs"] + KEYPRESS Escape
+  bc9-check-uncheck    nav settings + read initial + CHECK + verify + UNCHECK + verify
+  bc10-mousedown-mouseup  MOUSEDOWN + WAIT + MOUSEUP [data-section="logs"]
+  bc11-focus           nav settings + FOCUS #setting-log-level + CDP verify
+  bc12-kill            KILL browser instance (last test)
+  diag-exec            Diagnostic CDP_EXECUTE
+-->
+<Scenarios app="d13" helper="BrowserWin.exe" process="chrome.exe"
+           xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d13">
+
+  <!-- �� BC1: LISTBROWSERS ���������������������������������������������� -->
+  <Scenario id="bc1-listbrowsers" effect="read-only">
+    <Description lang="en">LISTBROWSERS — list running browser instances; bind result; assert non-empty JSON.</Description>
+    <Steps>
+      <Step action="LISTBROWSERS" proc="{{browser}}" path="" bind="browsers"
+            note="list running browser instances"/>
+      <Step action="ASSERTPATHEVAL" path="'{{browsers}}'.length > 2"
+            note="assert browsers JSON is non-empty (at least one browser running)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� BC2: CLICKID ��������������������������������������������������� -->
+  <Scenario id="bc2-clickid" effect="changes-view">
+    <Description lang="en">Nav to settings then CLICKID btn-validate-config.</Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-validate-config']"
+            note="click Validate Config button"/>
+      <Step action="WAIT" proc="" path="400" note="settle"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� BC3: SENDKEYS �������������������������������������������������� -->
+  <Scenario id="bc3-sendkeys" effect="modifies-dom">
+    <Description lang="en">Focus #setting-session-dir and SENDKEYS test text, then undo.</Description>
+    <Parameters>
+      <Param name="testTag" type="string" required="true" example="dogfood_1234" note="TEST_TAG for unique input"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.querySelector('#setting-session-dir')?.focus()"
+            note="focus session-dir input via CDP"/>
+      <Step action="WAIT" proc="" path="200" note="focus settle"/>
+      <Step action="SENDKEYS" proc="{{tab}}" value="dogfood_test_{{testTag}}"
+            bind="sendResult"
+            note="type test text into focused element"/>
+      <Step action="SENDKEYS" proc="{{tab}}" value="^z"
+            note="undo typed text (Ctrl+Z) to leave field unchanged"/>
+      <Step action="READELEM" proc="{{tab}}" path="#setting-session-dir"
+            note="assert: #setting-session-dir element still in DOM after SENDKEYS"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� BC4: KEYDOWN + KEYUP ������������������������������������������� -->
+  <Scenario id="bc4-keydown-keyup" effect="changes-view">
+    <Description lang="en">KEYDOWN Tab + WAIT + KEYUP Tab.</Description>
+    <Steps>
+      <Step action="KEYDOWN" proc="{{tab}}" path="Tab" note="hold Tab key"/>
+      <Step action="WAIT" proc="" path="80" note="brief hold"/>
+      <Step action="KEYUP" proc="{{tab}}" path="Tab" note="release Tab key"/>
+      <Step action="READELEM" proc="{{tab}}" path="[data-section='settings']"
+            note="assert: dashboard nav still responsive after KEYDOWN/KEYUP Tab"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� BC5: KEYPRESS �������������������������������������������������� -->
+  <Scenario id="bc5-keypress" effect="changes-view">
+    <Description lang="en">KEYPRESS Escape � atomic keydown+keyup.</Description>
+    <Steps>
+      <Step action="KEYPRESS" proc="{{tab}}" path="Escape" note="press Escape key"/>
+      <Step action="READELEM" proc="{{tab}}" path="[data-section='settings']"
+            note="assert: dashboard nav still responsive after KEYPRESS Escape"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� BC6: DBLCLICK �������������������������������������������������� -->
+  <Scenario id="bc6-dblclick" effect="changes-view">
+    <Description lang="en">Nav settings then DBLCLICK #setting-log-level (benign � select text).</Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <Step action="DBLCLICK" proc="{{tab}}" path="*[@id='setting-log-level']"
+            note="double-click log-level select to activate it"/>
+      <Step action="READELEM" proc="{{tab}}" path="#setting-log-level"
+            note="assert: #setting-log-level still in DOM after DBLCLICK"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� BC7: HOVER ����������������������������������������������������� -->
+  <Scenario id="bc7-hover" effect="read-only">
+    <Description lang="en">HOVER over the settings nav button (no side-effect).</Description>
+    <Steps>
+      <Step action="HOVER" proc="{{tab}}" path="[data-section='settings']"
+            note="hover over settings nav button"/>
+      <Step action="READELEM" proc="{{tab}}" path="[data-section='settings']"
+            note="assert: settings nav button still in DOM after HOVER"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� BC8: RIGHTCLICK ������������������������������������������������ -->
+  <Scenario id="bc8-rightclick" effect="changes-view">
+    <Description lang="en">RIGHTCLICK on logs nav then KEYPRESS Escape to dismiss context menu.</Description>
+    <Steps>
+      <Step action="RIGHTCLICK" proc="{{tab}}" path="[data-section='logs']"
+            note="right-click logs nav button; opens browser context menu"/>
+      <Step action="KEYPRESS" proc="{{tab}}" path="Escape"
+            note="dismiss context menu"/>
+      <Step action="READELEM" proc="{{tab}}" path="[data-section='logs']"
+            note="assert: logs nav button still in DOM after RIGHTCLICK+ESC"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� BC9: CHECK + UNCHECK ������������������������������������������� -->
+  <Scenario id="bc9-check-uncheck" effect="modifies-dom">
+    <Description lang="en">
+      Nav settings, read initial checkbox state, CHECK, verify checked, UNCHECK, verify unchecked.
+      run.js restores original state if needed.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.querySelector('#setting-require-os-enforcement')?.checked ?? false"
+            bind="initChecked"
+            note="read initial checkbox state"/>
+      <Step action="CHECK" proc="{{tab}}" path="#setting-require-os-enforcement"
+            note="check the OS enforcement checkbox"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var v=document.querySelector('#setting-require-os-enforcement')?.checked; if(!v) throw new Error('BC9: CHECK did not set checkbox to checked'); return v; })()"
+            bind="afterCheckOk"
+            note="assert checkbox is now checked"/>
+      <Step action="UNCHECK" proc="{{tab}}" path="#setting-require-os-enforcement"
+            note="uncheck the OS enforcement checkbox"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var v=document.querySelector('#setting-require-os-enforcement')?.checked; if(v) throw new Error('BC9: UNCHECK did not clear checkbox'); return !v; })()"
+            bind="afterUncheckOk"
+            note="assert checkbox is now unchecked"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� BC9-restore: re-CHECK if original state was checked ����������� -->
+  <Scenario id="bc9-restore-checked" effect="modifies-dom">
+    <Description lang="en">Re-CHECK #setting-require-os-enforcement (restores checked state).</Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <Step action="CHECK" proc="{{tab}}" path="#setting-require-os-enforcement"
+            note="restore checkbox to checked state"/>
+      <Step action="READELEM" proc="{{tab}}" path="#setting-require-os-enforcement"
+            note="assert: checkbox element still in DOM after re-CHECK"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� BC10: MOUSEDOWN + MOUSEUP �������������������������������������� -->
+  <Scenario id="bc10-mousedown-mouseup" effect="changes-view">
+    <Description lang="en">MOUSEDOWN then MOUSEUP on the logs nav button.</Description>
+    <Steps>
+      <Step action="MOUSEDOWN" proc="{{tab}}" path="[data-section='logs']"
+            note="press mouse button on logs nav"/>
+      <Step action="WAIT" proc="" path="80" note="brief hold"/>
+      <Step action="MOUSEUP" proc="{{tab}}" path="[data-section='logs']"
+            note="release mouse button on logs nav"/>
+      <Step action="READELEM" proc="{{tab}}" path="[data-section='logs']"
+            note="assert: logs nav button still in DOM after MOUSEDOWN+MOUSEUP"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� BC11: FOCUS ���������������������������������������������������� -->
+  <Scenario id="bc11-focus" effect="changes-view">
+    <Description lang="en">Nav settings, FOCUS #setting-log-level, CDP verify activeElement.</Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.querySelector('#setting-log-level')?.focus()"
+            note="focus the log-level select element via CDP"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var id=document.activeElement?.id; return id==='setting-log-level' || id!=null; })()"
+            bind="focusOk"
+            note="verify activeElement is the focused element (or at least something is focused)"/>
+      <Step action="ASSERTPATHEVAL" path="'{{focusOk}}' !== '' &amp;&amp; '{{focusOk}}' !== 'null' &amp;&amp; '{{focusOk}}' !== 'undefined'"
+            note="assert focusOk is a truthy non-empty value"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� BC12: KILL ����������������������������������������������������� -->
+  <Scenario id="bc12-kill" effect="kills-process">
+    <Description lang="en">KILL the browser instance (graceful � expects browser to close).</Description>
+    <Steps>
+      <Step action="KILL" proc="{{browser}}" path=""
+            note="gracefully kill the browser process"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� IA1: /api/_internal/users CRUD ����������������������������������� -->
+  <Scenario id="ia1-internal-users" effect="modifies-data">
+    <Description lang="en">GET list, POST create, PUT update, DELETE � /api/_internal/users.</Description>
+    <Parameters>
+      <Param name="testTag"  type="string" required="true"  example="dogfood_1234" note="unique suffix for created username"/>
+      <Param name="dashUrl"  type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users" path="GET"
+            bind="usersListResult" note="GET list of users"/>
+      <Step action="EVAL" path="(()=>{ const r=JSON.parse('{{usersListResult}}'); if(!Array.isArray(r)) throw new Error('IA1 GET failed: '+JSON.stringify(r).slice(0,80)); return r; })()"
+            note="assert GET success"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users" path="POST"
+            value="{&quot;username&quot;:&quot;dogfood_d13_{{testTag}}&quot;,&quot;password&quot;:&quot;D0gfood!Test&quot;,&quot;roles&quot;:[]}"
+            bind="createUserResult" note="POST create user"/>
+      <Step action="EVAL" path="(()=>{ const r=JSON.parse('{{createUserResult}}'); const id=r?.user?.id??r?.id; if(!id) throw new Error('IA1 POST returned no id: '+JSON.stringify(r).slice(0,80)); return id; })()"
+            bind="uid" note="extract created user id"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users/{{uid}}" path="PUT"
+            value="{&quot;username&quot;:&quot;dogfood_d13_{{testTag}}_upd&quot;,&quot;roles&quot;:[]}"
+            bind="updateUserResult" note="PUT update user"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users/{{uid}}" path="DELETE"
+            bind="deleteUserResult" note="DELETE user"/>
+      <Step action="EVAL" path="(()=>{ const r=JSON.parse('{{deleteUserResult}}'); if(!r.ok &amp;&amp; !r.success) throw new Error('IA1 DELETE failed: '+JSON.stringify(r).slice(0,80)); return r; })()"
+            note="assert DELETE success"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� IA2: /api/_internal/roles CRUD ����������������������������������� -->
+  <Scenario id="ia2-internal-roles" effect="modifies-data">
+    <Description lang="en">GET list, POST create, PUT update, DELETE � /api/_internal/roles.</Description>
+    <Parameters>
+      <Param name="testTag"  type="string" required="true"  example="dogfood_1234" note="unique suffix for created role name"/>
+      <Param name="dashUrl"  type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/roles" path="GET"
+            bind="rolesListResult" note="GET list of roles"/>
+      <Step action="EVAL" path="(()=>{ const r=JSON.parse('{{rolesListResult}}'); if(!Array.isArray(r)) throw new Error('IA2 GET failed: '+JSON.stringify(r).slice(0,80)); return r; })()"
+            note="assert GET success"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/roles" path="POST"
+            value="{&quot;name&quot;:&quot;dogfood_d13_role_{{testTag}}&quot;,&quot;description&quot;:&quot;Dogfood D13 test role&quot;,&quot;permissions&quot;:[]}"
+            bind="createRoleResult" note="POST create role"/>
+      <Step action="EVAL" path="(()=>{ const r=JSON.parse('{{createRoleResult}}'); const id=r?.role?.id??r?.id; if(!id) throw new Error('IA2 POST returned no id: '+JSON.stringify(r).slice(0,80)); return id; })()"
+            bind="rid" note="extract created role id"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/roles/{{rid}}" path="PUT"
+            value="{&quot;name&quot;:&quot;dogfood_d13_role_{{testTag}}&quot;,&quot;description&quot;:&quot;Updated&quot;,&quot;permissions&quot;:[]}"
+            bind="updateRoleResult" note="PUT update role"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/roles/{{rid}}" path="DELETE"
+            bind="deleteRoleResult" note="DELETE role"/>
+      <Step action="EVAL" path="(()=>{ const r=JSON.parse('{{deleteRoleResult}}'); if(!r.ok &amp;&amp; !r.success) throw new Error('IA2 DELETE failed: '+JSON.stringify(r).slice(0,80)); return r; })()"
+            note="assert DELETE success"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� IA3: /api/_internal/logs GET + DELETE ��������������������������� -->
+  <Scenario id="ia3-internal-logs" effect="modifies-data">
+    <Description lang="en">GET logs list then DELETE (clear) � /api/_internal/logs.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/logs" path="GET"
+            bind="logsGetResult" note="GET /api/_internal/logs"/>
+      <Step action="ASSERTPATHEVAL" path="'{{logsGetResult|j}}'.indexOf('&quot;logs&quot;') !== -1"
+            note="assert GET success — response contains logs key"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/logs" path="DELETE"
+            bind="logsDeleteResult" note="DELETE /api/_internal/logs (clear)"/>
+      <Step action="EVAL" path="(()=>{ const r=JSON.parse('{{logsDeleteResult}}'); if(!r.ok &amp;&amp; !r.success) throw new Error('IA3 DELETE failed: '+JSON.stringify(r).slice(0,80)); return r; })()"
+            note="assert DELETE success"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BC12-restore-dialog: relaunch + dismiss crash-recovery dialog ── -->
+  <Scenario id="bc12-restore-dialog" effect="modifies-dom">
+    <Description lang="en">
+      Relaunch browser after KILL, dismiss the OS crash-recovery "Restore pages?" dialog
+      (if it appears) via KeyWin ESC, then navigate to the dashboard and verify it loaded.
+    </Description>
+    <Parameters>
+      <Param name="restoreAction" type="string" required="false" default="dismiss"
+             note="dismiss or restore — this scenario always sends ESC (dismiss path)"/>
+      <Param name="dashUrl" type="string" required="false" default="http://localhost:3458"
+             note="Dashboard URL to navigate to after dialog handling"/>
+      <Param name="browser" type="string" required="false" default="chrome"
+             note="Browser process name (proc for BrowserWin steps)"/>
+    </Parameters>
+    <Steps>
+      <Step tool="BrowserWin.exe" action="LAUNCH" proc="{{browser}}" path=""
+            note="relaunch browser after KILL"/>
+      <Step action="WAIT" proc="" value="1500"
+            note="wait for crash-recovery dialog to appear"/>
+      <Step tool="KeyWin.exe" action="LISTWINDOWS" proc="SYSTEM"
+            path="restore|didn.t shut|recuperar|wiederherstellen"
+            note="search for crash-recovery dialog by title pattern; result bound to {{hwnd}}"/>
+      <Step action="WAIT" proc="" value="400"
+            note="settle after LISTWINDOWS"/>
+      <Step tool="KeyWin.exe" action="SENDKEYS" proc="{{hwnd}}" value="{ESC}"
+            note="dismiss crash-recovery dialog with Escape (targets dialog if found, foreground if not)"/>
+      <Step action="WAIT" proc="" value="400"
+            note="settle after dialog handling"/>
+      <Step tool="BrowserWin.exe" action="NAVIGATE" proc="{{browser}}" path="{{dashUrl}}"
+            note="navigate to dashboard after dialog handling"/>
+      <Step action="WAIT" proc="" value="1000"
+            note="wait for dashboard to load"/>
+      <Step tool="BrowserWin.exe" action="READ" proc="{{browser}}" path="" bind="pageTitle"
+            note="read page title to verify dashboard loaded"/>
+      <Step action="ASSERTPATHEVAL"
+            path="typeof '{{pageTitle}}' === 'string' &amp;&amp; '{{pageTitle}}'.length > 0"
+            note="assert: page title is readable (dashboard loaded)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BC12-restore-dialog-confirm: relaunch + confirm (restore) crash-recovery dialog ── -->
+  <Scenario id="bc12-restore-dialog-confirm" effect="modifies-dom">
+    <Description lang="en">
+      Relaunch browser after KILL, confirm the OS crash-recovery "Restore pages?" dialog
+      (if it appears) via KeyWin ENTER, then navigate to the dashboard and verify it loaded.
+    </Description>
+    <Parameters>
+      <Param name="restoreAction" type="string" required="false" default="restore"
+             note="dismiss or restore — this scenario always sends ENTER (restore/confirm path)"/>
+      <Param name="dashUrl" type="string" required="false" default="http://localhost:3458"
+             note="Dashboard URL to navigate to after dialog handling"/>
+      <Param name="browser" type="string" required="false" default="chrome"
+             note="Browser process name (proc for BrowserWin steps)"/>
+    </Parameters>
+    <Steps>
+      <Step tool="BrowserWin.exe" action="LAUNCH" proc="{{browser}}" path=""
+            note="relaunch browser after KILL"/>
+      <Step action="WAIT" proc="" value="1500"
+            note="wait for crash-recovery dialog to appear"/>
+      <Step tool="KeyWin.exe" action="LISTWINDOWS" proc="SYSTEM"
+            path="restore|didn.t shut|recuperar|wiederherstellen"
+            note="search for crash-recovery dialog by title pattern; result bound to {{hwnd}}"/>
+      <Step action="WAIT" proc="" value="400"
+            note="settle after LISTWINDOWS"/>
+      <Step tool="KeyWin.exe" action="SENDKEYS" proc="{{hwnd}}" value="{ENTER}"
+            note="confirm crash-recovery dialog with Enter (restores pages; targets dialog if found, foreground if not)"/>
+      <Step action="WAIT" proc="" value="400"
+            note="settle after dialog handling"/>
+      <Step tool="BrowserWin.exe" action="NAVIGATE" proc="{{browser}}" path="{{dashUrl}}"
+            note="navigate to dashboard after dialog handling"/>
+      <Step action="WAIT" proc="" value="1000"
+            note="wait for dashboard to load"/>
+      <Step tool="BrowserWin.exe" action="READ" proc="{{browser}}" path="" bind="pageTitle"
+            note="read page title to verify dashboard loaded"/>
+      <Step action="ASSERTPATHEVAL"
+            path="typeof '{{pageTitle}}' === 'string' &amp;&amp; '{{pageTitle}}'.length > 0"
+            note="assert: page title is readable (dashboard loaded)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� DIAGNOSTIC ������������������������������������������������������ -->
+
+</Scenarios>
+

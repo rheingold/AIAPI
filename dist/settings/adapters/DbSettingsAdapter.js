@@ -61,6 +61,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DbSettingsAdapter = void 0;
+const DbProvisioner_1 = require("../../db/DbProvisioner");
 const Logger_1 = require("../../utils/Logger");
 const TAG = 'DbSettingsAdapter';
 // ─── Driver factory ───────────────────────────────────────────────────────────
@@ -213,6 +214,12 @@ class DbSettingsAdapter {
         this.cfg = cfg;
     }
     async initialize() {
+        // Apply pending schema migrations (idempotent — safe to call on every startup)
+        const migResult = await DbProvisioner_1.DbProvisioner.ensureSchema(this.cfg);
+        if (migResult.status === 'error') {
+            throw new Error(`DbSettingsAdapter schema migration failed: ${migResult.error}`);
+        }
+        Logger_1.globalLogger.info(TAG, `Schema: ${migResult.detail}`);
         this.conn = await openConnection(this.cfg);
         Logger_1.globalLogger.info(TAG, `Connected to ${this.cfg.type} at ${this.cfg.host}`);
         await this.load();

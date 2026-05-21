@@ -1,125 +1,128 @@
-# Windows UI Automation System
+# AI UI Automation
 
-JSON-RPC 2.0 HTTP server providing automated Windows UI testing capabilities. AI assistants can use this to launch applications, query UI structures, send input, and verify results.
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/rheingold.ai-ui-automation?label=VS%20Code%20Marketplace&color=007acc)](https://marketplace.visualstudio.com/items?itemName=rheingold.ai-ui-automation)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/rheingold.ai-ui-automation?color=007acc)](https://marketplace.visualstudio.com/items?itemName=rheingold.ai-ui-automation)
+[![Rating](https://img.shields.io/visual-studio-marketplace/r/rheingold.ai-ui-automation?color=007acc)](https://marketplace.visualstudio.com/items?itemName=rheingold.ai-ui-automation)
+[![License](https://img.shields.io/github/license/rheingold/AIAPI)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
+![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
 
-## Quick Start
+> **MCP server for Windows UI automation inside VS Code.**  
+> Drive any desktop app — Calculator, Notepad, Office, browsers — via natural-language tool calls from Claude, Copilot or any MCP client.
 
-```powershell
-# 1. Start MCP Server
-node dist/start-mcp-server.js
-# Server runs on http://127.0.0.1:3457
-
-# 2. Launch and test Calculator
-Invoke-WebRequest -Uri "http://127.0.0.1:3457" -Method POST -ContentType "application/json" -UseBasicParsing -Body '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"launchProcess","arguments":{"executable":"calc.exe"}}}'
-
-# 3. Send keyboard input
-Invoke-WebRequest -Uri "http://127.0.0.1:3457" -Method POST -ContentType "application/json" -UseBasicParsing -Body '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"setProperty","arguments":{"providerName":"windows-forms","elementId":"ApplicationFrameHost","propertyName":"keys","value":"5+3="}}}'
-
-# 4. Read result
-$response = Invoke-WebRequest -Uri "http://127.0.0.1:3457" -Method POST -ContentType "application/json" -UseBasicParsing -Body '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"readProperty","arguments":{"providerName":"windows-forms","elementId":"ApplicationFrameHost","propertyName":"text"}}}'
-($response.Content | ConvertFrom-Json).result.value
-```
+---
 
 ## Features
 
-- **Launch Applications**: Start any Windows application via API
-- **Query UI Structure**: Get element tree with positions and properties
-- **Keyboard Input**: Send keys to applications (direct or focus mode)
-- **Read Values**: Extract display text and control values
-- **Mouse Control**: Click elements by coordinates or name
-- **Window Management**: List and enumerate all visible windows
-- **Direct Injection**: Universal input injection without focus stealing (uses UI Automation)
+| Capability | Detail |
+|---|---|
+| 🖥️ **Windows UI control** | Click, type, read, drag — any Win32 / UWP / WPF app via UI Automation |
+| 🌐 **Browser automation** | Full Chrome DevTools Protocol via BrowserWin.exe |
+| 🤖 **MCP protocol** | MCP@HTTP (port 3458) and MCP@IPC (VS Code command relay) |
+| 📊 **Dashboard** | Web UI on `http://localhost:3458/dashboard` — settings, scenarios, security |
+| 🛡️ **Security filters** | Per-helper ALLOW/DENY rules with process, command, pattern scoping |
+| 🔑 **Authentication** | None / Password / API-Key / OAuth 2.0 / SAML 2.0 / Certificates |
+| 📜 **Scenario editor** | XML-based scenario authoring with IntelliSense autocomplete |
+| ⚙️ **Setup wizard** | Idempotent first-run setup — generates keys, signs config, creates admin |
 
-## API Tools
+---
 
-- `launchProcess` - Start applications
-- `listWindows` - Enumerate windows with titles and PIDs
-- `queryTree` - Get UI structure with element positions
-- `setProperty` - Send input (keyboard, mouse, values)
-- `readProperty` - Read display values
-- `clickElement` - Click UI elements
-- `getProviders` - List available automation providers
+## Quick Start
 
-## Documentation
+### VS Code Extension (recommended)
 
-- **[AI_ASSISTANT_MANUAL.md](AI_ASSISTANT_MANUAL.md)** - Complete guide for AI assistants
-- **[SERVER_API.md](SERVER_API.md)** - HTTP JSON-RPC API reference
-- **[KEYWIN_API.md](KEYWIN_API.md)** - KeyWin.exe command reference (includes injection modes)
-- **[API.md](API.md)** - High-level overview
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System design
-- **[SECURITY_ARCHITECTURE.md](SECURITY_ARCHITECTURE.md)** - Security design and implementation
-- **[START_HERE.md](START_HERE.md)** - Getting started
+1. Install from the VS Code Marketplace (`rheingold.ai-ui-automation`) or:
+   ```bash
+   code --install-extension dist/release/ai-ui-automation-0.2.0.vsix
+   ```
+2. The server starts automatically on VS Code launch.  
+   Click the **$(rocket) AIAPI :3468** status bar item to open the dashboard.
 
-## Input Injection Modes
+### Standalone (without VS Code)
 
-KeyWin.exe supports two injection modes:
+```powershell
+npm install
+npm run compile
+node dist/start-mcp-server.js
+# MCP server → http://127.0.0.1:3457
+# Dashboard  → http://127.0.0.1:3458/dashboard
+```
 
-### Direct Mode (Default) - `--inject-mode=direct`
-- **No focus stealing**: Input injected without activating the target window
-- **Universal approach**: Works with Win32 and UWP apps (Notepad, Calculator)
-- **UI Automation**: Uses ValuePattern for text controls, InvokePattern for buttons
-- **Language-independent**: Uses AutomationId instead of localized button names
-- **Best for**: Automation running in background, multi-window workflows
+### First-run setup
 
-### Focus Mode - `--inject-mode=focus`
-- **Traditional approach**: Activates window (SetForegroundWindow), then uses SendKeys
-- **Steals focus**: Target window comes to front
-- **Universal compatibility**: Works with all apps that accept keyboard input
-- **Best for**: Single-window focused testing, legacy apps
+Open the dashboard → **Settings** → expand **⚙️ First-Run Setup Wizard** → click **▶ Run Setup**.
 
-### Configuration
+This generates the cryptographic key pair, signs the security config, and creates the default admin user (`admin` / `changeme` — change immediately via the Auth tab).
 
-Set injection mode via:
-1. **Command-line**: `KeyWin.exe --inject-mode=direct notepad "text"`
-2. **Environment variable**: `KEYWIN_INJECT_MODE=focus`
-3. **MCP Provider**: Set `KEYWIN_INJECT_MODE` before starting server
+---
 
-**Default:** `direct` mode for minimal disruption
+## MCP Tools
+
+| Tool | Description |
+|---|---|
+| `automateWindows` | SENDKEYS, CLICKID, CLICKNAME, READ, QUERYTREE, LISTWINDOWS, LAUNCH, KILL, … |
+| `automateBrowser` | CDP_EVALUATE, CDP_CLICK, CDP_FILL, CDP_NAVIGATE, QUERYTREE, … |
+| `getHelperSchema` | Introspect available commands and their schemas |
+| `listHelpers` | List registered helper executables |
+| `runScenario` | Execute an XML scenario |
+
+All tool calls pass through the security filter chain before reaching the helper.
+
+---
 
 ## Architecture
 
 ```
-HTTP Client (PowerShell, Node.js, etc)
-  ↓ JSON-RPC 2.0
-MCP Server (TypeScript - port 3457)
-  ↓
-Automation Engine (TypeScript)
-  ↓
-Windows Forms Provider (TypeScript)
-  ↓
-WinKeys.exe (C# - UIAutomation wrapper)
-  ↓
-Windows UIAutomation Framework
+AI Client (Claude, Copilot, …)
+  │  MCP JSON-RPC 2.0
+  ▼
+MCP Server (TS, port 3457)
+  │  Security filter (ALLOW/DENY rules)
+  ▼
+HelperRegistry ──→ KeyWin.exe (Win32 / UWP / WPF, UI Automation)
+                └→ BrowserWin.exe (Chrome DevTools Protocol)
+  │
+HttpServerWithDashboard (port 3458)
+  └→ Dashboard SPA / REST API
 ```
+
+---
+
+## Security
+
+- **Cryptographic key pair** (RSA-4096 AES-256-GCM encrypted) — used for config signing and helper authentication
+- **Security filter chain** — every tool call is evaluated against ALLOW/DENY rules (process, helper, command, pattern, role)
+- **Admin Session Tokens** — 15-minute time-limited bypass with full audit trail
+- **Auth modes** — None, Password, API Key, Client Certificate, OAuth 2.0 / OIDC, SAML 2.0
+- **Audit log** — rolling JSONL persisted log of every security event
+
+---
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [docs/api/API.md](docs/api/API.md) | Public REST + MCP API reference |
+| [docs/api/SERVER_API.md](docs/api/SERVER_API.md) | HTTP server API details |
+| [docs/api/KEYWIN_API.md](docs/api/KEYWIN_API.md) | KeyWin.exe command reference |
+| [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) | System design |
+| [docs/architecture/SECURITY_ARCHITECTURE.md](docs/architecture/SECURITY_ARCHITECTURE.md) | Security model |
+| [docs/guides/SERVER_GUIDE.md](docs/guides/SERVER_GUIDE.md) | Deployment & configuration |
+| [CHANGELOG.md](CHANGELOG.md) | Version history |
+
+---
 
 ## Requirements
 
-- Windows 10/11
-- Node.js 18+
-- .NET Framework 4.0+ (for WinKeys.exe)
+- **Windows 10 / 11** (helpers are native Windows binaries)
+- **Node.js 18+**
+- **VS Code 1.75+** (extension mode only)
+- **.NET 4.8+** (for `KeyWin.exe` / `BrowserWin.exe`)
 
-## Installation
-
-```bash
-npm install
-npm run compile
-```
-
-## Build WinKeys.exe
-
-```powershell
-.\scripts\build-win-tools.ps1
-```
-
-## VS Code Extension
-
-Can be packaged as VS Code extension:
-```bash
-npm run package
-# Creates ai-ui-automation-0.1.1.vsix
-```
+---
 
 ## License
 
-See LICENSE file.
+[MIT](LICENSE) © 2024-2026 rheingold
+
 

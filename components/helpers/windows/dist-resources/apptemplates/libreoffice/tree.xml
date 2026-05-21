@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  apptemplates/libreoffice/tree.xml
+  Annotated window structure for LibreOffice (Writer / Calc / Impress).
+  Helper: LibreOfficeWin.exe  (content/structure commands: QUERYTREE, READ, WRITE, FORMAT, SAVE, NEWDOC)
+  Keystroke helper: KeyWin.exe  (UI interaction: SENDKEYS, CLICKID, LISTWINDOWS — use HANDLE:<hwnd>)
+  Process: soffice.exe / soffice.bin  (Windows)
+
+  Window mode: single_instance — all document types share one soffice process.
+  Each open document is a separate top-level OS window (class SALFRAME).
+
+  ── IMPORTANT: TRANSIENT / CONDITIONAL UI ────────────────────────────────────
+  LibreOffice shows additional windows that are NOT present in every session.
+  They appear only after specific user actions or on first launch.
+  See the <transient_ui> section at the bottom of this file.
+  When these windows ARE open, identify them via KeyWin LISTWINDOWS and interact
+  with them using KeyWin SENDKEYS / CLICKID on HANDLE:<hwnd>.
+
+  Command taxonomy:
+    LibreOfficeWin.exe commands (document content):
+      QUERYTREE  — document element tree (JSON)
+      READ       — read a cell / paragraph / slide shape
+      WRITE      — write a cell / paragraph / slide shape
+      FORMAT     — apply paragraph style / character properties
+      SAVE       — save or export (PDF)
+      NEWDOC     — open a blank document
+      LISTDOCS   — list open documents
+    KeyWin.exe commands (UI / window level):
+      SENDKEYS   — emit keystrokes to any LO window (HANDLE:<hwnd>)
+      LISTWINDOWS — enumerate OS windows; find any LO window by title / process
+      CLICKID    — click a UIA control by AutomationId (limited in LO)
+-->
+<AppTree app="libreoffice" version="7.x-24.x" os="win" helper="LibreOfficeWin.exe"
+         keystroke_helper="KeyWin.exe" window_mode="single_instance"
+         process="soffice.exe soffice.bin">
+
+  <meta>
+    <description lang="en">
+      LibreOffice suite (Writer, Calc, Impress) on Windows.
+      One soffice process hosts all open documents as separate top-level windows (class SALFRAME).
+      Content operations (read/write/format/save) use LibreOfficeWin.exe via the UNO bridge.
+      Keystroke and window-management operations use KeyWin.exe with HANDLE:&lt;hwnd&gt;.
+    </description>
+    <description lang="ai">
+      LibreOffice runs one soffice process (soffice.bin owns the windows; soffice.exe is the launcher).
+      Each document is a separate SALFRAME window.  SALSUBFRAME windows are dialogs / floating panels.
+
+      Two helpers cooperate:
+        LibreOfficeWin.exe — document content: QUERYTREE READ WRITE FORMAT SAVE NEWDOC LISTDOCS
+        KeyWin.exe         — window/UI: SENDKEYS LISTWINDOWS CLICKID on HANDLE:&lt;hwnd&gt;
+
+      Identify windows:
+        LISTWINDOWS → entries with process="soffice.bin" or process="soffice.exe"
+        Document windows:  title contains "LibreOffice Writer" / "LibreOffice Calc" /
+                           "LibreOffice Impress" or the document filename + " - LibreOffice …"
+        Dialog / panel windows: title does NOT contain app name keywords; Win32 class = SALSUBFRAME.
+
+      CRITICAL — TRANSIENT WINDOWS (see &lt;transient_ui&gt; section):
+        Some dialogs appear only after specific actions (e.g. NEWDOC impress → template chooser,
+        Find &amp; Replace → dialog, Save As → file dialog).  They are NOT present unless triggered.
+        If you see an unexpected SALSUBFRAME window via LISTWINDOWS, it is a modal dialog that
+        must normally be dismissed (ESC or Enter) before any other command will be processed.
+        Use KeyWin SENDKEYS {ESC} or {ENTER} on HANDLE:&lt;hwnd&gt; of the dialog window.
+    </description>
+    <binaries>
+      <binary path="C:\Program Files\LibreOffice\program\soffice.exe"
+              note="Main launcher; real window owner is soffice.bin on the same path"/>
+      <binary path="C:\Program Files\LibreOffice\program\soffice.bin"
+              note="Actual LO process owning SALFRAME/SALSUBFRAME windows"/>
+    </binaries>
+  </meta>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       WRITER document window
+       ══════════════════════════════════════════════════════════════════════ -->
+  <Control id="writer-window" type="Window" process="soffice.bin"
+           win32_class="SALFRAME" note="Writer document window — always has WS_MAXIMIZEBOX">
+    <label lang="en">LibreOffice Writer document window</label>
+    <label lang="ai">
+      Identified by: title matches /LibreOffice Writer/ or /\.odt|\.docx/ + " - LibreOffice".
+      Win32 class: SALFRAME.  Has WS_MAXIMIZEBOX set.
+      Document operations: use LibreOfficeWin.exe with target="writer".
+      Keystroke operations: use KeyWin.exe with target="HANDLE:&lt;hwnd&gt;".
+      Key SENDKEYS shortcuts (send via KeyWin to HANDLE:&lt;hwnd&gt;):
+        {CTRL+S}       save             {CTRL+Z}  undo         {CTRL+Y}  redo
+        {CTRL+A}       select all       {CTRL+C}  copy         {CTRL+V}  paste
+        {CTRL+F}       find             {CTRL+H}  find+replace {CTRL+P}  print
+        {ALT+F4}       close window
+    </label>
+    <action command="READ"      parameter="body/para[N]"      note="read paragraph N (1-based)"/>
+    <action command="WRITE"     parameter="body/para[N]|text" note="write text to paragraph N"/>
+    <action command="QUERYTREE" parameter="2"                 note="document structure tree"/>
+    <action command="SAVE"      parameter=""                  note="save in native format"/>
+  </Control>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       CALC document window
+       ══════════════════════════════════════════════════════════════════════ -->
+  <Control id="calc-window" type="Window" process="soffice.bin"
+           win32_class="SALFRAME" note="Calc spreadsheet window — always has WS_MAXIMIZEBOX">
+    <label lang="en">LibreOffice Calc spreadsheet window</label>
+    <label lang="ai">
+      Identified by: title matches /LibreOffice Calc/ or /\.ods|\.xlsx/.
+      Document operations: use LibreOfficeWin.exe with target="calc".
+      Key cell path forms: "A1", "Sheet1!B3", "body/sheet[@name='X']/cell[@addr='B2']".
+    </label>
+    <action command="READ"      parameter="A1"              note="read cell A1 (active sheet)"/>
+    <action command="WRITE"     parameter="A1|value"        note="write value to A1"/>
+    <action command="QUERYTREE" parameter="2"               note="workbook structure tree"/>
+  </Control>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       IMPRESS document window
+       ══════════════════════════════════════════════════════════════════════ -->
+  <Control id="impress-window" type="Window" process="soffice.bin"
+           win32_class="SALFRAME" note="Impress presentation window — always has WS_MAXIMIZEBOX">
+    <label lang="en">LibreOffice Impress presentation window</label>
+    <label lang="ai">
+      Identified by: title matches /LibreOffice Impress/ or /\.odp|\.pptx/.
+      Document operations: use LibreOfficeWin.exe with target="impress".
+      Slide path forms: "slide[1]", "slide[1]/shape[1]", "slide[2]/shape[@name='Title']".
+
+      IMPORTANT — template chooser dialog on NEWDOC:
+        When LibreOfficeWin.exe NEWDOC impress is called, LibreOffice may show a
+        "Select Template" / "New Presentation" dialog (SALSUBFRAME, no WS_MAXIMIZEBOX)
+        BEFORE or concurrently with the document window.
+        LibreOfficeWin.exe attempts to automatically dismiss it via WM_CLOSE + ESC.
+        If it persists (visible via KeyWin LISTWINDOWS as a SALSUBFRAME window),
+        dismiss it manually: KeyWin SENDKEYS {ESC} or {ENTER} on HANDLE:&lt;hwnd&gt;
+        of the dialog window.  See scenarios.xml scenario id="newdoc-impress".
+    </label>
+    <action command="READ"      parameter="slide[1]"               note="all text on slide 1"/>
+    <action command="WRITE"     parameter="slide[1]/shape[1]|text" note="write to first shape"/>
+    <action command="QUERYTREE" parameter="2"                      note="presentation structure"/>
+  </Control>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       TRANSIENT / CONDITIONAL UI
+       These windows are NOT present in a normal idle session.
+       They appear only after specific actions trigger them.
+       List them so the AI knows:
+         (a) they can appear,
+         (b) how to identify them via LISTWINDOWS,
+         (c) how to interact with them via KeyWin.exe.
+       ══════════════════════════════════════════════════════════════════════ -->
+  <transient_ui>
+
+    <TransientWindow id="impress-template-chooser"
+                     trigger="NEWDOC impress (first call, or when no blank template is default)"
+                     win32_class="SALSUBFRAME"
+                     win32_style="no WS_MAXIMIZEBOX"
+                     process="soffice.bin">
+      <label lang="en">Impress "Select Template" / "New Presentation" dialog</label>
+      <label lang="ai">
+        Appears when LibreOfficeWin.exe NEWDOC impress is called and LibreOffice shows
+        a template chooser before opening the blank slide.
+
+        Detection via KeyWin LISTWINDOWS:
+          Process: soffice.bin (or soffice.exe)
+          Title:   "Select Template" / "Vybrat šablonu" / "Vorlage auswählen" (locale-dependent)
+                   OR a short non-app-name title — anything NOT containing
+                   "LibreOffice", "Writer", "Calc", "Impress", "OpenOffice"
+          Win32 class: SALSUBFRAME  (dialog / floating window)
+          WS_MAXIMIZEBOX bit: NOT set  (always absent on dialogs)
+
+        LibreOfficeWin.exe automatically tries to dismiss this dialog with WM_CLOSE + ESC
+        during the NEWDOC poll loop.  If it still appears in LISTWINDOWS after NEWDOC
+        returns, dismiss it with:
+          KeyWin SENDKEYS {ESC}    on HANDLE:&lt;hwnd&gt;   — cancels → blank presentation
+          KeyWin SENDKEYS {ENTER}  on HANDLE:&lt;hwnd&gt;   — accepts default template
+
+        After dismissal the Impress document window (SALFRAME + WS_MAXIMIZEBOX) becomes visible.
+      </label>
+      <dismiss_via helper="KeyWin.exe">
+        <step action="SENDKEYS" target="HANDLE:{{hwnd}}" parameter="{ESC}"
+              note="Cancel template chooser — opens blank presentation"/>
+        <!-- Alternative: {ENTER} to accept the highlighted template -->
+      </dismiss_via>
+    </TransientWindow>
+
+    <TransientWindow id="save-as-dialog"
+                     trigger="SAVE on a new (unsaved) document, or explicit Save As"
+                     win32_class="SALSUBFRAME"
+                     process="soffice.bin">
+      <label lang="ai">
+        Standard LibreOffice Save As file dialog.
+        Title: "Save As" / "Uložit jako" / "Speichern unter" (locale-dependent).
+        Detection: SALSUBFRAME process=soffice.bin, title contains "Save" or locale equivalent.
+        Interaction via KeyWin.exe:
+          Type a path:  SENDKEYS "C:\path\to\file.odt"  then SENDKEYS {ENTER}
+          Cancel:       SENDKEYS {ESC}
+      </label>
+      <dismiss_via helper="KeyWin.exe">
+        <step action="SENDKEYS" target="HANDLE:{{hwnd}}" parameter="{{filepath}}"
+              note="Type destination path into file dialog"/>
+        <step action="SENDKEYS" target="HANDLE:{{hwnd}}" parameter="{ENTER}"
+              note="Confirm save"/>
+      </dismiss_via>
+    </TransientWindow>
+
+    <TransientWindow id="find-replace-dialog"
+                     trigger="SENDKEYS {CTRL+H} on any document window"
+                     win32_class="SALSUBFRAME"
+                     process="soffice.bin">
+      <label lang="ai">
+        Find &amp; Replace dialog.  Non-modal in LibreOffice (document still reachable).
+        Title: "Find &amp; Replace" / locale variant.
+        Dismiss: SENDKEYS {ESC} on HANDLE:&lt;hwnd&gt; of the dialog, or SENDKEYS {ALT+F4}.
+      </label>
+      <dismiss_via helper="KeyWin.exe">
+        <step action="SENDKEYS" target="HANDLE:{{hwnd}}" parameter="{ESC}"/>
+      </dismiss_via>
+    </TransientWindow>
+
+    <TransientWindow id="macro-basic-ide"
+                     trigger="Tools → Macros → Edit, or macro error"
+                     win32_class="SALFRAME"
+                     process="soffice.bin">
+      <label lang="ai">
+        LibreOffice Basic IDE window (full SALFRAME, has WS_MAXIMIZEBOX).
+        Title contains "Basic IDE" or "Basic".
+        Close with SENDKEYS {ALT+F4} on HANDLE:&lt;hwnd&gt; of the IDE window.
+      </label>
+    </TransientWindow>
+
+  </transient_ui>
+
+</AppTree>

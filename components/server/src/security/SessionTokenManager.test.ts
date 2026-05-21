@@ -2,6 +2,9 @@ import { SessionTokenManager } from './SessionTokenManager';
 import * as crypto from 'crypto';
 
 describe('SessionTokenManager', () => {
+    beforeEach(() => { delete process.env.SKIP_SESSION_AUTH; });
+    afterEach(() => { delete process.env.SKIP_SESSION_AUTH; });
+
     describe('constructor', () => {
         it('should generate random 256-bit secret by default', () => {
             const manager1 = new SessionTokenManager();

@@ -99,6 +99,13 @@ public static class WinUtils
     [DllImport("kernel32.dll")]
     public static extern uint GetCurrentThreadId();
 
+    [DllImport("kernel32.dll")]
+    public static extern uint WTSGetActiveConsoleSessionId();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool ProcessIdToSessionId(uint dwProcessId, out uint pSessionId);
+
     [DllImport("user32.dll")]
     public static extern bool BringWindowToTop(IntPtr hWnd);
 
@@ -327,6 +334,37 @@ public static class WinUtils
         return match;
     }
 
+    // ── Session isolation detection ───────────────────────────────────────────
+
+    /// <summary>
+    /// Returns true when this process is running in Windows Session 0
+    /// (i.e. launched by a Windows Service). In Session 0, EnumWindows
+    /// and SendInput do not reach the user's interactive desktop (Session 1+).
+    /// </summary>
+    public static bool IsSession0()
+    {
+        try
+        {
+            uint sessionId = 0;
+            ProcessIdToSessionId((uint)System.Diagnostics.Process.GetCurrentProcess().Id, out sessionId);
+            return sessionId == 0;
+        }
+        catch
+        {
+            return false; // safe default — assume not Session 0
+        }
+    }
+
+    /// <summary>
+    /// Returns the active console/interactive session Id (typically 1 for local logon).
+    /// Returns 0xFFFFFFFF (uint.MaxValue) if no user is logged in.
+    /// </summary>
+    public static uint GetActiveConsoleSessionId()
+    {
+        try { return WTSGetActiveConsoleSessionId(); }
+        catch { return uint.MaxValue; }
+    }
+
     // ── LISTWINDOWS ───────────────────────────────────────────────────────────
 
     /// <summary>
@@ -355,8 +393,24 @@ public static class WinUtils
             }
             return true;
         }, IntPtr.Zero);
-        return "{\"success\":true,\"windows\":["
-            + string.Join(",", windows.ToArray()) + "]}";
+        string sessionWarning = null;
+        if (IsSession0())
+        {
+            uint consoleSession = GetActiveConsoleSessionId();
+            sessionWarning = "Helper is running in Windows Session 0 (service context). "
+                + "EnumWindows cannot see user-desktop windows in Session "
+                + (consoleSession == uint.MaxValue ? "N/A (no user logged in)" : consoleSession.ToString())
+                + ". "
+                + "Fix: configure the Windows Service to run helpers via Task Scheduler or CreateProcessAsUser in the active session. "
+                + "See docs/specs/SESSION0_ISOLATION.md for details.";
+            Console.Error.WriteLine("AIAPI SESSION0 WARNING: " + sessionWarning);
+        }
+        string json = "{\"success\":true,\"windows\":["
+            + string.Join(",", windows.ToArray()) + "]";
+        if (sessionWarning != null)
+            json += ",\"_sessionWarning\":\"" + EscapeJson(sessionWarning) + "\"";
+        json += "}";
+        return json;
     }
 
     // ── Chromium render widget ────────────────────────────────────────────────
@@ -597,6 +651,47 @@ public static class WinUtils
     {
         if (root == null || string.IsNullOrEmpty(selector)) return null;
         AutomationElement elem = null;
+        // 0. Hierarchical path (e.g. "NavView/CalculatorResults") — walk tree level by level
+        if (selector.Contains("/"))
+        {
+            string[] parts = selector.Split('/');
+            AutomationElement cur = root;
+            foreach (var part in parts)
+            {
+                if (string.IsNullOrEmpty(part)) continue;
+                AutomationElement found = null;
+                // try AutomationId first
+                try
+                {
+                    var cond = new PropertyCondition(AutomationElement.AutomationIdProperty, part);
+                    found = cur.FindFirst(TreeScope.Subtree, cond);
+                }
+                catch { }
+                // fallback: Name property
+                if (found == null)
+                {
+                    try
+                    {
+                        var cond = new PropertyCondition(AutomationElement.NameProperty, part);
+                        found = cur.FindFirst(TreeScope.Subtree, cond);
+                    }
+                    catch { }
+                }
+                if (found == null) return null;
+                cur = found;
+            }
+            elem = cur;
+            // extract value from the final element
+            try
+            {
+                var vp = elem.GetCurrentPattern(ValuePattern.Pattern) as ValuePattern;
+                if (vp != null) return vp.Current.Value;
+            }
+            catch { }
+            try { return elem.Current.Name; }
+            catch { }
+            return null;
+        }
         // 1. AutomationId — matches the HTML `id` attribute in Chromium browsers
         try
         {
@@ -665,7 +760,7 @@ public static class WinUtils
     /// and set its value using ValuePattern — fires native UIA value-change so the page
     /// JS (React/Vue/etc.) sees the change.  Returns true on success.
     /// </summary>
-    public static bool FillElement(AutomationElement root, string selector, string value)
+    public static bool FillElement(AutomationElement root, string selector, string value, bool scroll = false)
     {
         if (root == null || string.IsNullOrEmpty(selector)) return false;
         AutomationElement elem = null;
@@ -693,7 +788,42 @@ public static class WinUtils
         if (elem == null)
             elem = FindElementByLabel(root, selector);
 
+        // 4. Locale-agnostic fallback: first editable Document/Edit control
+        //    Useful when the UIA Name is localised (e.g. "Textový editor" on Czech Windows).
+        if (elem == null)
+        {
+            try
+            {
+                var docCond = new OrCondition(
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document),
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit)
+                );
+                var candidates = root.FindAll(TreeScope.Descendants, docCond);
+                foreach (AutomationElement c in candidates)
+                {
+                    try
+                    {
+                        var vp = c.GetCurrentPattern(ValuePattern.Pattern) as ValuePattern;
+                        if (vp != null && !vp.Current.IsReadOnly) { elem = c; break; }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
         if (elem == null) return false;
+
+        // Opt-in scroll: scroll the element into view via ScrollItemPattern before acting.
+        if (scroll)
+        {
+            try
+            {
+                var sip = elem.GetCurrentPattern(ScrollItemPattern.Pattern) as ScrollItemPattern;
+                if (sip != null) { sip.ScrollIntoView(); Thread.Sleep(50); }
+            }
+            catch { /* ScrollItemPattern not supported — proceed without scroll */ }
+        }
 
         // Try ValuePattern.SetValue — direct, no caret movement side-effects
         try
@@ -787,7 +917,49 @@ public static class WinUtils
     /// For inputs, selects, etc.: fires a real SendInput mouse click at the
     /// element's bounding-rectangle centre so the element actually gets focus.
     /// </summary>
-    public static bool FocusOrClickElement(AutomationElement root, string selector)
+    /// <summary>
+    /// BFS tree walk using TreeWalker (crosses ControlType.Window child-window boundaries,
+    /// unlike FindFirst(TreeScope.Descendants)).  Matches AutomationId or Name (case-insensitive).
+    /// Used as a fallback in FocusOrClickElement for UWP apps whose nav panes are hosted in
+    /// separate child HWNDs (e.g. Windows Calculator PaneRoot).
+    /// </summary>
+    private static AutomationElement FindByWalker(AutomationElement root, string selector)
+    {
+        if (root == null || string.IsNullOrEmpty(selector)) return null;
+        try
+        {
+            var walker = new TreeWalker(Condition.TrueCondition);
+            var queue  = new Queue<AutomationElement>();
+            queue.Enqueue(root);
+            while (queue.Count > 0)
+            {
+                var current = queue.Dequeue();
+                try
+                {
+                    string id   = current.Current.AutomationId ?? "";
+                    string name = current.Current.Name         ?? "";
+                    if (id.Equals(selector,   StringComparison.OrdinalIgnoreCase) ||
+                        name.Equals(selector, StringComparison.OrdinalIgnoreCase))
+                        return current;
+                }
+                catch { }
+                try
+                {
+                    var child = walker.GetFirstChild(current);
+                    while (child != null)
+                    {
+                        queue.Enqueue(child);
+                        child = walker.GetNextSibling(child);
+                    }
+                }
+                catch { }
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    public static bool FocusOrClickElement(AutomationElement root, string selector, bool scroll = false)
     {
         if (root == null || string.IsNullOrEmpty(selector)) return false;
         AutomationElement elem = null;
@@ -809,12 +981,37 @@ public static class WinUtils
         // 3. By associated label text (ARIA for= / LabeledBy in UIA)
         if (elem == null)
             elem = FindElementByLabel(root, selector);
+        // 4. Fallback: search across child ControlType.Window boundaries using TreeWalker.
+        //    FindFirst(TreeScope.Descendants) stops at ControlType.Window children (e.g. UWP
+        //    nav-pane popup hosts like PaneRoot in Windows Calculator).  TreeWalker traversal
+        //    crosses those boundaries the same way QUERYTREE does.
+        if (elem == null)
+            elem = FindByWalker(root, selector);
         if (elem == null) return false;
+
+        // Opt-in scroll: scroll the element into view via ScrollItemPattern before acting.
+        if (scroll)
+        {
+            try
+            {
+                var sip = elem.GetCurrentPattern(ScrollItemPattern.Pattern) as ScrollItemPattern;
+                if (sip != null) { sip.ScrollIntoView(); Thread.Sleep(50); }
+            }
+            catch { /* ScrollItemPattern not supported — proceed without scroll */ }
+        }
+
         // Try InvokePattern — works for buttons and links
         try
         {
             var ip = elem.GetCurrentPattern(InvokePattern.Pattern) as InvokePattern;
             if (ip != null) { ip.Invoke(); return true; }
+        }
+        catch { }
+        // Try SelectionItemPattern — works for ListItem, RadioButton, tab, nav items
+        try
+        {
+            var sp = elem.GetCurrentPattern(SelectionItemPattern.Pattern) as SelectionItemPattern;
+            if (sp != null) { sp.Select(); return true; }
         }
         catch { }
         // Fall back to real mouse click at the element's centre

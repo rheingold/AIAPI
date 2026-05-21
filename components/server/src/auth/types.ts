@@ -11,6 +11,8 @@
  *  - Permissions / roles summed from user's explicit roles + external-auth groups
  */
 
+import { DbConfig } from '../settings/types';
+
 // ─── Identity ────────────────────────────────────────────────────────────────
 
 /** A single API key record attached to a user */
@@ -247,5 +249,24 @@ export interface AuthConfig {
   users: {
     storeSource: 'json' | 'db';
     jsonPath: string;
+    /**
+     * DB connection override for the user store.
+     * When storeSource = "db" and this is provided, {@link DbUserStore} uses
+     * this connection instead of the top-level settings DB config.
+     */
+    db?: DbConfig;
+  };
+  /**
+   * Settings-backend override for auth configuration.
+   * When present, auth config is read/written via this backend instead of the
+   * main settings adapter.  Useful when auth config lives in a separate DB
+   * from the rest of the dashboard settings.
+   *
+   * `source = "json"` — use the standard dashboard-settings.json (default)
+   * `source = "db"`   — use the DB specified in `db`
+   */
+  settings?: {
+    source: 'json' | 'db';
+    db?: DbConfig;
   };
 }

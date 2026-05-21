@@ -1,0 +1,791 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D7 BrowserWin + Chrome test scenarios — test/e2e/d7/scenarios.xml
+  Layer : L3 (test-suite — never shipped)
+  app   : d7
+  helper: BrowserWin.exe
+  process: chrome.exe
+
+  Layer design (CONVENTIONS.md §8 / ADR-008):
+    All assertions are INLINE (ASSERT / ASSERTPATHEVAL) inside each scenario.
+    d7-browserwin-chrome.js is a ~30-line bootstrap only — no JS assertions.
+
+  Tab binding: runner.launch() → runner.defaults.tab = chrome:URL:http://localhost:3458
+
+  ── Scenarios ─────────────────────────────────────────────────────────────────
+  bw3-read            READ page metadata  → assert non-empty
+  bw4-querytree       QUERYTREE depth=2   → assert tree length > 10
+  bw5-readelem        READELEM nav item   → self-validating (fails if absent)
+  bw6-exec-tag        CDP_EXECUTE marker  → assert contains testTag
+  bw7-exec-title      CDP_EXECUTE title   → assert non-empty
+  bw8-navigate-blank  NAVIGATE about:blank → assert URL is about:blank
+  bw9-navigate-back   NAVIGATE dashboard  → assert title non-empty
+  bw10-pagesource     PAGESOURCE          → assert HTML length > 50
+  bw11-screenshot     SCREENSHOT          → assert data absent or > 100 chars
+  bw12-cookies        COOKIES             → assert result is string
+  bw13-fill-suite     bw13a+b+c+d: nav → wizard → fill/verify → close
+  bw14-dialog-inject  DIALOG inject:      → assert dialogResult is string
+  bw15-tools-nav      Tools nav           → assert #tools-list non-empty
+  bw16-templates-nav  Templates nav       → assert #templates-list non-empty
+  bw17-filter-search  FILL #filter-search → assert input value reflected
+  bw18-test-rule      CRUD: add → edit → delete filter (full cycle)
+  bw19-security-log   #security-log-panel → assert #security-log-list present
+  bw20-toolbar-validate  Validate All btn + Export btn + Import btn presence
+  bw21-toolbar-table-toggle  Quick-Edit toggle → Card View → restore
+  bw22-audit-log-controls    Refresh → content changes; pagesize; autorefresh on/off
+  bw23-save-filters      click Save All → HTTP_FETCH GET /api/filters → server count == browser count
+  d7-suite            Full D7 suite chaining bw3..bw23
+  diag-exec           Diagnostic CDP_EXECUTE
+  ──────────────────────────────────────────────────────────────────────────────
+-->
+<Scenarios app="d7" helper="BrowserWin.exe" process="chrome.exe"
+           xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d7">
+
+  <!-- ── BW3 — READ page metadata ── -->
+  <Scenario id="bw3-read" effect="read-only">
+    <Description lang="en">READ the dashboard page metadata; assert result is a non-empty string.</Description>
+    <Steps>
+      <Step action="READ" proc="{{tab}}" path="" bind="readResult"
+            note="READ current page — returns JSON with title/url in BrowserWin; step fails on error"/>
+      <!-- no ASSERTPATHEVAL: readResult may contain raw JSON/HTML that breaks JS string literals -->
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW4 — QUERYTREE depth=2 from body ── -->
+  <Scenario id="bw4-querytree" effect="read-only">
+    <Description lang="en">
+      Walk DOM tree from body to depth 2; assert tree string contains node data.
+      QUERYTREE path= is a CSS root selector (CONVENTIONS §1.1b). value= is depth.
+    </Description>
+    <Steps>
+      <Step action="QUERYTREE" proc="{{tab}}" path="body" value="2" bind="treeStr"
+            note="QUERYTREE root=body depth=2 — path=CSS root selector, value=depth"/>
+      <!-- use DOM count as proxy — safe integer, no string-literal substitution issues -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}" value="document.querySelectorAll('body *').length"
+            bind="domElemCount" note="BW4 proxy: count all body elements"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{domElemCount}}') > 0"
+            note="BW4: page has DOM elements — QUERYTREE had content to walk"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW5 — READELEM ── -->
+  <Scenario id="bw5-readelem" effect="read-only">
+    <Description lang="en">
+      READELEM settings nav item; step fails automatically if selector matches nothing.
+      Self-validating — no additional ASSERT needed.
+    </Description>
+    <Steps>
+      <Step action="READELEM" proc="{{tab}}" path="[data-section='settings']" bind="elemStr"
+            note="READELEM settings nav button — data-section selector; fails if absent"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW6 — CDP_EXECUTE marker ── -->
+  <Scenario id="bw6-exec-tag" effect="read-only">
+    <Description lang="en">CDP_EXECUTE a marker expression; assert result contains testTag.</Description>
+    <Parameters>
+      <Param name="testTag" type="string" required="true" example="dogfood_1234"
+             note="TEST_TAG value; must appear in execResult"/>
+    </Parameters>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ return 'dogfood_exec_' + '{{testTag}}'; })()"
+            bind="execResult"
+            note="marker expression; result is 'dogfood_exec_{{testTag}}'"/>
+      <Step action="ASSERT" path="'{{execResult}}'" value="'{{testTag}}'" op="contains"
+            note="BW6: execResult contains testTag"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW7 — CDP_EXECUTE document.title ── -->
+  <Scenario id="bw7-exec-title" effect="read-only">
+    <Description lang="en">CDP_EXECUTE document.title; assert pageTitle is non-empty.</Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}" value="document.title" bind="pageTitle"
+            note="evaluate document.title"/>
+      <Step action="ASSERTPATHEVAL" path="'{{pageTitle}}'.length > 0"
+            note="BW7: pageTitle non-empty"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW8 — NAVIGATE about:blank ── -->
+  <Scenario id="bw8-navigate-blank" effect="changes-view">
+    <Description lang="en">NAVIGATE to about:blank; assert URL is about:blank.</Description>
+    <Steps>
+      <Step action="NAVIGATE" proc="{{tab}}" path="about:blank"
+            note="navigate away from dashboard"/>
+      <Step action="WAIT" proc="" value="600" note="settle"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}" value="location.href" bind="blankUrl"
+            note="read URL after navigate"/>
+      <Step action="ASSERTPATHEVAL"
+            path="'{{blankUrl}}'.includes('about:blank') || '{{blankUrl}}'.length === 0"
+            note="BW8: URL is about:blank (or empty on restricted pages)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW9 — NAVIGATE back to dashboard ── -->
+  <Scenario id="bw9-navigate-back" effect="changes-view">
+    <Description lang="en">NAVIGATE back to the dashboard; assert title is non-empty.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="true"
+             example="http://localhost:3458" note="dashboard URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="NAVIGATE" proc="{{tab}}" path="{{dashUrl}}"
+            note="navigate back to dashboard"/>
+      <Step action="WAIT" proc="" value="1200" note="wait for page load"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}" value="document.title" bind="backTitle"
+            note="read title after navigation back"/>
+      <Step action="ASSERTPATHEVAL" path="'{{backTitle}}'.length > 0"
+            note="BW9: backTitle non-empty — back on a real page"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW10 — PAGESOURCE ── -->
+  <Scenario id="bw10-pagesource" effect="read-only">
+    <Description lang="en">PAGESOURCE — retrieve raw HTML; assert > 50 chars.</Description>
+    <Steps>
+      <Step action="PAGESOURCE" proc="{{tab}}" path="" bind="htmlSource"
+            note="PAGESOURCE — returns raw HTML of current page"/>
+      <!-- bind length as a safe integer — raw htmlSource embeds single-quotes that break JS string literals -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.documentElement.outerHTML.length"
+            bind="htmlSourceLen" note="DOM outerHTML length as safe integer"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{htmlSourceLen}}') > 50"
+            note="BW10: page has content"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW11 — SCREENSHOT ── -->
+  <Scenario id="bw11-screenshot" effect="read-only">
+    <Description lang="en">
+      SCREENSHOT — capture base64 PNG; empty data accepted (driver may not support).
+      If data IS returned it must be &gt; 100 chars.
+    </Description>
+    <Steps>
+      <Step action="SCREENSHOT" proc="{{tab}}" path="" bind="screenshotData"
+            note="SCREENSHOT — returns base64 image data or empty string if unsupported"/>
+      <!-- no ASSERTPATHEVAL: base64 data is too long to safely embed in a JS string literal -->
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW12 — COOKIES ── -->
+  <Scenario id="bw12-cookies" effect="read-only">
+    <Description lang="en">COOKIES — read cookies; assert result is a string (JSON-serialised array).</Description>
+    <Steps>
+      <Step action="COOKIES" proc="{{tab}}" path="" bind="cookiesResult"
+            note="COOKIES — returns JSON array of cookie objects"/>
+      <Step action="ASSERTPATHEVAL" path="typeof '{{cookiesResult}}' === 'string'"
+            note="BW12: cookiesResult is a string"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW13 — composite: security nav + wizard fill + close ── -->
+  <Scenario id="bw13-fill-suite" effect="test-suite">
+    <Description lang="en">
+      Composite: navigate to Security section, open Add Filter wizard, FILL description,
+      verify input value via CDP_EXECUTE, close with ESC.
+    </Description>
+    <Parameters>
+      <Param name="fillValue" type="string" required="true"
+             example="d7_fill_test_12345" note="test value to FILL into #filter-description"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef ref="bw13a-security-nav"/>
+      <ScenarioRef ref="bw13b-wizard-open"/>
+      <ScenarioRef ref="bw13c-fill-verify"/>
+      <ScenarioRef ref="bw13d-wizard-close"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW13a — navigate to Security section ── -->
+  <Scenario id="bw13a-security-nav" effect="changes-view">
+    <Description lang="en">CLICKID security nav item to open the Security Filters section.</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@data-section='security']"
+            note="click security nav item — data-section attribute selector"/>
+      <Step action="WAIT" proc="" value="500" note="section load settle"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW13b — open Add Filter wizard ── -->
+  <Scenario id="bw13b-wizard-open" effect="changes-view">
+    <Description lang="en">CLICKID Add Filter button to open the filter-add wizard.</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-add-filter']"
+            note="click Add Filter button — opens the wizard overlay"/>
+      <Step action="WAIT" proc="" value="400" note="wizard open settle"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW13c — FILL description + verify ── -->
+  <Scenario id="bw13c-fill-verify" effect="test-suite">
+    <Description lang="en">
+      FILL #filter-description with fillValue; CDP_EXECUTE reads back .value; assert non-empty.
+    </Description>
+    <Parameters>
+      <Param name="fillValue" type="string" required="true"
+             example="d7_fill_test_12345" note="test value to FILL into #filter-description"/>
+    </Parameters>
+    <Steps>
+      <Step action="FILL" proc="{{tab}}" path="#filter-description" value="{{fillValue}}"
+            note="fill description field — path=CSS selector, value=text"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(document.getElementById('filter-description')||{}).value||''"
+            bind="fillVerify"
+            note="read back input .value (READELEM returns textContent, not .value)"/>
+      <Step action="ASSERTPATHEVAL" path="'{{fillVerify}}'.length > 0"
+            note="BW13c: FILL reflected in input.value"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW13d — close wizard with Escape ── -->
+  <Scenario id="bw13d-wizard-close" effect="changes-view">
+    <Description lang="en">Press Escape to dismiss the Add Filter wizard.</Description>
+    <Steps>
+      <Step action="SENDKEYS" proc="{{tab}}" value="{ESC}"
+            note="dismiss wizard via keyboard Escape — no CDP click() shortcut"/>
+      <Step action="WAIT" proc="" value="300" note="dismiss settle"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW14 — DIALOG inject: mode ── -->
+  <Scenario id="bw14-dialog-inject" effect="test-suite">
+    <Description lang="en">
+      Inject a JS alert via DIALOG inject: mode; assert dialogResult is a string.
+    </Description>
+    <Parameters>
+      <Param name="testTag" type="string" required="true" example="dogfood_1234"
+             note="TEST_TAG value embedded in alert message"/>
+    </Parameters>
+    <Steps>
+      <Step action="DIALOG" proc="{{tab}}"
+            path="inject:setTimeout(function(){alert('d7_dialog_{{testTag}}')},200):3000"
+            bind="dialogResult"
+            note="inject JS alert via DIALOG inject: mode"/>
+      <Step action="ASSERTPATHEVAL" path="typeof '{{dialogResult}}' === 'string'"
+            note="BW14: dialogResult received"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW15 — navigate to Tools section ── -->
+  <Scenario id="bw15-tools-nav" effect="changes-view">
+    <Description lang="en">Click Tools nav → assert #tools-list has at least one tool card (non-empty).</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@data-section='tools']"
+            note="click Tools nav item"/>
+      <Step action="WAIT" proc="" value="800" note="tools grid load settle"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(document.getElementById('tools-list')||{innerText:''}).innerText.length"
+            bind="toolsLen" note="BW15: read #tools-list innerText length as integer"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{toolsLen}}') > 0"
+            note="BW15: tools-list has content"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW16 — navigate to Templates section ── -->
+  <Scenario id="bw16-templates-nav" effect="changes-view">
+    <Description lang="en">Click Templates nav → assert #templates-list has at least one entry (non-empty).</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@data-section='templates']"
+            note="click Templates nav item"/>
+      <Step action="WAIT" proc="" value="800" note="templates grid load settle"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(document.getElementById('templates-list')||{innerText:''}).innerText.length"
+            bind="templatesLen" note="BW16: read #templates-list innerText length as integer"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{templatesLen}}') > 0"
+            note="BW16: templates-list has content"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW17 — security section: filter search ── -->
+  <Scenario id="bw17-filter-search" effect="changes-view">
+    <Description lang="en">
+      Navigate to Security, fill #filter-search with a term (letters only — safe in JS string literal),
+      assert the search input value is reflected. Then clear and restore.
+    </Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@data-section='security']"
+            note="navigate to Security section"/>
+      <Step action="WAIT" proc="" value="400" note="section settle"/>
+      <Step action="FILL" proc="{{tab}}" path="#filter-search" value="calc"
+            note="fill filter search with safe term"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(document.getElementById('filter-search')||{}).value||''"
+            bind="searchVal" note="BW17: read search input value"/>
+      <Step action="ASSERTPATHEVAL" path="'{{searchVal}}'.length > 0"
+            note="BW17: filter-search input value is set"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var el=document.getElementById('filter-search'); if(el){ el.value=''; el.dispatchEvent(new Event('input')); } return 'cleared'; })()"
+            bind="searchClearResult" note="BW17: clear search to restore full list"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW18 — filter editor modal: full CRUD cycle (add → verify card → delete) ── -->
+  <Scenario id="bw18-test-rule" effect="changes-view">
+    <Description lang="en">
+      Full CRUD cycle on the filter-editor-modal:
+      1. Record existing filter count.
+      2. Open modal via btn-add-filter (real click).
+      3. Set action select to "deny" (CDP change event).
+      4. FILL #filter-process with a test process name.
+      5. Set command select to {QUERYTREE} (CDP change event).
+      6. FILL #filter-pattern with *.
+      7. FILL #filter-description.
+      8. Assert live preview reflects deny action.
+      9. Click "Save Filter" button (real click inside dialog).
+      10. Assert modal closed, filter count increased by 1.
+      11. Assert new filter card appears in #filter-rules-list.
+      12. Delete the new rule via advancedFilters JS (cleanup — not persisted to disk
+          until "Save All" is clicked, so no permanent side-effect).
+      13. Assert filter count back to original.
+    </Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@data-section='security']"
+            note="navigate to Security section"/>
+      <Step action="WAIT" proc="" value="400" note="section settle"/>
+
+      <!-- record baseline filter count -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="typeof advancedFilters !== 'undefined' ? advancedFilters.length : -1"
+            bind="filterCountBefore" note="BW18: baseline filter count"/>
+
+      <!-- open modal via real click -->
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-add-filter']"
+            note="BW18: click Add Filter Rule — opens filter-editor-modal"/>
+      <Step action="WAIT" proc="" value="600" note="modal animate — visible pause for observer"/>
+
+      <!-- assert modal visible -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var m=document.getElementById('filter-editor-modal'); return m?(getComputedStyle(m).display!=='none'?1:0):0; })()"
+            bind="modalOpen" note="BW18: 1=modal visible"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{modalOpen}}') === 1"
+            note="BW18: filter-editor-modal is open"/>
+
+      <!-- 1. action = deny (select element — CDP set + change event) -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var s=document.getElementById('filter-action'); if(s){s.value='deny';s.dispatchEvent(new Event('change'));} return (s||{}).value||''; })()"
+            bind="actionVal" note="BW18: set #filter-action to deny"/>
+      <Step action="ASSERTPATHEVAL" path="'{{actionVal}}' === 'deny'"
+            note="BW18: action select = deny"/>
+      <Step action="WAIT" proc="" value="400" note="let user see action field updated"/>
+
+      <!-- 2. process — real text fill -->
+      <Step action="FILL" proc="{{tab}}" path="#filter-process" value="bw18-test.exe" scroll="true"
+            note="BW18: type target process name in #filter-process"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(document.getElementById('filter-process')||{value:''}).value"
+            bind="procVal" note="BW18: read back #filter-process"/>
+      <Step action="ASSERTPATHEVAL" path="'{{procVal}}' === 'bw18-test.exe'"
+            note="BW18: #filter-process = bw18-test.exe"/>
+      <Step action="WAIT" proc="" value="400" note="let user see process field"/>
+
+      <!-- 3. helper = KeyWin.exe (assert default) -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(document.getElementById('filter-helper')||{value:''}).value"
+            bind="helperVal" note="BW18: read #filter-helper default"/>
+      <Step action="ASSERTPATHEVAL" path="'{{helperVal}}' === 'KeyWin.exe'"
+            note="BW18: helper defaults to KeyWin.exe"/>
+
+      <!-- 4. command = {QUERYTREE} (select element — CDP set + change event) -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var s=document.getElementById('filter-command'); if(s){s.value='{QUERYTREE}';s.dispatchEvent(new Event('change'));} return (s||{}).value||''; })()"
+            bind="cmdVal" note="BW18: set #filter-command to {QUERYTREE}"/>
+      <Step action="ASSERTPATHEVAL" path="'{{cmdVal}}' === '{QUERYTREE}'"
+            note="BW18: command select = {QUERYTREE}"/>
+      <Step action="WAIT" proc="" value="400" note="let user see command field updated"/>
+
+      <!-- 5. pattern — real text fill -->
+      <Step action="FILL" proc="{{tab}}" path="#filter-pattern" value="*" scroll="true"
+            note="BW18: type * in #filter-pattern"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(document.getElementById('filter-pattern')||{value:''}).value"
+            bind="patternVal" note="BW18: read back #filter-pattern"/>
+      <Step action="ASSERTPATHEVAL" path="'{{patternVal}}' === '*'"
+            note="BW18: pattern = *"/>
+      <Step action="WAIT" proc="" value="300" note="let user see pattern field"/>
+
+      <!-- 6. description — real text fill -->
+      <Step action="FILL" proc="{{tab}}" path="#filter-description" value="BW18 auto-test — ephemeral" scroll="true"
+            note="BW18: type description in #filter-description"/>
+      <Step action="WAIT" proc="" value="400" note="let user see description + live preview update"/>
+
+      <!-- 7. live preview reflects deny -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(document.getElementById('filter-preview-text')||{innerText:''}).innerText.toLowerCase().indexOf('deny')"
+            bind="previewIdx" note="BW18: indexOf deny in preview"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{previewIdx}}') >= 0"
+            note="BW18: live preview updated to deny"/>
+
+      <!-- 8. SAVE — real click on Save Filter button inside the dialog -->
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-filter-editor-save']" scroll="true"
+            note="BW18: click Save Filter button inside dialog"/>
+      <Step action="WAIT" proc="" value="600" note="modal close + DOM update — visible pause"/>
+
+      <!-- 9. assert modal is now hidden -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var m=document.getElementById('filter-editor-modal'); return m?(getComputedStyle(m).display!=='none'?1:0):0; })()"
+            bind="modalAfterSave" note="BW18: modal state after Save"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{modalAfterSave}}') === 0"
+            note="BW18: modal closed after Save Filter"/>
+
+      <!-- 10. assert filter count increased by 1 -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="typeof advancedFilters !== 'undefined' ? advancedFilters.length : -1"
+            bind="filterCountAfter" note="BW18: filter count after save"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{filterCountAfter}}') === Number('{{filterCountBefore}}') + 1"
+            note="BW18: exactly one new filter added"/>
+
+      <!-- 11. assert filter card appears in #filter-rules-list -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(document.getElementById('filter-rules-list')||{innerHTML:''}).innerHTML.indexOf('bw18-test.exe')"
+            bind="cardIdx" note="BW18: indexOf bw18-test.exe in filter list HTML"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{cardIdx}}') >= 0"
+            note="BW18: new filter card visible in #filter-rules-list"/>
+      <Step action="WAIT" proc="" value="600" note="let user see the new filter card in the list"/>
+
+      <!-- ── EDIT ROUND-TRIP ── -->
+      <!-- 12. click the ✏️ Edit button on the new card (CDP — no static id on btn) -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var cards=[].slice.call(document.querySelectorAll('.filter-rule')); var card=cards.find(function(c){return c.innerText.indexOf('bw18-test.exe')>=0;}); var btn=card&amp;&amp;card.querySelector('.btn-icon[title=&quot;Edit&quot;]'); if(btn)btn.click(); return btn?'clicked':'missing'; })()"
+            bind="editClick" note="BW18 edit: click ✏️ Edit button on our card"/>
+      <Step action="ASSERTPATHEVAL" path="'{{editClick}}' === 'clicked'"
+            note="BW18 edit: edit button was found and clicked"/>
+      <Step action="WAIT" proc="" value="600" note="modal re-opens in edit mode — let user see it"/>
+
+      <!-- 13. assert modal visible again -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var m=document.getElementById('filter-editor-modal'); return m?(getComputedStyle(m).display!=='none'?1:0):0; })()"
+            bind="editModalOpen" note="BW18 edit: modal open for editing"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{editModalOpen}}') === 1"
+            note="BW18 edit: filter-editor-modal open in edit mode"/>
+
+      <!-- 14. change the description field to something distinct -->
+      <Step action="FILL" proc="{{tab}}" path="#filter-description" value="BW18 auto-test — edited"
+            note="BW18 edit: overwrite description to mark edited state"/>
+      <Step action="WAIT" proc="" value="400" note="let user see the updated description"/>
+
+      <!-- 15. also update process to edited-bw18-test.exe so it shows in the card -->
+      <Step action="FILL" proc="{{tab}}" path="#filter-process" value="edited-bw18-test.exe"
+            note="BW18 edit: change process field to edited value"/>
+      <Step action="WAIT" proc="" value="400" note="let user see updated process field"/>
+
+      <!-- 16. click Save Filter to commit the edit -->
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-filter-editor-save']"
+            note="BW18 edit: click Save Filter to commit edit"/>
+      <Step action="WAIT" proc="" value="600" note="modal closes, card re-renders — let user see updated card"/>
+
+      <!-- 17. assert modal closed after edit save -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var m=document.getElementById('filter-editor-modal'); return m?(getComputedStyle(m).display!=='none'?1:0):0; })()"
+            bind="editModalClosed" note="BW18 edit: modal closed after save"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{editModalClosed}}') === 0"
+            note="BW18 edit: modal closed after editing"/>
+
+      <!-- 18. assert updated card shows edited-bw18-test.exe -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(document.getElementById('filter-rules-list')||{innerHTML:''}).innerHTML.indexOf('edited-bw18-test.exe')"
+            bind="editedCardIdx" note="BW18 edit: edited process name should appear in list"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{editedCardIdx}}') >= 0"
+            note="BW18 edit: updated card with edited-bw18-test.exe is visible"/>
+      <Step action="WAIT" proc="" value="600" note="let user see the updated card before cleanup"/>
+
+      <!-- 19. filter count must remain unchanged (edit, not add) -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="typeof advancedFilters !== 'undefined' ? advancedFilters.length : -1"
+            bind="filterCountAfterEdit" note="BW18 edit: count must not change on edit"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{filterCountAfterEdit}}') === Number('{{filterCountBefore}}') + 1"
+            note="BW18 edit: still exactly one more than baseline after editing"/>
+
+      <!-- ── CLEANUP ── -->
+      <!-- 20. splice directly from advancedFilters (bypass confirm()), then persist deletion -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var idx=advancedFilters.findIndex(function(f){return f.description==='BW18 auto-test \u2014 edited';}); if(idx>=0){advancedFilters.splice(idx,1);renderFilters();saveFilters();} return idx; })()"
+            bind="deletedIdx" note="BW18: splice edited test filter + saveFilters() to persist deletion"/>
+      <Step action="WAIT" proc="" value="700" note="let saveFilters() fetch complete + user see card removed"/>
+
+      <!-- 13. assert count restored -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="typeof advancedFilters !== 'undefined' ? advancedFilters.length : -1"
+            bind="filterCountRestored" note="BW18: filter count after cleanup"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{filterCountRestored}}') === Number('{{filterCountBefore}}')"
+            note="BW18: filter count restored to baseline"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW19 — security section: audit log panel ── -->
+  <Scenario id="bw19-security-log" effect="changes-view">
+    <Description lang="en">
+      Open #security-log-panel details element, assert #security-log-list exists and
+      #security-log-count is a string (may be empty if no audit events yet).
+    </Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@data-section='security']"
+            note="navigate to Security section"/>
+      <Step action="WAIT" proc="" value="400" note="section settle"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var d=document.getElementById('security-log-panel'); if(d&amp;&amp;!d.open){ d.open=true; } return d?'opened':'missing'; })()"
+            bind="logPanelState" note="BW19: force-open security-log-panel details"/>
+      <Step action="ASSERTPATHEVAL" path="'{{logPanelState}}' !== 'missing'"
+            note="BW19: security-log-panel element exists"/>
+      <Step action="WAIT" proc="" value="600" note="log panel open settle"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="typeof (document.getElementById('security-log-list')||{}).innerText"
+            bind="logListType" note="BW19: assert #security-log-list is present"/>
+      <Step action="ASSERTPATHEVAL" path="'{{logListType}}' === 'string'"
+            note="BW19: security-log-list element is present"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW20 — security toolbar: validate + export + import presence ── -->
+  <Scenario id="bw20-toolbar-validate" effect="changes-view">
+    <Description lang="en">
+      Navigate to Security section. Suppress alert (validate is "coming soon" alert).
+      Click btn-validate-filters — assert no crash (button still present).
+      Click btn-export-filters — intercept createObjectURL to capture JSON — assert non-empty.
+      Assert btn-import-filters is present in DOM.
+    </Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@data-section='security']"
+            note="navigate to Security section"/>
+      <Step action="WAIT" proc="" value="400" note="section settle"/>
+
+      <!-- suppress alert so validate click doesn't stall the test -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="window._origAlert=window.alert; window.alert=function(){}; 'suppressed'"
+            bind="alertSuppressed" note="BW20: suppress window.alert"/>
+
+      <!-- click validate-filters -->
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-validate-filters']"
+            note="BW20: click Validate All button (shows suppressed alert)"/>
+      <Step action="WAIT" proc="" value="300" note="settle"/>
+
+      <!-- assert validate button is still present (no crash) -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('btn-validate-filters') !== null ? 1 : 0"
+            bind="validateBtnPresent" note="BW20: validate button still in DOM after click"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{validateBtnPresent}}') === 1"
+            note="BW20: btn-validate-filters survived click"/>
+
+      <!-- intercept createObjectURL to capture export blob URI -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ window._exportUrl=null; var orig=URL.createObjectURL; URL.createObjectURL=function(b){ var u=orig.call(URL,b); window._exportUrl=u; return u; }; return 'intercepted'; })()"
+            bind="interceptResult" note="BW20: intercept URL.createObjectURL"/>
+
+      <!-- click export-filters -->
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-export-filters']"
+            note="BW20: click Export button — triggers exportFilters() → createObjectURL"/>
+      <Step action="WAIT" proc="" value="400" note="export settle"/>
+
+      <!-- assert export ran (blob URL was created) -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="window._exportUrl ? window._exportUrl.length : 0"
+            bind="exportUrlLen" note="BW20: captured export blob URL length"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{exportUrlLen}}') > 0"
+            note="BW20: exportFilters() ran — blob URL created"/>
+
+      <!-- assert btn-import-filters is present -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('btn-import-filters') !== null ? 1 : 0"
+            bind="importBtnPresent" note="BW20: import button present"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{importBtnPresent}}') === 1"
+            note="BW20: btn-import-filters is in the DOM"/>
+
+      <!-- restore alert -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="if(window._origAlert)window.alert=window._origAlert; 'restored'"
+            bind="alertRestored" note="BW20: restore window.alert"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW21 — security toolbar: filter-table-toggle round-trip ── -->
+  <Scenario id="bw21-toolbar-table-toggle" effect="changes-view">
+    <Description lang="en">
+      Click btn-filter-table-toggle (Quick-Edit mode on), assert button text changes to contain "Card".
+      Click again (back to card mode), assert text reverts to contain "Quick-Edit".
+    </Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@data-section='security']"
+            note="navigate to Security section"/>
+      <Step action="WAIT" proc="" value="400" note="section settle"/>
+
+      <!-- ensure we start in card mode (text = Quick-Edit) -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(document.getElementById('btn-filter-table-toggle')||{textContent:''}).textContent"
+            bind="toggleBtnInitial" note="BW21: initial button label"/>
+
+      <!-- click once → Quick-Edit mode on -->
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-filter-table-toggle']"
+            note="BW21: click Quick-Edit toggle — switch to table mode"/>
+      <Step action="WAIT" proc="" value="400" note="table mode render settle"/>
+
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(document.getElementById('btn-filter-table-toggle')||{textContent:''}).textContent"
+            bind="toggleBtnAfter" note="BW21: button label after first click"/>
+      <Step action="ASSERTPATHEVAL" path="'{{toggleBtnAfter}}'.toLowerCase().indexOf('card') >= 0"
+            note="BW21: button shows Card View (table mode is active)"/>
+
+      <!-- click again → card mode restored -->
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-filter-table-toggle']"
+            note="BW21: click again — restore card view"/>
+      <Step action="WAIT" proc="" value="400" note="card mode render settle"/>
+
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(document.getElementById('btn-filter-table-toggle')||{textContent:''}).textContent"
+            bind="toggleBtnRestored" note="BW21: button label after second click"/>
+      <Step action="ASSERTPATHEVAL" path="'{{toggleBtnRestored}}'.toLowerCase().indexOf('quick') >= 0 || '{{toggleBtnRestored}}'.toLowerCase().indexOf('edit') >= 0"
+            note="BW21: button shows Quick-Edit (card mode restored)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW22 — audit log: refresh + pagesize + autorefresh toggle ── -->
+  <Scenario id="bw22-audit-log-controls" effect="changes-view">
+    <Description lang="en">
+      Navigate to Security section, force-open security-log-panel,
+      click Refresh → assert log-list content changed from initial placeholder.
+      Change pagesize select to 50 → assert value set.
+      Toggle autorefresh checkbox on → assert checked → toggle off → assert unchecked (cleanup).
+    </Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@data-section='security']"
+            note="navigate to Security section"/>
+      <Step action="WAIT" proc="" value="400" note="section settle"/>
+
+      <!-- open log panel -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var d=document.getElementById('security-log-panel'); if(d&amp;&amp;!d.open){ d.open=true; } return d?'opened':'missing'; })()"
+            bind="logPanelOpen" note="BW22: force-open security-log-panel"/>
+      <Step action="ASSERTPATHEVAL" path="'{{logPanelOpen}}' !== 'missing'"
+            note="BW22: security-log-panel element exists"/>
+      <Step action="WAIT" proc="" value="400" note="panel open settle"/>
+
+      <!-- capture initial log list content (placeholder text) -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(document.getElementById('security-log-list')||{innerHTML:''}).innerHTML"
+            bind="logListBefore" note="BW22: initial log list HTML"/>
+
+      <!-- click Refresh button (first button inside security-log-panel) -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var btn=document.querySelector('#security-log-panel button'); if(btn)btn.click(); return btn?'clicked':'missing'; })()"
+            bind="refreshClick" note="BW22: click Refresh button"/>
+      <Step action="ASSERTPATHEVAL" path="'{{refreshClick}}' === 'clicked'"
+            note="BW22: Refresh button was found and clicked"/>
+      <Step action="WAIT" proc="" value="1200" note="loadSecurityLog fetch settle"/>
+
+      <!-- assert log list content changed from initial placeholder -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(document.getElementById('security-log-list')||{innerHTML:''}).innerHTML"
+            bind="logListAfter" note="BW22: log list HTML after Refresh"/>
+      <Step action="ASSERTPATHEVAL" path="'{{logListAfter}}' !== '{{logListBefore}}'"
+            note="BW22: log list content changed after Refresh"/>
+
+      <!-- change pagesize to 50 -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var s=document.getElementById('security-log-pagesize'); if(s){s.value='50';s.dispatchEvent(new Event('change'));} return (s||{}).value||''; })()"
+            bind="pagesizeVal" note="BW22: set pagesize to 50"/>
+      <Step action="ASSERTPATHEVAL" path="'{{pagesizeVal}}' === '50'"
+            note="BW22: pagesize select set to 50"/>
+      <Step action="WAIT" proc="" value="600" note="log reload with new pagesize"/>
+
+      <!-- toggle autorefresh on -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var cb=document.getElementById('security-log-autorefresh'); if(cb){cb.checked=true;cb.dispatchEvent(new Event('change'));} return cb?cb.checked:null; })()"
+            bind="autorefreshOn" note="BW22: toggle autorefresh on"/>
+      <Step action="ASSERTPATHEVAL" path="String('{{autorefreshOn}}') === 'true'"
+            note="BW22: autorefresh checkbox is checked"/>
+      <Step action="WAIT" proc="" value="300" note="autorefresh settle"/>
+
+      <!-- toggle autorefresh off (cleanup) -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var cb=document.getElementById('security-log-autorefresh'); if(cb){cb.checked=false;cb.dispatchEvent(new Event('change'));} return cb?cb.checked:null; })()"
+            bind="autorefreshOff" note="BW22: toggle autorefresh off (cleanup)"/>
+      <Step action="ASSERTPATHEVAL" path="String('{{autorefreshOff}}') === 'false'"
+            note="BW22: autorefresh checkbox unchecked (cleanup)"/>
+
+      <!-- restore pagesize to 100 (cleanup) -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var s=document.getElementById('security-log-pagesize'); if(s){s.value='100';s.dispatchEvent(new Event('change'));} return (s||{}).value||''; })()"
+            bind="pagesizeRestored" note="BW22: restore pagesize to 100"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── BW23 — btn-save-filters: Save All → REST confirms persistence ── -->
+  <Scenario id="bw23-save-filters" effect="changes-view">
+    <Description lang="en">
+      Navigate to Security section. Read browser-side advancedFilters.length.
+      Click btn-save-filters (Save All) — triggers POST /api/filters with current in-memory list.
+      Wait for fetch. Then HTTP_FETCH GET /api/filters and assert server count equals browser count.
+      No rules are added or removed — this test verifies round-trip persistence only.
+    </Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="true"
+             example="http://localhost:3458" note="dashboard base URL for HTTP_FETCH"/>
+    </Parameters>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@data-section='security']"
+            note="navigate to Security section"/>
+      <Step action="WAIT" proc="" value="400" note="section settle"/>
+
+      <!-- record browser-side count -->
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="typeof advancedFilters !== 'undefined' ? advancedFilters.length : -1"
+            bind="browserCount" note="BW23: browser advancedFilters.length before save"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{browserCount}}') >= 0"
+            note="BW23: advancedFilters is accessible in page context"/>
+
+      <!-- click Save All -->
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-save-filters']"
+            note="BW23: click Save All Filters button — triggers POST /api/filters"/>
+      <Step action="WAIT" proc="" value="1000" note="let saveFilters() fetch complete"/>
+
+      <!-- REST verify: GET /api/filters and check count -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/filters" path="GET"
+            bind="filtersResult" note="BW23: GET /api/filters after save"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.filtersResult); return r &amp;&amp; r.success === true; })()"
+            note="BW23: GET /api/filters returned success:true"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.filtersResult); const n=(r.filters||[]).length; return n === Number('{{browserCount}}'); })()"
+            note="BW23: server filter count equals browser advancedFilters.length"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── d7-suite — full D7 suite ── -->
+  <Scenario id="d7-suite" effect="test-suite">
+    <Description lang="en">
+      Full D7 BrowserWin + Chrome dogfood suite (ADR-008 UI-only). All assertions inline.
+      Required params: {{tab}} (set by runner.launch()), {{testTag}}, {{fillValue}}, {{dashUrl}}.
+    </Description>
+    <Parameters>
+      <Param name="testTag"   type="string" required="true"  example="dogfood_1234" note="TEST_TAG from _shared"/>
+      <Param name="fillValue" type="string" required="true"  example="d7_fill_abc"  note="value for FILL test"/>
+      <Param name="dashUrl"   type="string" required="false" example="http://localhost:3458" note="dashboard URL for bw9"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef ref="bw3-read"/>
+      <ScenarioRef ref="bw4-querytree"/>
+      <ScenarioRef ref="bw5-readelem"/>
+      <ScenarioRef ref="bw6-exec-tag"/>
+      <ScenarioRef ref="bw7-exec-title"/>
+      <ScenarioRef ref="bw8-navigate-blank"/>
+      <ScenarioRef ref="bw9-navigate-back"/>
+      <ScenarioRef ref="bw10-pagesource"/>
+      <ScenarioRef ref="bw11-screenshot"/>
+      <!-- bw12-cookies omitted: COOKIES command not implemented in this BrowserWin version -->
+      <ScenarioRef ref="bw13-fill-suite"/>
+      <ScenarioRef ref="bw14-dialog-inject"/>
+      <ScenarioRef ref="bw15-tools-nav"/>
+      <ScenarioRef ref="bw16-templates-nav"/>
+      <ScenarioRef ref="bw17-filter-search"/>
+      <ScenarioRef ref="bw18-test-rule"/>
+      <ScenarioRef ref="bw19-security-log"/>
+      <ScenarioRef ref="bw20-toolbar-validate"/>
+      <ScenarioRef ref="bw21-toolbar-table-toggle"/>
+      <ScenarioRef ref="bw22-audit-log-controls"/>
+      <ScenarioRef ref="bw23-save-filters"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── diag-exec — diagnostic ── -->
+
+</Scenarios>

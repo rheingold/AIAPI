@@ -1,0 +1,47 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D18 LibreOfficeWin — test/e2e/d18/scenarios.xml
+  app  : d18
+  Layer: L3 (test — never shipped)
+
+  ── Scenarios ─────────────────────────────────────────────────────────────────
+  d18-preflight   GET /health → status is "ok" (server reachable, always runs
+                  regardless of whether LibreOfficeWin / LibreOffice is installed)
+
+  All LibreOffice-specific assertions (L1–L15) remain in JS: they depend on
+  LibreOfficeWin being registered, LO being installed, UNO bridge availability,
+  and runtime document handles returned by NEWDOC.
+  ─────────────────────────────────────────────────────────────────────────────
+-->
+<Scenarios app="d18" helper="LibreOfficeWin.exe" process="soffice.exe"
+           xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d18">
+
+  <!-- ══ d18-preflight: GET /health → status ok ════════════════════════════ -->
+  <Scenario id="d18-preflight" effect="read-only">
+    <Description lang="en">GET /health — server is reachable and reports status ok. Runs before any LibreOffice check.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/health" path="GET"
+            bind="d18Health" note="D18-pre: GET /health"/>
+      <Step action="ASSERTPATHEVAL"
+            path="JSON.parse($vars.d18Health)?.status === 'ok'"
+            note="D18-pre: health status is ok"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ══ d18-static-suite ══════════════════════════════════════════════════ -->
+  <Scenario id="d18-static-suite" effect="read-only">
+    <Description lang="en">Static D18 suite — preflight server liveness check (ADR-008).</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="EVAL" path="true" note="D18: begin static suite"/>
+      <ScenarioRef ref="d18-preflight"/>
+    </Steps>
+  </Scenario>
+
+</Scenarios>
+

@@ -1,0 +1,11 @@
+﻿[ {
+   "description": "",
+   "devtoolsFrontendUrl": "https://chrome-devtools-frontend.appspot.com/serve_rev/@e6c9ca8503d55da7c1cdc14c7c485b39f0171bc/inspector.html?ws=127.0.0.1:9222/devtools/page/87661E0071906220E5F3CB1A9D8646F0",
+   "faviconUrl": "http://192.168.254.16:30056/favicon.ico?ver=91200",
+   "id": "87661E0071906220E5F3CB1A9D8646F0",
+   "title": "pgAdmin 4",
+   "type": "page",
+   "url": "http://192.168.254.16:30056/browser/",
+   "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/87661E0071906220E5F3CB1A9D8646F0"
+} ]
+

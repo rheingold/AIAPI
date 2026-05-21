@@ -27,6 +27,7 @@
  */
 
 import { ISettingsAdapter, DbConfig } from '../types';
+import { DbProvisioner } from '../../db/DbProvisioner';
 import { globalLogger } from '../../utils/Logger';
 
 const TAG = 'DbSettingsAdapter';
@@ -205,6 +206,12 @@ export class DbSettingsAdapter implements ISettingsAdapter {
   }
 
   async initialize(): Promise<void> {
+    // Apply pending schema migrations (idempotent — safe to call on every startup)
+    const migResult = await DbProvisioner.ensureSchema(this.cfg);
+    if (migResult.status === 'error') {
+      throw new Error(`DbSettingsAdapter schema migration failed: ${migResult.error}`);
+    }
+    globalLogger.info(TAG, `Schema: ${migResult.detail}`);
     this.conn = await openConnection(this.cfg);
     globalLogger.info(TAG, `Connected to ${this.cfg.type} at ${this.cfg.host}`);
     await this.load();

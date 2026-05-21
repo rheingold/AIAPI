@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { XmlScenarioLoader, executeXmlScenario, XmlScenario, XmlStep } from './xmlScenarioLoader';
+import { XmlScenarioLoader, executeXmlScenario, XmlScenario, XmlStep, XmlParam, lintLocaleInvariance } from './xmlScenarioLoader';
 
 // ── XmlScenarioLoader.substitute ──────────────────────────────────────────────
 
@@ -40,8 +40,30 @@ describe('XmlScenarioLoader.substitute', () => {
 
 // ── executeXmlScenario ────────────────────────────────────────────────────────
 
-/** Build a minimal XmlScenario without touching the file system. */
-function makeScenario(steps: XmlStep[], overrides: Partial<XmlScenario> = {}): XmlScenario {
+/** Build a minimal XmlScenario without touching the file system.
+ *  Accepts step objects in either new-style (action/proc/path) or
+ *  deprecated-style (command/target/parameter) — both are normalised
+ *  so executeXmlScenario sees the canonical fields. */
+function makeStep(s: Partial<XmlStep>): XmlStep {
+  const action    = (s.action    ?? s.command   ?? '') as string;
+  const proc      = (s.proc      ?? s.target    ?? '') as string;
+  const path      = (s.path      ?? s.parameter ?? '') as string;
+  return {
+    tool: s.tool ?? 'KeyWin.exe',
+    action,
+    proc,
+    path,
+    command:   s.command   ?? action,
+    target:    s.target    ?? proc,
+    parameter: s.parameter ?? path,
+    ...(s.value     !== undefined ? { value:     s.value     } : {}),
+    ...(s.op        !== undefined ? { op:        s.op        } : {}),
+    ...(s.bind      !== undefined ? { bind:      s.bind      } : {}),
+    ...(s.note      !== undefined ? { note:      s.note      } : {}),
+    ...(s.conditional !== undefined ? { conditional: s.conditional } : {}),
+  };
+}
+function makeScenario(steps: Partial<XmlStep>[], overrides: Partial<XmlScenario> = {}): XmlScenario {
   return {
     id: 'test',
     label: 'Test Scenario',
@@ -49,7 +71,7 @@ function makeScenario(steps: XmlStep[], overrides: Partial<XmlScenario> = {}): X
     process: 'testapp.exe',
     app: 'testapp',
     params: [],
-    steps,
+    steps: steps.map(makeStep),
     ...overrides,
   };
 }
@@ -191,7 +213,7 @@ describe('executeXmlScenario', () => {
       callFn,
     });
 
-    expect(callFn).toHaveBeenCalledWith('KeyWin.exe', 'HANDLE:777', 'READ', '');
+    expect(callFn).toHaveBeenCalledWith('KeyWin.exe', 'HANDLE:777', 'READ', '', undefined, undefined);
   });
 
   it('records returned value from a READ-like command', async () => {
@@ -360,5 +382,166 @@ describe('XmlScenarioLoader (file system)', () => {
     } finally {
       fs.rmSync(circularDir, { recursive: true, force: true });
     }
+  });
+});
+
+// ─── LocaleMap tests ──────────────────────────────────────────────────────────
+
+const LOCALE_MAP_XML = `<?xml version="1.0" encoding="utf-8"?>
+<ScenarioLibrary app="testlocale" helper="KeyWin.exe">
+  <Scenario id="set-mode" label="Set mode">
+    <Parameters>
+      <Param name="modeLabel" type="string" default="Standard" localeMap="set-mode.modeLabel"/>
+    </Parameters>
+    <LocaleMap param="modeLabel">
+      <Locale lang="en" value="Standard"/>
+      <Locale lang="cs" value="Standardní"/>
+      <Locale lang="de" value="Standard"/>
+    </LocaleMap>
+    <Steps>
+      <Step command="CLICKID" target="{{hwnd}}" parameter="standardMode"/>
+    </Steps>
+  </Scenario>
+  <Scenario id="no-locale-map" label="No map">
+    <Steps>
+      <Step command="CLICKID" target="{{hwnd}}" parameter="someButton"/>
+    </Steps>
+  </Scenario>
+</ScenarioLibrary>`;
+
+describe('XmlScenarioLoader.getLocaleMaps', () => {
+  let lmDir: string;
+
+  beforeAll(() => {
+    lmDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xmllocalemap-'));
+    fs.mkdirSync(path.join(lmDir, 'testlocale'), { recursive: true });
+    fs.writeFileSync(path.join(lmDir, 'testlocale', 'scenarios.xml'), LOCALE_MAP_XML, 'utf-8');
+  });
+
+  afterAll(() => {
+    fs.rmSync(lmDir, { recursive: true, force: true });
+  });
+
+  it('returns all LocaleMap entries for a scenario with a LocaleMap', () => {
+    const loader = new XmlScenarioLoader(lmDir);
+    const maps = loader.getLocaleMaps('testlocale', 'set-mode');
+    expect(maps).toHaveLength(1);
+    expect(maps[0].param).toBe('modeLabel');
+    expect(maps[0].key).toBe('set-mode.modeLabel');
+    expect(maps[0].entries).toHaveLength(3);
+  });
+
+  it('entries have correct lang/value pairs', () => {
+    const loader = new XmlScenarioLoader(lmDir);
+    const maps = loader.getLocaleMaps('testlocale', 'set-mode');
+    const en = maps[0].entries.find(e => e.lang === 'en');
+    const cs = maps[0].entries.find(e => e.lang === 'cs');
+    expect(en?.value).toBe('Standard');
+    expect(cs?.value).toBe('Standardní');
+  });
+
+  it('returns empty array for a scenario with no LocaleMap elements', () => {
+    const loader = new XmlScenarioLoader(lmDir);
+    const maps = loader.getLocaleMaps('testlocale', 'no-locale-map');
+    expect(maps).toEqual([]);
+  });
+
+  it('throws for unknown scenario id', () => {
+    const loader = new XmlScenarioLoader(lmDir);
+    expect(() => loader.getLocaleMaps('testlocale', 'missing')).toThrow('not found');
+  });
+
+  it('throws for unknown app', () => {
+    const loader = new XmlScenarioLoader(lmDir);
+    expect(() => loader.getLocaleMaps('no-such-app', 'any')).toThrow('scenarios.xml not found');
+  });
+
+  it('extractParams captures localeMap attribute on XmlParam', () => {
+    const loader = new XmlScenarioLoader(lmDir);
+    const raw = loader.loadRaw('testlocale', 'set-mode');
+    expect(raw.params).toHaveLength(1);
+    expect(raw.params[0].localeMap).toBe('set-mode.modeLabel');
+  });
+
+  it('load() params include localeMap attribute', () => {
+    const loader = new XmlScenarioLoader(lmDir);
+    const scenario = loader.load('testlocale', 'set-mode');
+    expect(scenario.params[0].localeMap).toBe('set-mode.modeLabel');
+  });
+});
+
+// ─── lintLocaleInvariance ─────────────────────────────────────────────────────
+
+describe('lintLocaleInvariance', () => {
+  function makeScenario(id: string, steps: Partial<XmlStep>[], params: XmlParam[] = []): XmlScenario {
+    return {
+      id,
+      label: id,
+      helper: 'KeyWin.exe',
+      process: 'testapp.exe',
+      app: 'testapp',
+      params,
+      steps: steps.map((s, i) => ({
+        action: 'READ',
+        proc: '',
+        path: '',
+        value: undefined,
+        op: undefined,
+        note: undefined,
+        bind: undefined,
+        tool: 'KeyWin.exe',
+        command: s.action ?? 'READ',
+        target: s.proc ?? '',
+        parameter: s.path ?? '',
+        ...s,
+      } as XmlStep)),
+    };
+  }
+
+  it('passes numeric literal value=', () => {
+    const s = makeScenario('s1', [{ action: 'ASSERT', proc: 'calc.exe', path: 'Result', value: '42', op: '===' }]);
+    expect(lintLocaleInvariance([s], new Map([['s1', []]]))).toEqual([]);
+  });
+
+  it('passes empty value=', () => {
+    const s = makeScenario('s1', [{ action: 'ASSERT', proc: 'calc.exe', path: 'Result', value: '', op: 'truthy' }]);
+    expect(lintLocaleInvariance([s], new Map([['s1', []]]))).toEqual([]);
+  });
+
+  it('errors on literal string value=', () => {
+    const s = makeScenario('s1', [{ action: 'ASSERT', proc: 'calc.exe', path: 'Header', value: 'Standard', op: 'contains' }]);
+    const viols = lintLocaleInvariance([s], new Map([['s1', []]]));
+    expect(viols).toHaveLength(1);
+    expect(viols[0].severity).toBe('error');
+    expect(viols[0].stepIndex).toBe(1);
+  });
+
+  it('warns on {{var}} ref without localeMap', () => {
+    const s = makeScenario('s1', [{ action: 'ASSERT', proc: 'calc.exe', path: 'Header', value: '{{modeLabel}}', op: '===' }],
+      [{ name: 'modeLabel', type: 'string', required: false }]);
+    const viols = lintLocaleInvariance([s], new Map([['s1', s.params]]));
+    expect(viols).toHaveLength(1);
+    expect(viols[0].severity).toBe('warn');
+  });
+
+  it('passes {{var}} ref with localeMap declared', () => {
+    const s = makeScenario('s1', [{ action: 'ASSERT', proc: 'calc.exe', path: 'Header', value: '{{modeLabel}}', op: '===' }],
+      [{ name: 'modeLabel', type: 'string', required: false, localeMap: 's1.modeLabel' }]);
+    expect(lintLocaleInvariance([s], new Map([['s1', s.params]]))).toEqual([]);
+  });
+
+  it('skips ASSERTPATHEVAL (Form 2: proc empty)', () => {
+    const s = makeScenario('s1', [{ action: 'ASSERT', proc: '', path: 'typeof x === "string"', value: undefined }]);
+    expect(lintLocaleInvariance([s], new Map([['s1', []]]))).toEqual([]);
+  });
+
+  it('skips numeric ops regardless of value', () => {
+    const s = makeScenario('s1', [{ action: 'ASSERT', proc: 'calc.exe', path: 'Result', value: 'text', op: '>' }]);
+    expect(lintLocaleInvariance([s], new Map([['s1', []]]))).toEqual([]);
+  });
+
+  it('skips non-ASSERT steps', () => {
+    const s = makeScenario('s1', [{ action: 'READ', proc: 'calc.exe', path: 'Result', value: 'Standard' }]);
+    expect(lintLocaleInvariance([s], new Map([['s1', []]]))).toEqual([]);
   });
 });

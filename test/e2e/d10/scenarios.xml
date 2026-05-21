@@ -1,0 +1,242 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D10 Server Foundations test scenarios � test/e2e/d10/scenarios.xml
+  app     : d10
+  helper  : BrowserWin.exe
+  process : chrome.exe
+  Layer   : L3 (test � never shipped)
+
+  �� Scenarios ��������������������������������������������������������������
+  h1-health            GET /health � assert status=ok, version, timestamp
+  h2-status            GET /api/status � assert data.status=running, uptime, etc.
+  h3-config            GET /api/config � assert non-empty
+  h4-put-config        GET /api/config � PUT same data back � assert accepted
+  h5-session-status    GET /api/session/status � assert sessionActive is boolean
+  h6-session-lifecycle POST start � GET active � POST finish � GET idle
+  h7-validate          GET /api/settings/validate � assert checks array
+  h8-settings-rt       GET /api/settings � POST back � compare logLevel/tokenExpiry
+  h9-workdir           GET settings cwd � POST /api/workdir � assert path present
+  h10-settings-ui-fields  nav to Settings, assert all 16 DOM elements + ASSERTPATHEVAL
+  d10-suite            chain h1�h9 (REST-only, no browser)
+  diag-exec            diagnostic CDP_EXECUTE
+  ��������������������������������������������������������������������������
+-->
+<Scenarios app="d10" helper="BrowserWin.exe" process="chrome.exe"
+           xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d10">
+
+  <!-- �� H1: GET /health �������������������������������������������������� -->
+  <Scenario id="h1-health" effect="read-only">
+    <Description lang="en">GET /health � assert status=ok, version string, timestamp string.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/health" path="GET"
+            bind="h1Result" note="GET /health"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.h1Result); if(r?.status!=='ok') throw new Error('H1: status not ok: '+r?.status); if(typeof r?.version!=='string') throw new Error('H1: missing version'); if(typeof r?.timestamp!=='string') throw new Error('H1: missing timestamp'); return r?.version; })()"
+            bind="h1Version" note="assert status=ok, version, timestamp"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� H2: GET /api/status ���������������������������������������������� -->
+  <Scenario id="h2-status" effect="read-only">
+    <Description lang="en">GET /api/status � assert data.status=running, uptime number, security object.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/status" path="GET"
+            bind="h2Result" note="GET /api/status"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.h2Result); const d=r?.data; if(d?.status!=='running') throw new Error('H2: status not running: '+d?.status); if(typeof d?.uptime!=='number') throw new Error('H2: uptime not number'); if(typeof d?.security!=='object') throw new Error('H2: no security object'); return d?.uptime; })()"
+            bind="h2Uptime" note="assert all status fields"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� H3: GET /api/config ���������������������������������������������� -->
+  <Scenario id="h3-config" effect="read-only">
+    <Description lang="en">GET /api/config � assert non-empty data returned.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/config" path="GET"
+            bind="h3Result" note="GET /api/config"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.h3Result); const d=r?.data??r; if(!d||typeof d!=='object') throw new Error('H3: no data'); return Object.keys(d).length; })()"
+            bind="h3KeyCount" note="assert config is non-empty object"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� H4: PUT /api/config round-trip ����������������������������������� -->
+  <Scenario id="h4-put-config" effect="modifies-data">
+    <Description lang="en">GET /api/config then PUT same data back � round-trip no-op.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/config" path="GET"
+            bind="h4GetResult" note="GET /api/config"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.h4GetResult); return JSON.stringify(r?.data??r); })()"
+            bind="h4Payload" note="extract data for PUT body"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/config" path="PUT"
+            value="{{h4Payload}}" bind="h4PutResult" note="PUT config unchanged"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.h4PutResult); const ok=r?.success===true||(typeof r==='object'&amp;&amp;!r?.error); if(!ok) throw new Error('H4 PUT rejected: '+JSON.stringify(r).slice(0,80)); return true; })()"
+            note="assert PUT accepted"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� H5: GET /api/session/status ������������������������������������� -->
+  <Scenario id="h5-session-status" effect="read-only">
+    <Description lang="en">GET /api/session/status � assert sessionActive is boolean.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/session/status" path="GET"
+            bind="h5Result" note="GET /api/session/status"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.h5Result); if(typeof r?.sessionActive!=='boolean') throw new Error('H5: sessionActive not boolean: '+typeof r?.sessionActive); return r?.sessionActive; })()"
+            bind="h5SessionActive" note="assert sessionActive is boolean"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� H6: Session start � status � finish lifecycle ������������������� -->
+  <Scenario id="h6-session-lifecycle" effect="modifies-data">
+    <Description lang="en">POST session/start, verify active, POST session/finish, verify idle.</Description>
+    <Parameters>
+      <Param name="testTag" type="string" required="true"  example="dogfood_1234" note="unique tag for session name"/>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/session/finish" path="POST"
+            value="{}" bind="h6PreFinish" note="pre-finish any existing session (defensive)"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/session/start" path="POST"
+            value="{&quot;name&quot;:&quot;dogfood_{{testTag}}&quot;}"
+            bind="h6StartResult" note="POST session/start"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.h6StartResult); if(!r?.success) throw new Error('H6 start failed: '+JSON.stringify(r).slice(0,80)); return r?.sessionDir??r?.dir??'ok'; })()"
+            bind="h6SessionDir" note="assert start succeeded"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/session/status" path="GET"
+            bind="h6StatusActive" note="GET session/status � expect active"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.h6StatusActive); if(r?.sessionActive!==true) throw new Error('H6: session not active: '+r?.sessionActive); return true; })()"
+            note="assert session is active"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/session/finish" path="POST"
+            value="{}" bind="h6FinishResult" note="POST session/finish"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.h6FinishResult); if(!r?.success) throw new Error('H6 finish failed: '+JSON.stringify(r).slice(0,80)); return true; })()"
+            note="assert finish succeeded"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/session/status" path="GET"
+            bind="h6StatusIdle" note="GET session/status � expect idle"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.h6StatusIdle); if(r?.sessionActive!==false) throw new Error('H6: still active after finish: '+r?.sessionActive); return true; })()"
+            note="assert session no longer active"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� H7: GET /api/settings/validate ���������������������������������� -->
+  <Scenario id="h7-validate" effect="read-only">
+    <Description lang="en">GET /api/settings/validate � assert returns non-empty checks or object.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/settings/validate" path="GET"
+            bind="h7Result" note="GET /api/settings/validate"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.h7Result); const checks=r?.checks??r?.results??(Array.isArray(r)?r:null); if(Array.isArray(checks)){ if(checks.length===0) throw new Error('H7: empty checks array'); return checks.length; } const keys=Object.keys(r??{}); if(keys.length===0) throw new Error('H7: empty response'); return keys.length; })()"
+            bind="h7CheckCount" note="assert non-empty checks returned"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� H8: POST /api/settings round-trip ������������������������������� -->
+  <Scenario id="h8-settings-rt" effect="modifies-data">
+    <Description lang="en">GET /api/settings � POST back � GET again � assert logLevel round-trips.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/settings" path="GET"
+            bind="h8GetResult" note="GET /api/settings"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.h8GetResult); const d=r?.data??r; return JSON.stringify({paths:d.paths,security:d.security,server:d.server,testSessionDir:d.testSessionDir}); })()"
+            bind="h8Payload" note="extract settings payload for POST"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/settings" path="POST"
+            value="{{h8Payload}}" bind="h8PostResult" note="POST /api/settings"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.h8PostResult); if(!r?.success) throw new Error('H8 POST failed: '+JSON.stringify(r).slice(0,80)); return true; })()"
+            note="assert POST accepted"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/settings" path="GET"
+            bind="h8AfterResult" note="GET /api/settings again"/>
+      <Step action="EVAL"
+            path="(()=>{ const before=JSON.parse($vars.h8GetResult); const after=JSON.parse($vars.h8AfterResult); const bLvl=(before?.data??before)?.server?.logLevel; const aLvl=(after?.data??after)?.server?.logLevel; if(bLvl!==aLvl) throw new Error('H8: logLevel changed: '+bLvl+' vs '+aLvl); return aLvl??'ok'; })()"
+            bind="h8LogLevel" note="assert logLevel round-trips"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� H9: POST /api/workdir �������������������������������������������� -->
+  <Scenario id="h9-workdir" effect="modifies-data">
+    <Description lang="en">GET settings � extract cwd � POST /api/workdir � assert path in response.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/settings" path="GET"
+            bind="h9SettingsResult" note="GET /api/settings to find currentWorkingDir"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.h9SettingsResult); const cwd=(r?.data??r)?.currentWorkingDir; if(!cwd) throw new Error('H9: no currentWorkingDir in settings'); return JSON.stringify({path:cwd}); })()"
+            bind="h9WorkdirBody" note="build POST body with cwd"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/workdir" path="POST"
+            value="{{h9WorkdirBody}}" bind="h9PostResult" note="POST /api/workdir"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse($vars.h9PostResult); if(typeof r?.path!=='string') throw new Error('H9: no path in response: '+JSON.stringify(r).slice(0,80)); return r?.path; })()"
+            bind="h9WorkdirPath" note="assert response has path"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� H10: Settings form � all 16 fields present in DOM ��������������� -->
+  <Scenario id="h10-settings-ui-fields" effect="read-only">
+    <Description lang="en">
+      Navigate to the Settings section and assert all 16 settings form elements
+      are present in the DOM.  Throws immediately on any missing element.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var ids=['#setting-require-signature','#setting-allow-unsigned-scenarios','#setting-require-os-enforcement','#setting-log-level','#setting-token-expiry','#setting-port','#setting-dashboard-port','#setting-scenarios-path','#setting-security-path','#setting-helper-paths','#setting-session-dir','#setting-public-key','#setting-private-key','#btn-save-settings','#btn-reload-settings','#btn-validate-config']; var missing=ids.filter(s=>!document.querySelector(s)); if(missing.length) throw new Error('D10 H10: missing DOM elements: '+missing.join(', ')); return ids.length; })()"
+            bind="fieldCount"
+            note="assert all 16 settings fields present; bind count"/>
+      <Step action="ASSERTPATHEVAL" path="Number('{{fieldCount}}') === 16"
+            note="assert exactly 16 fields found"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� d10-suite: chains h1�h9 (REST only, no browser) ����������������� -->
+  <Scenario id="d10-suite" effect="test-suite">
+    <Description lang="en">Full D10 REST chain: h1-health through h9-workdir. No browser required.</Description>
+    <Parameters>
+      <Param name="testTag" type="string" required="true"  example="dogfood_1234" note="unique tag for session lifecycle"/>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef ref="h1-health"/>
+      <ScenarioRef ref="h2-status"/>
+      <ScenarioRef ref="h3-config"/>
+      <ScenarioRef ref="h4-put-config"/>
+      <ScenarioRef ref="h5-session-status"/>
+      <ScenarioRef ref="h6-session-lifecycle"/>
+      <ScenarioRef ref="h7-validate"/>
+      <ScenarioRef ref="h8-settings-rt"/>
+      <ScenarioRef ref="h9-workdir"/>
+    </Steps>
+  </Scenario>
+
+  <!-- �� DIAGNOSTIC ������������������������������������������������������� -->
+
+</Scenarios>
+
+

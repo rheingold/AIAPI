@@ -40,6 +40,13 @@ export interface FilterRule {
   /** Parameter / target pattern glob, e.g. "num*Button" or "*"  */
   pattern: string;
   description?: string;
+  /**
+   * Optional role required to activate this rule.
+   * When set, the rule is skipped for callers that do not carry this role.
+   * Multiple roles can be space- or comma-separated (caller needs ANY one of them).
+   * Leave absent or empty to apply to all callers regardless of role.
+   */
+  role?: string;
 }
 
 export interface FilterEvalResult {
@@ -63,6 +70,9 @@ export interface FilterEvalResult {
  *                    behaviour as before helper matching was added to mcpServer).
  * @param commandType The command being executed as a bare verb (e.g. "CLICKID").
  * @param parameter   The parameter/target string (may be empty).
+ * @param callerRoles Comma-separated list of roles carried by the authenticated
+ *                    caller (e.g. "admin,operator").  Pass an empty string (or
+ *                    omit) when the caller has no roles or roles are not known.
  */
 export function evaluateFilterRules(
   rules: FilterRule[],
@@ -70,8 +80,10 @@ export function evaluateFilterRules(
   helperName: string,
   commandType: string,
   parameter: string,
+  callerRoles = '',
 ): FilterEvalResult {
-  const cmd = commandType;
+  // Strip leading/trailing braces so "{CLICKID}" matches a rule written as "CLICKID".
+  const cmd = commandType.replace(/^\{|\}$/g, '');
 
   let firstAllow: FilterRule | null = null;
   let firstAllowReason = '';
@@ -87,6 +99,13 @@ export function evaluateFilterRules(
     // ── Helper match (optional; skipped when either side is absent/"*") ────
     if (rule.helper && rule.helper !== '*' && helperName !== '') {
       if (!wildcardMatch(rule.helper, helperName)) continue;
+    }
+
+    // ── Role check (optional; skipped when rule.role is absent/empty) ──────
+    if (rule.role && rule.role.trim() !== '') {
+      const required = rule.role.split(/[,\s]+/).map(r => r.trim().toLowerCase()).filter(Boolean);
+      const caller   = callerRoles.split(/[,\s]+/).map(r => r.trim().toLowerCase()).filter(Boolean);
+      if (!required.some(r => caller.includes(r))) continue;
     }
 
     // ── Pattern/parameter match ────────────────────────────────────────────

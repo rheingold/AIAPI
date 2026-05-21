@@ -1,0 +1,469 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Dashboard app-template scenarios
+  app     : dashboard
+  helper  : BrowserWin.exe
+  process : chrome.exe
+
+  Variable legend:
+      {{browser}}   L1 browser process name, e.g. "chrome"
+                    used by LAUNCH and NAVIGATE
+      {{tab}}       L1+L3 tab address, auto-bound by executor after NAVIGATE:
+                    resolved to "chrome"
+                    used by ALL CLICKID / READ / SENDKEYS / CDP_EXECUTE steps
+      {{dashUrl}}   full URL of the dashboard, e.g. http://localhost:3458
+      {{logLevel}}  log level string ("debug"|"info"|"warn"|"error")
+
+    Command usage policy:
+      CLICKID      — click any button, link or control by element path
+      READ         — read the current page title/URL (no path needed)
+      READELEM     — read the text/value of a DOM element by CSS selector
+      SENDKEYS     — type into the focused element
+      CDP_EXECUTE  — evaluate a JS expression and return its value (mapped to EXEC internally)
+-->
+<Scenarios app="dashboard" helper="BrowserWin.exe" process="chrome.exe" xmlns="eu:plachy:sw:aiapi:builtin:dashboard">
+
+  <!-- ─────────────────────────────────────────────────────────────
+       LAUNCH — open dashboard in the browser
+       ───────────────────────────────────────────────────────────── -->
+
+  <Scenario id="launch" effect="launches-app">
+    <Description lang="en">
+      Launch the browser, navigate to the dashboard URL.
+      After this scenario completes, vars.tab contains the
+      bare browser name ('chrome') for targeting subsequent steps.
+    </Description>
+    <Steps>
+      <Step action="LAUNCH"   proc="{{browser}}" path="" note="start browser with CDP"/>
+      <Step action="NAVIGATE" proc="{{browser}}" path="{{dashUrl}}" note="open dashboard"/>
+      <Step action="WAIT"     proc="" path="2000" note="wait for page load (longer for reused Chrome tab)"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="dismiss-browser-dialog" effect="changes-view">
+    <Description lang="en">Dismiss any JavaScript dialog (alert/confirm/prompt).</Description>
+    <Steps>
+      <Step action="DIALOG" proc="{{tab}}" path="dismiss" note="dismiss JS dialog"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="accept-browser-dialog" effect="changes-view">
+    <Description lang="en">Accept any JavaScript dialog (alert/confirm/prompt).</Description>
+    <Steps>
+      <Step action="DIALOG" proc="{{tab}}" path="accept" note="accept JS dialog"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       ATOMIC — Navigation  (CLICKID on nav buttons by data-section attr)
+       ───────────────────────────────────────────────────────────── -->
+
+  <Scenario id="nav-to-settings" effect="changes-view">
+    <Description lang="en">Click the Settings navigation button.</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@data-section='settings']"
+            note="click Settings nav button"/>
+      <Step action="WAIT" proc="" path="500" note="wait for section transition"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="nav-to-logs" effect="changes-view">
+    <Description lang="en">Click the Logs navigation button.</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@data-section='logs']"
+            note="click Logs nav button"/>
+      <Step action="WAIT" proc="" path="500" note="wait for section transition"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="nav-to-home" effect="changes-view">
+    <Description lang="en">Navigate back to the default home section (Logs) by clicking its nav button.</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@data-section='logs']"
+            note="click Logs/Home nav button"/>
+      <Step action="WAIT" proc="" path="500" note="wait for section transition"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       ATOMIC — Read DOM state  (CDP_EXECUTE JS boolean/value)
+       ───────────────────────────────────────────────────────────── -->
+
+  <Scenario id="read-settings-section-active" effect="read-only">
+    <Description lang="en">
+      Return true if the Settings section is currently active/visible.
+    </Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('section-settings')?.classList.contains('active') ?? false"
+            note="assert: settings section active"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="read-logs-section-active" effect="read-only">
+    <Description lang="en">
+      Return true if the Logs section is currently active/visible.
+    </Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('section-logs')?.classList.contains('active') ?? false"
+            note="assert: logs section active"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="read-current-workdir" effect="read-only">
+    <Description lang="en">
+      Read the current working directory displayed in the Settings section.
+    </Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-workdir')?.value ?? document.getElementById('setting-workdir')?.textContent"
+            note="read workdir field value"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="read-loglevel-select" effect="read-only">
+    <Description lang="en">
+      Read the currently selected log level from the Settings dropdown.
+    </Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('setting-log-level')?.value"
+            note="read logLevel select value"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="read-log-entry-count" effect="read-only">
+    <Description lang="en">
+      Return the number of log entries currently visible in the Logs section.
+    </Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.querySelectorAll('#log-entries .log-entry, #log-list .log-entry, #logs-container .log-entry').length"
+            note="count log entries"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="read-helpers-list-populated" effect="read-only">
+    <Description lang="en">
+      Return true if the helpers list is populated (at least one helper shown).
+    </Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="!document.querySelector('#helpers-list .helpers-empty')"
+            note="check helpers list not empty"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="read-helpers-scan-status" effect="read-only">
+    <Description lang="en">
+      Read the scan status message from the helpers scan result area.
+    </Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('helpers-scan-status')?.textContent?.trim()"
+            note="read scan status text"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="read-path-field" effect="read-only">
+    <Description lang="en">
+      Read the value of a settings path input field identified by {{fieldId}}.
+    </Description>
+    <params>
+      <param name="fieldId" type="string" required="true" example="setting-helper-paths"/>
+    </params>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.getElementById('{{fieldId}}')?.value"
+            note="read path field value"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       ATOMIC — Write DOM state  (CLICKID to focus, SENDKEYS to type)
+       ───────────────────────────────────────────────────────────── -->
+
+  <Scenario id="set-loglevel-select" effect="modifies-dom">
+    <Description lang="en">
+      Select the given log level in the Settings dropdown via JS value assignment.
+    </Description>
+    <params>
+      <param name="logLevel" type="string" required="true" example="debug"/>
+    </params>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var el=document.getElementById('setting-log-level'); if(el){ el.value='{{logLevel}}'; el.dispatchEvent(new Event('change',{bubbles:true})); return el.value; } return null; })()"
+            note="set logLevel select to {{logLevel}} via JS"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="set-path-field" effect="modifies-dom">
+    <Description lang="en">
+      Set the path input field {{fieldId}} to {{fieldVal}} via direct JS value
+      assignment (avoids SENDKEYS accumulation in UIA mode).
+    </Description>
+    <params>
+      <param name="fieldId"  type="string" required="true"  example="setting-helper-paths"/>
+      <param name="fieldVal" type="string" required="false" example="/usr/bin"/>
+    </params>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(function(){ var el=document.getElementById('{{fieldId}}'); if(el){ el.value='{{fieldVal}}'; el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true})); return el.value; } return null; })()"
+            note="set path field {{fieldId}} to {{fieldVal}} via JS (no SENDKEYS accumulation)"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="set-workdir" effect="modifies-dom">
+    <Description lang="en">
+      Simulate setting the working directory via the dialog shim (requires window.fetch patched).
+    </Description>
+    <params>
+      <param name="workdirPath" type="string" required="true" example="C:\work"/>
+    </params>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="window.__testDialogAnswer = '{{workdirPath}}'"
+            note="prime dialog shim answer"/>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-change-dir']"
+            note="click Change Working Dir button"/>
+      <Step action="WAIT" proc="" path="600" note="wait for dialog callback"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="click-change-dir" effect="modifies-dom">
+    <Description lang="en">
+      Click the Change Working Dir button (assumes window.__testDialogAnswer already set).
+    </Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-change-dir']"
+            note="click Change Working Dir button"/>
+      <Step action="WAIT" proc="" path="600" note="wait for dialog callback"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       ATOMIC — Button clicks  (CLICKID by element id path)
+       ───────────────────────────────────────────────────────────── -->
+
+  <Scenario id="click-save-settings" effect="triggers-save">
+    <Description lang="en">Click the Save Settings button.</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-save-settings']"
+            note="click Save Settings"/>
+      <Step action="WAIT" proc="" path="500" note="wait for save"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="click-reload-settings" effect="reloads-form">
+    <Description lang="en">Click the Reload Settings button (discards unsaved changes).</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-reload-settings']"
+            note="click Reload Settings"/>
+      <Step action="WAIT" proc="" path="500" note="wait for reload"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="click-scan-helpers" effect="scans-helpers">
+    <Description lang="en">Click the Scan for Helpers button.</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-scan-helpers']"
+            note="click Scan for Helpers"/>
+      <Step action="WAIT" proc="" path="1500" note="wait for scan to complete"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="click-reload-helpers" effect="reloads-helpers">
+    <Description lang="en">Click the Reload Helpers button.</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-reload-helpers']"
+            note="click Reload Helpers"/>
+      <Step action="WAIT" proc="" path="1500" note="wait for reload to complete"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="click-clear-logs" effect="clears-logs">
+    <Description lang="en">Click the Clear Logs button.</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-clear-logs']"
+            note="click Clear Logs"/>
+      <Step action="WAIT" proc="" path="400" note="wait for clear"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       ATOMIC — App Templates section
+       ───────────────────────────────────────────────────────────── -->
+
+  <Scenario id="nav-to-app-templates" effect="changes-view">
+    <Description lang="en">Click the App Templates navigation button and wait for the section to render.</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@data-section='templates']"
+            note="click App Templates nav button"/>
+      <Step action="WAIT" proc="" path="1500" note="wait for section render + async loadAppTemplates fetch"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="click-refresh-templates" effect="reloads-templates">
+    <Description lang="en">Click the Refresh App Templates button.</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='btn-refresh-templates']"
+            note="click Refresh Templates"/>
+      <Step action="WAIT" proc="" path="800" note="wait for refresh"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="read-app-template-names" effect="read-only">
+    <Description lang="en">
+      Return a JSON array of app-template names visible as cards/items
+      in the App Templates section.
+    </Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="JSON.stringify(Array.from(document.querySelectorAll('.app-template-card [data-app], .app-card [data-app], [data-app-name]')).map(e=>e.dataset.app||e.dataset.appName).filter(Boolean))"
+            bind="appNames"
+            note="read app template names from DOM cards"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="open-scenario-editor-for-app" effect="opens-modal">
+    <Description lang="en">
+      Click the Edit Scenarios button for {{appName}} and wait for the scenario editor modal.
+    </Description>
+    <Parameters>
+      <Param name="appName" type="string" required="true" example="calculator"
+             note="App template name whose editor to open"/>
+    </Parameters>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="[onclick*='openScenarioEditor'][onclick*='{{appName}}']"
+            note="click Edit Scenarios button for {{appName}}"/>
+      <Step action="WAIT" proc="" path="1000" note="wait for modal render"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="read-scenario-picker-options" effect="read-only">
+    <Description lang="en">
+      Return a JSON array of scenario IDs currently listed in the scenario
+      editor picker dropdown (#scenario-editor-picker).
+    </Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="JSON.stringify(Array.from(document.querySelectorAll('#scenario-editor-picker option')).map(o=>o.value).filter(Boolean))"
+            bind="pickerOptions"
+            note="read scenario picker option values"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="scenario-editor-pick" effect="loads-scenario">
+    <Description lang="en">
+      Select {{scenId}} in the scenario editor picker and trigger the async load.
+      Note: direct JS call is required because `onchange` only fires on user gestures;
+      `scenarioEditorPick()` is the authoritative load hook — no keyboard-only equivalent.
+    </Description>
+    <Parameters>
+      <Param name="scenId" type="string" required="true" example="compute"
+             note="Scenario ID to select and load in the editor"/>
+    </Parameters>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="#scenario-editor-picker"
+            note="focus the scenario picker"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var s=document.getElementById('scenario-editor-picker'); if(!s) throw new Error('picker not found'); s.value='{{scenId}}'; scenarioEditorPick('{{scenId}}'); return s.value; })()"
+            note="set picker value and call scenarioEditorPick (load hook — no SENDKEYS equivalent)"/>
+      <Step action="WAIT" proc="" path="2000" note="wait for async scenarioEditorPick fetch"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="read-scenario-editor-step-count" effect="read-only">
+    <Description lang="en">
+      Return the number of step rows currently shown in the scenario editor step table.
+    </Description>
+    <Steps>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="document.querySelectorAll('#scenario-editor-steps-table tbody tr, #scenario-editor-steps-table .step-row').length"
+            bind="stepCount"
+            note="count step rows in editor table"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="click-scenario-editor-add" effect="modifies-editor-state">
+    <Description lang="en">Click the Add Step button in the scenario editor.</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='scenario-editor-btn-add']"
+            note="click Add Step"/>
+      <Step action="WAIT" proc="" path="200" note="settle"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="click-scenario-editor-undo" effect="modifies-editor-state">
+    <Description lang="en">Click the Undo button in the scenario editor.</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='scenario-editor-btn-undo']"
+            note="click Undo"/>
+      <Step action="WAIT" proc="" path="200" note="settle"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="click-scenario-editor-redo" effect="modifies-editor-state">
+    <Description lang="en">Click the Redo button in the scenario editor.</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='scenario-editor-btn-redo']"
+            note="click Redo"/>
+      <Step action="WAIT" proc="" path="200" note="settle"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="click-scenario-editor-save" effect="saves-scenario">
+    <Description lang="en">
+      Click the Save button in the scenario editor and wait for the save to complete
+      (polls until the button text is no longer "Saving…").
+    </Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="*[@id='scenario-editor-btn-save']"
+            note="click Save"/>
+      <Step action="WAIT" proc="" path="700" note="wait for save to start"/>
+      <Step action="CDP_EXECUTE" proc="{{tab}}"
+            value="(()=>{ var btn=document.getElementById('scenario-editor-btn-save'); return btn?btn.textContent?.trim():'gone'; })()"
+            bind="saveBtnText"
+            note="read save button text (poll for completion)"/>
+      <Step action="WAIT" proc="" path="1200" note="allow save to complete"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="click-scenario-editor-delete-last" effect="modifies-editor-state">
+    <Description lang="en">
+      Click the Delete button on the LAST step row in the scenario editor.
+      The button renders as onclick="_seDeleteStep(N)" — targeted via :last-child.
+    </Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}"
+            path="#scenario-editor-steps-body tr:last-child *[onclick*='_seDeleteStep']"
+            note="click delete on last step row"/>
+      <Step action="WAIT" proc="" path="200" note="settle"/>
+    </Steps>
+  </Scenario>
+
+  <Scenario id="click-scenario-editor-cancel" effect="closes-modal">
+    <Description lang="en">Close the scenario editor modal by clicking the Cancel button.</Description>
+    <Steps>
+      <Step action="CLICKID" proc="{{tab}}" path="#scenario-editor-modal .modal-footer .btn-secondary"
+            note="click Cancel in scenario editor modal footer"/>
+      <Step action="WAIT" proc="" path="400" note="settle"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       COMPOSITE — Combined actions
+       ───────────────────────────────────────────────────────────── -->
+
+  <Scenario id="save-settings-and-reload" effect="modifies-settings">
+    <Description lang="en">
+      Save current settings then reload to confirm persistence.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="click-save-settings"/>
+      <ScenarioRef app="dashboard" ref="click-reload-settings"/>
+    </Steps>
+  </Scenario>
+
+</Scenarios>

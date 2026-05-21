@@ -1,0 +1,1 @@
+﻿{"jsonrpc":"2.0","id":106,"result":{"id":"1298","success":true,"command":"EXEC","result":"[\"data\",\"reducer_\",\"initialized_\",\"queuedActions_\",\"observers_\",\"batchMode_\"]"}}

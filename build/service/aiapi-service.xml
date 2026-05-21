@@ -1,0 +1,67 @@
+<!--
+  ═══════════════════════════════════════════════════════════════════════════════
+  AIAPI Windows Service Configuration (WinSW)
+  ═══════════════════════════════════════════════════════════════════════════════
+  
+  This XML file configures the AI UI Automation API as a Windows Service using
+  WinSW (Windows Service Wrapper).
+  
+  WinSW Documentation: https://github.com/winsw/winsw
+  
+  ═══════════════════════════════════════════════════════════════════════════════
+-->
+<service>
+  <!-- Service Identity -->
+  <id>AIAPIService</id>
+  <name>AI UI Automation API</name>
+  <description>MCP server for Windows UI automation - provides JSON-RPC API for desktop app automation via AI agents</description>
+  
+  <!-- Executable Configuration -->
+  <executable>aiapi-server.exe</executable>
+  <arguments></arguments>
+  
+  <!-- Working Directory -->
+  <workingdirectory>%BASE%</workingdirectory>
+  
+  <!-- Environment Variables -->
+  <env name="NODE_ENV" value="production"/>
+  <env name="MCP_PORT" value="4457"/>
+  <env name="LOG_LEVEL" value="info"/>
+  <env name="SKIP_SECURITY" value="false"/>
+  <env name="AIAPI_NON_INTERACTIVE" value="1"/>
+  <!-- AIAPI_NON_INTERACTIVE=1 forces non-interactive mode (no password prompt) -->
+  
+  <!-- Logging Configuration -->
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+  
+  <!-- Service Startup -->
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>true</delayedAutoStart>
+  
+  <!-- Service Recovery -->
+  <onfailure action="restart" delay="5 sec"/>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  
+  <!-- Service Account (LocalSystem for UI automation capabilities) -->
+  <serviceaccount>
+    <username>LocalSystem</username>
+  </serviceaccount>
+  
+  <!-- Service Dependencies (none required) -->
+  
+  <!-- Process Priority -->
+  <priority>Normal</priority>
+  
+  <!-- Stop Configuration -->
+  <stopparentprocessfirst>true</stopparentprocessfirst>
+  <stoptimeout>30 sec</stoptimeout>
+  
+  <!-- Security -->
+  <interactive>false</interactive>
+  
+</service>

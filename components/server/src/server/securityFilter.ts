@@ -54,11 +54,14 @@ export async function runSecurityFilter(
   parameter: string,
   context?: { adminToken?: string },
 ): Promise<'ALLOW' | 'DENY'> {
+  // Normalise command: strip {BRACES} so "{CLICKID}" == "CLICKID" everywhere.
+  const normCmd = commandType.replace(/^\{|\}$/g, '');
+
   // ── Step 1: Admin token bypass ──────────────────────────────────────────
   if (context?.adminToken) {
     const validation = tokenValidator.validateAdminToken(context.adminToken);
     if (validation.valid && !validation.expired) {
-      globalLogger.warn('Security', `Admin token bypass: ${commandType} on ${processName}`);
+      globalLogger.warn('Security', `Admin token bypass: ${normCmd} on ${processName}`);
       return 'ALLOW';
     } else if (validation.expired) {
       globalLogger.warn('Security', 'Expired admin token attempted');
@@ -74,23 +77,23 @@ export async function runSecurityFilter(
     // helperName is unavailable at this call-site; '' causes evaluateFilterRules
     // to skip the optional helper field check (backward-compat with mcpServer).
     const { verdict } = evaluateFilterRules(
-      advancedFilters, processName, '', commandType, parameter,
+      advancedFilters, processName, '', normCmd, parameter,
     );
     if (verdict === 'DENY') {
       globalLogger.warn(
         'Security',
-        `Advanced filter DENY: ${commandType} on ${processName} (param: ${parameter})`,
+        `Advanced filter DENY: ${normCmd} on ${processName} (param: ${parameter})`,
       );
       return 'DENY';
     }
     if (verdict === 'ALLOW') {
-      globalLogger.info('Security', `Advanced filter ALLOW: ${commandType} on ${processName}`);
+      globalLogger.info('Security', `Advanced filter ALLOW: ${normCmd} on ${processName}`);
       // Continue — built-in rules still apply
     }
   }
 
   // ── Step 3: Read-only commands are always allowed ───────────────────────
-  if ((READ_ONLY_COMMANDS as readonly string[]).includes(commandType)) {
+  if ((READ_ONLY_COMMANDS as readonly string[]).includes(normCmd)) {
     return 'ALLOW';
   }
 
@@ -99,7 +102,7 @@ export async function runSecurityFilter(
   if (SYSTEM_PROCESSES.some(proc => lowerProcess.includes(proc))) {
     globalLogger.warn(
       'Security',
-      `Security filter blocked ${commandType} on system process ${processName}`,
+      `Security filter blocked ${normCmd} on system process ${processName}`,
     );
     return 'DENY';
   }

@@ -37,5 +37,10 @@ export declare class AuthService {
     deleteRole(id: string): Promise<void>;
     /** Verify a JWT issued by any provider — used for session continuation */
     verifyJwt(token: string): import("./types").JwtPayload | null;
+    /**
+     * Issue a fresh JWT from a still-valid token (sliding-window refresh).
+     * Returns the new token string, or null if the old token is invalid/expired.
+     */
+    refreshToken(oldToken: string): string | null;
 }
 //# sourceMappingURL=AuthService.d.ts.map

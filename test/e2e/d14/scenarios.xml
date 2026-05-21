@@ -1,0 +1,47 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D14 MSOfficeWin — test/e2e/d14/scenarios.xml
+  app  : d14
+  Layer: L3 (test — never shipped)
+
+  ── Scenarios ─────────────────────────────────────────────────────────────────
+  d14-preflight   GET /health → status is "ok" (server reachable, always runs
+                  regardless of whether MSOfficeWin / Office is installed)
+
+  All Office-specific assertions (M1–M15) remain in JS: they depend on
+  MSOfficeWin being registered, Office being installed, and runtime document
+  handles returned by NEWDOC (wordDocName, excelDocName, pptDocName).
+  ─────────────────────────────────────────────────────────────────────────────
+-->
+<Scenarios app="d14" helper="MSOfficeWin.exe" process="winword.exe"
+           xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d14">
+
+  <!-- ══ d14-preflight: GET /health → status ok ════════════════════════════ -->
+  <Scenario id="d14-preflight" effect="read-only">
+    <Description lang="en">GET /health — server is reachable and reports status ok. Runs before any Office check.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/health" path="GET"
+            bind="d14Health" note="D14-pre: GET /health"/>
+      <Step action="ASSERTPATHEVAL"
+            path="JSON.parse($vars.d14Health)?.status === 'ok'"
+            note="D14-pre: health status is ok"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ══ d14-static-suite ══════════════════════════════════════════════════ -->
+  <Scenario id="d14-static-suite" effect="read-only">
+    <Description lang="en">Static D14 suite — preflight server liveness check (ADR-008).</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="EVAL" path="true" note="D14: begin static suite"/>
+      <ScenarioRef ref="d14-preflight"/>
+    </Steps>
+  </Scenario>
+
+</Scenarios>
+

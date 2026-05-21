@@ -128,7 +128,7 @@ AIAPI/
 │   ├── INDEX.md                    Documentation index
 │   ├── api/                        API.md  KEYWIN_API.md  OFFICE_API.md  SERVER_API.md
 │   ├── architecture/               ARCHITECTURE.md  SECURITY_ARCHITECTURE.md  CODEBASE_MAP.md
-│   │   └── decisions/              ADR-001 … ADR-007
+│   │   └── decisions/              ADR-001 … ADR-012
 │   ├── guides/                     AI_ASSISTANT_MANUAL.md  SERVER_GUIDE.md  LINUX_MAC_PORTING.md  QUICK_REF.md
 │   ├── specs/                      COMMAND_ALIGNMENT.md  SCENARIO_FORMAT.md  BINARY_HASH_VERIFICATION.md  …
 │   └── filesarchive/               Superseded plans, old experiments, past test outputs
@@ -407,6 +407,14 @@ Run: `node node_modules/jest-cli/bin/jest.js --no-coverage` (or `npm test`).
 | [ADR-005](decisions/ADR-005-unified-action-addressing.md) | Unified XPath-Style Action Addressing |
 | [ADR-006](decisions/ADR-006-ai-consent-tier-system.md) | AI Consent Tier System |
 | [ADR-007](decisions/ADR-007-universal-installer-idempotent-setup.md) | Universal Installer: Idempotent, Re-runnable Setup |
+| [ADR-008](decisions/ADR-008-dogfood-test-scenario-driven-architecture.md) | Dogfood Test: Scenario-Driven Architecture |
+| [ADR-009](decisions/ADR-009-keywin-app-agnostic.md) | KeyWin Must Be Application-Agnostic |
+| [ADR-010](decisions/ADR-010-xml-assert-step-collapse-js-harnesses.md) | XML ASSERT Step + Collapse JS Harnesses to Bootstrap |
+| [ADR-011](decisions/ADR-011-scenario-xml-casing-grammar.md) | Scenario XML Casing Grammar (PascalCase elements, camelCase attributes) |
+| [ADR-012](decisions/ADR-012-locale-invariant-assertions.md) | Locale-Invariant Assertions: Iron Rule + LocaleMap Escape Hatch |
+| ADR-013 *(pending)*                                          | Supervised Scenario Mode: inline `scenario` body + `supervised` flag on existing run endpoint; pause-on-fail with session state + resume (N-6) |
+| ADR-014 *(pending)*                                          | Super-Scenarios: user-authored AI-triggable prompt-scenarios with `<Hint>` elements; stored in `config/user-scenarios/`; builds on existing runner + MCP tools (N-1y) |
+| ADR-015 *(pending)*                                          | Scenario Authoring & Consolidation: MCP authoring tools + REST write endpoints + multi-layer consolidation manifest + Dashboard Authoring sub-panel + "Submit Bundle" download (N-1z) |
 
 ---
 

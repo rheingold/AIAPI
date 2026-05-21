@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  apptemplates/pgadmin/tree.xml
+  Annotated UI/DOM tree for pgAdmin 4 (web UI, CDP-based).
+  Helper : BrowserWin.exe
+  Target : browser process (e.g. brave.exe) hosting pgAdmin 4
+
+  pgAdmin is a React SPA.  All element targeting uses CSS selectors or
+  text matching via BrowserWin CDP commands (FILL, CLICKNAME, EXEC, READELEM).
+  Standard HTML form events must be dispatched manually (React intercepts native
+  DOM setter — use HTMLInputElement.prototype.value setter + 'input' event).
+
+  ════════════════════════════════════════════════════════════
+  COMMAND TAXONOMY
+  ════════════════════════════════════════════════════════════
+  BrowserWin CDP commands used for pgAdmin:
+    NAVIGATE   target=<proc>   parameter=<url>              → load page
+    FILL       target=<proc>   path=<css>   value=<text>    → set input (via CDP)
+    EXEC       target=<proc>   value=<js-expr>              → evaluate JS, return result
+    CLICKNAME  target=<proc>   path=<text>                  → click button/link by text
+    CLICKID    target=<proc>   path=<css>                   → click by CSS selector
+    READELEM   target=<proc>   path=<css>                   → read element text/value
+    PAGESOURCE target=<proc>                                → full HTML snapshot
+  ════════════════════════════════════════════════════════════
+-->
+<AppTree app="pgadmin" version="4" os="any" helper="BrowserWin.exe"
+         protocol="CDP" window_mode="single_tab" process="brave.exe">
+
+  <meta>
+    <description lang="en">
+      pgAdmin 4 web administration tool for PostgreSQL.
+      Accessed via browser (Brave/Chrome) at http://&lt;host&gt;:&lt;port&gt;/
+      Automated via BrowserWin.exe over CDP.
+    </description>
+    <description lang="ai">
+      pgAdmin is a React Material-UI SPA.  Key automation notes:
+      1. React inputs: FILL command works for initial value but may not fire
+         React's synthetic onChange.  Use EXEC with HTMLInputElement.prototype.value
+         setter + dispatchEvent('input') for reliable form submission.
+      2. pgAdmin REST API — correct path pattern (NOT /children/, NOT /nodes/ alone):
+           /browser/server_group/obj/                        GET  list server groups
+           /browser/server/obj/&lt;sgid&gt;/                      POST register server
+           /browser/database/nodes/&lt;sgid&gt;/&lt;sid&gt;/           GET  list databases
+           /browser/schema/nodes/&lt;sgid&gt;/&lt;sid&gt;/&lt;dbid&gt;/      GET  list schemas
+           /browser/table/nodes/&lt;sgid&gt;/&lt;sid&gt;/&lt;dbid&gt;/&lt;sch&gt;/ GET  list tables
+         /children/ URLs return 404.  /nodes/ without a registered server returns 410.
+      3. Session cookie maintains auth state; XHR is automatically authenticated.
+         EXEC has no awaitPromise → use synchronous XMLHttpRequest (async=false);
+         do NOT use fetch() which returns a Promise.
+      4. CSRF token: read from pgAdmin.csrf_token JS global (set on /browser/ page).
+         Send as X-pgA-CSRFToken header on every API call (GET and POST).
+      5. Server registration (POST /browser/server/obj/&lt;sgid&gt;/ connect_now:true)
+         creates a NEW server entry each call; sid increments (3,4,5...).
+         Always read sid dynamically from response.node._id.
+         Stable OIDs: sgid=2, dbid=127376, schid=2200. sid is NOT stable.
+      6. Server connection state is per Flask session.
+         Server DEFINITION persists (SQLite) but active TCP connection does NOT survive
+         browser restart. Must re-POST register-server each new browser session.
+         Symptom: database/nodes returns HTTP 500 'invalid literal for int ... None'.
+      7. CLICKID with 'I.directory-toggle' returns {found:false} in CDP mode.
+         Use EXEC: document.querySelector('I.directory-toggle').click()
+         For subsequent (depth-2) toggles: document.querySelectorAll('I.directory-toggle')[1].click()
+      8. 'Uložit heslo?' (Brave Save Password) dialog:
+         Brave's credential manager fires when pgAdmin tree nodes expand.
+         Appears as Win32 window (LISTWINDOWS title='Uložit heslo?'), pid=same as Brave.
+         NOT dismissable via CLICKNAME. Use: SENDKEYS HANDLE:{h} {ESC}
+         Appears TWICE per session (Servers expand + server-node expand).
+      9. 'Opustit web?' (Brave Leave Page) dialog:
+         Fires when NAVIGATE is sent while on /browser/. Cannot be dismissed via code.
+         Workaround: never NAVIGATE away from /browser/; use EXEC location.href or REST.
+     10. LISTWINDOWS must be called after every expand/click action to detect and
+         dismiss dialogs before they block subsequent JS execution via CDP.
+    </description>
+  </meta>
+
+  <!-- ════════════════════════════════════════════════════════
+       LOGIN PAGE  /login
+       ════════════════════════════════════════════════════════ -->
+  <Node id="login-page" type="page" route="/login">
+    <description>pgAdmin login page (React/MUI).  Shown when unauthenticated.</description>
+
+    <Node id="email-input" type="input" selector="input[name=email]"
+          automation-note="React-controlled; use EXEC+setter or FILL">
+      <description>Email Address / Username field</description>
+    </Node>
+
+    <Node id="password-input" type="input" selector="input[name=password]"
+          automation-note="React-controlled; use EXEC+setter or FILL">
+      <description>Password field (type=password)</description>
+    </Node>
+
+    <Node id="csrf-token" type="input" selector="input[name=csrf_token]"
+          automation-note="hidden; automatically submitted by browser">
+      <description>Flask-WTF CSRF token (hidden input)</description>
+    </Node>
+
+    <Node id="login-button" type="button" selector="button.MuiButton-root"
+          text="Login" automation-note="CLICKNAME 'Login'">
+      <description>Primary Login submit button (MUI outlined button)</description>
+    </Node>
+  </Node>
+
+  <!-- ════════════════════════════════════════════════════════
+       BROWSER PAGE  /browser/
+       ════════════════════════════════════════════════════════ -->
+  <Node id="browser-page" type="page" route="/browser/">
+    <description>
+      Main pgAdmin object-explorer page.  Left panel = tree; right = dashboard/properties.
+      After successful login, location.href ends with /browser/.
+    </description>
+
+    <Node id="object-explorer" type="tree-panel" selector="#browser-container">
+      <description>Left-side object explorer tree (React DnD tree)</description>
+
+      <Node id="servers-node" type="tree-node" text="Servers">
+        <description>Top-level Servers group in object explorer</description>
+        <Node id="server-item" type="tree-node"
+              automation-note="dynamic; use list-servers scenario to enumerate">
+          <description>Individual registered server (label = server name)</description>
+          <Node id="databases-node" type="tree-node" text="Databases">
+            <Node id="database-item" type="tree-node"
+                  automation-note="use list-databases scenario">
+              <description>Individual database (label = DB name)</description>
+              <Node id="schemas-node" type="tree-node" text="Schemas">
+                <Node id="public-schema" type="tree-node" text="public">
+                  <Node id="tables-node" type="tree-node" text="Tables">
+                    <Node id="table-item" type="tree-node"
+                          automation-note="use list-tables scenario; label = table name">
+                      <description>Individual table</description>
+                    </Node>
+                  </Node>
+                </Node>
+              </Node>
+            </Node>
+          </Node>
+        </Node>
+      </Node>
+    </Node>
+  </Node>
+
+  <!-- ════════════════════════════════════════════════════════
+       pgAdmin REST API (internal, used via EXEC + sync XMLHttpRequest)
+       All calls require: X-pgA-CSRFToken: pgAdmin.csrf_token
+       Stable OIDs: sgid=2, dbid=127376, schid=2200
+       DYNAMIC per session: sid increments each POST (3, 4, 5...)
+       ════════════════════════════════════════════════════════ -->
+  <Node id="rest-api" type="api-group"
+        automation-note="call from EXEC via sync XMLHttpRequest; cannot use fetch() (no awaitPromise)">
+
+    <Node id="api-server-groups" type="endpoint"
+          method="GET" path="/browser/server_group/obj/"
+          headers="X-pgA-CSRFToken: {{csrf}}"
+          returns="[{id, name}]  — e.g. [{id:2,name:'Servers'}]">
+      <description>List server groups. Default 'Servers' group has id=2 (sgid).</description>
+    </Node>
+
+    <Node id="api-register-server" type="endpoint"
+          method="POST" path="/browser/server/obj/{sgid}/"
+          headers="Content-Type: application/json, X-pgA-CSRFToken: {{csrf}}"
+          body="{name, host, port, db, username, password, role:'', comment:'', connect_now:true, gid:sgid}"
+          returns="{node:{_id:sid, connected:true, label:name, ...}}">
+      <description>
+        ⚠️ CREATES A DUPLICATE SERVER ENTRY EVERY CALL. Each POST increments sid (3→4→5...).
+        Store sid dynamically from response.node._id each session.
+        connect_now:true opens the connection immediately and verifies credentials.
+        Response .node._id is the new {{sid}} for this session.
+        NOTE: /browser/server/connect/{sid} returns 404 — no standalone reconnect endpoint.
+        Server DEFINITION persists across browser restarts (pgAdmin SQLite); CONNECTION does not.
+        To avoid accumulating duplicates: DELETE /browser/server/obj/{sgid}/{old_sid}/ before POST.
+      </description>
+    </Node>
+
+    <Node id="api-database-nodes" type="endpoint"
+          method="GET" path="/browser/database/nodes/{sgid}/{sid}/"
+          headers="X-pgA-CSRFToken: {{csrf}}"
+          returns="[{_id, label, connected, ...}]  — use (d.data||d) to unwrap">
+      <description>
+        List databases on server {{sid}} in server group {{sgid}}.
+        Find aiapi_test by label; store its _id as {{dbid}}.
+        NOT /children/ — that returns 404.
+      </description>
+    </Node>
+
+    <Node id="api-schema-nodes" type="endpoint"
+          method="GET" path="/browser/schema/nodes/{sgid}/{sid}/{dbid}/"
+          headers="X-pgA-CSRFToken: {{csrf}}"
+          returns="[{_id (OID), label, ...}]">
+      <description>
+        List schemas in database {{dbid}}. Find 'public'; its _id = OID 2200 on standard PG.
+        Store as {{schid}}.
+      </description>
+    </Node>
+
+    <Node id="api-table-nodes" type="endpoint"
+          method="GET" path="/browser/table/nodes/{sgid}/{sid}/{dbid}/{schid}/"
+          headers="X-pgA-CSRFToken: {{csrf}}"
+          returns="[{_id, label, ...}]  — label is the table name">
+      <description>
+        List tables in schema {{schid}}. labels include:
+          aiapi_apikeys, aiapi_migrations, aiapi_roles, aiapi_settings,
+          aiapi_user_roles, aiapi_users
+        (aiapi_migrations is extra — not in the required set but acceptable).
+      </description>
+    </Node>
+
+    <Node id="api-tree-expand" type="dom-interaction"
+          selector="I.directory-toggle"
+          automation-note="CLICKID on I.directory-toggle returns {found:false} in CDP mode; use EXEC instead">
+      <description>
+        To expand a tree node: use EXEC — CLICKID does NOT work for this element in CDP.
+        Servers group (depth-1): EXEC document.querySelector('I.directory-toggle').click()
+        Server node (depth-2):   EXEC document.querySelectorAll('I.directory-toggle')[1].click()
+        Tree DOM classes confirmed:
+          .file-entry.directory.depth-1       → server group (e.g. 'Servers(1)')
+          .file-entry.directory.active.depth-2 → selected server node (e.g. 'aiapi-pg')
+          depth-3 and below: databases, schemas, tables (lazy-loaded after connection)
+        After each click: call LISTWINDOWS to detect 'Uložit heslo?' dialog before next step.
+      </description>
+    </Node>
+
+  </Node>
+
+  <!-- ════════════════════════════════════════════════════════
+       BRAVE BROWSER DIALOGS  (native Win32 — NOT web modals)
+       ════════════════════════════════════════════════════════ -->
+  <Node id="brave-dialogs" type="os-dialog-group"
+        automation-note="These appear as separate LISTWINDOWS entries under the Brave pid">
+
+    <Node id="brave-save-password" type="native-dialog"
+          title="Uložit heslo?" trigger="pgAdmin-server-tree-expand"
+          dismiss="SENDKEYS HANDLE:{h} {ESC}">
+      <description>
+        Brave's credential manager popup, triggered when pgAdmin passes PostgreSQL
+        credentials through XHR (Brave intercepts the auto-fill opportunity).
+        NOT a web modal — appears as a separate Win32 HWND in LISTWINDOWS results.
+        CLICKNAME does not work for Win32 dialogs. Must use SENDKEYS with HWND.
+        Appears TWICE per session:
+          1. When Servers group (.depth-1) is expanded
+          2. When server node (.depth-2) is expanded and connects to PostgreSQL
+        After each tree expand, call LISTWINDOWS and check for this title.
+      </description>
+    </Node>
+
+    <Node id="brave-leave-page" type="native-dialog"
+          title="Opustit web?" trigger="NAVIGATE-from-/browser/"
+          dismiss="manual-only-or-kill-process">
+      <description>
+        Brave's "Leave page?" confirmation, triggered by NAVIGATE command while
+        pgAdmin's /browser/ page is active (pgAdmin has a window.beforeunload handler).
+        Cannot be dismissed programmatically via BrowserWin:
+          - SENDKEYS to dialog handle: both {ESC} and {ENTER} were swallowed
+          - CDP dialog handler: not available via BrowserWin in this version
+        Only resolution: Stop-Process -Id {brave_pid} to kill the blocked instance,
+        then relaunch Brave. PREVENTION: do not use NAVIGATE while on /browser/.
+        Use EXEC: location.href = '{{url}}' OR stay on /browser/ and use REST API.
+      </description>
+    </Node>
+
+  </Node>
+
+  <!-- ════════════════════════════════════════════════════════
+       EXPECTED TABLE NAMES  (aiapi_test / public schema)
+       ════════════════════════════════════════════════════════ -->
+  <Node id="expected-tables" type="documentation">
+    <description>
+      All five tables must be present for a passing verification.
+      aiapi_migrations is a 6th table that exists but is not part of the required assertion.
+      Verified live: {tables:["aiapi_apikeys","aiapi_migrations","aiapi_roles",
+        "aiapi_settings","aiapi_user_roles","aiapi_users"], missing:[], ok:true}
+    </description>
+    <Node id="tbl-aiapi-users"      type="table" name="aiapi_users"      required="true"/>
+    <Node id="tbl-aiapi-roles"      type="table" name="aiapi_roles"      required="true"/>
+    <Node id="tbl-aiapi-user-roles" type="table" name="aiapi_user_roles" required="true"/>
+    <Node id="tbl-aiapi-apikeys"    type="table" name="aiapi_apikeys"    required="true"/>
+    <Node id="tbl-aiapi-settings"   type="table" name="aiapi_settings"   required="true"/>
+    <Node id="tbl-aiapi-migrations" type="table" name="aiapi_migrations" required="false"
+          note="migration tracking table; present but not asserted"/>
+  </Node>
+
+</AppTree>

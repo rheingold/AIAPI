@@ -9,6 +9,9 @@ import { SessionTokenManager } from '../security/SessionTokenManager';
 import { globalLogger } from '../utils/Logger';
 import { runSecurityFilter } from './securityFilter';
 import { HelperRegistry, resolveCallArgs } from '../helpers/HelperRegistry';
+import * as crypto from 'crypto';
+import { truncateResponse, slimHelperSummary } from '../utils/truncateResponse';
+import { execCmd, fsRead, fsWrite, fsList } from '../engine/builtinActions';
 
 /**
  * MCP (Model Context Protocol) compliant JSON-RPC 2.0 server
@@ -78,8 +81,15 @@ export class MCPServer {
     if (pkBytes && pkBytes.length > 0) {
       this.helperRegistry.setCryptoCredentials(pkBytes);
     }
+    
+    // When running as pkg-bundled executable, __dirname points to the virtual
+    // snapshot filesystem (e.g., C:\snapshot\AIAPI\...), not the real directory.
+    // Detect pkg mode and use the executable's directory instead.
+    const isPkg = typeof (process as any).pkg !== 'undefined';
+    const baseDir = isPkg ? path.dirname(process.execPath) : path.join(__dirname, '..', '..');
+    
     const helperSearchPaths = [
-      path.join(__dirname, '..', '..', 'dist', 'helpers'),
+      path.join(baseDir, 'dist', 'helpers'),
     ];
     this.helperRegistry.discoverHelpers(helperSearchPaths).catch(e =>
       globalLogger.warn('HelperRegistry', `Discovery error: ${e}`)
@@ -325,7 +335,14 @@ export class MCPServer {
       }
 
       // Route to appropriate handler
-      const response = await this.handleMethod(request);
+      // Propagate X-Admin-Token HTTP header into params so the security filter
+      // can perform an admin-bypass when a valid token is supplied.
+      const adminTokenHeader = req.headers['x-admin-token'];
+      if (adminTokenHeader && typeof adminTokenHeader === 'string' && request.params) {
+        request.params._adminToken = adminTokenHeader;
+      }
+      const isLocal = this.isLocalRequest(req);
+      const response = await this.handleMethod(request, isLocal);
       
       // Log outgoing response (if JSON logging enabled)
       if (process.env.LOG_JSON !== 'false') {
@@ -394,7 +411,7 @@ export class MCPServer {
   /**
    * Handle JSON-RPC method calls
    */
-  private async handleMethod(request: any): Promise<any> {
+  private async handleMethod(request: any, isLocal: boolean = true): Promise<any> {
     const { method, params, id } = request;
 
     try {
@@ -406,7 +423,7 @@ export class MCPServer {
           return this.handleToolsList(id);
         
         case 'tools/call':
-          return this.handleToolsCall(id, params);
+          return this.handleToolsCall(id, params, isLocal);
         
         case 'resources/list':
           return this.handleResourcesList(id);
@@ -418,8 +435,9 @@ export class MCPServer {
           return this.createErrorResponse(id, -32601, `Method not found: ${method}`);
       }
     } catch (error) {
-      console.error(`Error handling method ${method}:`, error);
-      return this.createErrorResponse(id, -32603, `Internal error: ${error}`);
+      const { message, corrId } = this.sanitiseInternalError(error, 'Internal error');
+      const wireMsg = isLocal ? message : 'internal_error';
+      return this.createErrorResponse(id, -32603, wireMsg, { correlationId: corrId });
     }
   }
 
@@ -553,6 +571,11 @@ export class MCPServer {
                   description: 'Optional command-line arguments',
                   items: { type: 'string' },
                 },
+                background: {
+                  type: 'boolean',
+                  description: 'Launch as background console process (no UI). Default: false (launches interactively for GUI apps)',
+                  default: false,
+                },
               },
               required: ['executable'],
             },
@@ -607,7 +630,47 @@ export class MCPServer {
               },
             },
           },
-          // ── Dynamically discovered helper tools (respects disabled list) ──
+          // ── AutomateUI — umbrella router (keeps direct tools available) ────
+          {
+            name: 'AutomateUI',
+            description:
+              'UI automation router — routes any command to any installed helper. ' +
+              'helper: BrowserWin|KeyWin|LibreOfficeWin|MSOfficeWin. ' +
+              'Protocol (CONVENTIONS §9): ' +
+              '(1) QUERYTREE/LISTWINDOWS before acting; ' +
+              '(2) keyboard → click → JS priority; ' +
+              '(3) read-back control value + re-read tree after every action; ' +
+              '(4) handle dialogs via ConditionalRef before continuing. ' +
+              'Cross-helper: BrowserWin for CDP/web; KeyWin for Win32/UIA + OS dialogs; ' +
+              'use KeyWin proc="HANDLE:<hwnd>" for any dialog the primary helper cannot reach. ' +
+              'Direct debug: use the named helper tools (BrowserWin/KeyWin/…) above. ' +
+              'Per-command docs: getHelperSchema.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                helper: {
+                  type: 'string',
+                  enum: ['BrowserWin', 'KeyWin', 'LibreOfficeWin', 'MSOfficeWin'],
+                  description: 'Which helper to route to. Matches tool name (without .exe).',
+                },
+                action: {
+                  type: 'string',
+                  description: 'Command verb (e.g. EXEC, SENDKEYS, QUERYTREE). getHelperSchema for full list per helper.',
+                },
+                proc: {
+                  type: 'string',
+                  description:
+                    'Target process/tab. "[pid:N]" "[procname:X]" "[handle:H]". ' +
+                    'Multi-level: "[procname:App]//[docname:Doc]". Omit = foreground.',
+                },
+                path: { type: 'string', description: 'XPath/CSS element address.' },
+                value: { type: 'string', description: 'Payload to write/send.' },
+              },
+              required: ['helper', 'action'],
+            },
+          },
+
+          // ── Dynamically discovered helper tools (direct access, respects disabled list) ──
           ...this.helperRegistry.toMcpTools().filter(t => {
             const s = this.helperRegistry.getByToolName(t.name);
             return !s || !this.disabledHelpers.includes(s.helper);
@@ -616,21 +679,32 @@ export class MCPServer {
           // ── Helper management tools ───────────────────────────────────────
           {
             name: 'listHelpers',
-            description: 'List all discovered helper executables and their supported commands',
+            description: 'List discovered helpers. Returns compact summary by default (name, commandCount, command names). Pass full:true for complete inputSchema detail per command.',
             inputSchema: {
               type: 'object',
-              properties: {},
+              properties: {
+                full: {
+                  type: 'boolean',
+                  description: 'Set true to include full command inputSchema detail. Default: false (compact).',
+                  default: false,
+                },
+              },
             },
           },
           {
             name: 'getHelperSchema',
-            description: 'Get the full API schema for a specific helper executable',
+            description: 'Get API schema for a specific helper. Returns compact summary by default. Pass full:true for complete inputSchema detail per command.',
             inputSchema: {
               type: 'object',
               properties: {
                 helperName: {
                   type: 'string',
                   description: 'Helper name (e.g. "KeyWin.exe")',
+                },
+                full: {
+                  type: 'boolean',
+                  description: 'Set true for full inputSchema detail. Default: false.',
+                  default: false,
                 },
               },
               required: ['helperName'],
@@ -666,6 +740,59 @@ export class MCPServer {
               required: ['url'],
             },
           },
+          // ── Built-in server-side actions (no helper .exe required) ──────────
+          {
+            name: 'exec_cmd',
+            description: 'Run a shell command on the server and capture stdout/stderr. High-risk: subject to security policy.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                executable: { type: 'string', description: 'Executable path or name (e.g. "cmd.exe", "node", "powershell")' },
+                args:       { type: 'string', description: 'Arguments as a single string (space-separated; double-quote tokens with spaces)', default: '' },
+                cwd:        { type: 'string', description: 'Working directory. Default: server cwd.' },
+                timeoutMs:  { type: 'number', description: 'Max execution time ms. Default: 30000.' },
+              },
+              required: ['executable'],
+            },
+          },
+          {
+            name: 'fs_read',
+            description: 'Read a file\'s text content from the server filesystem. Returns up to 1 MB.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                path:     { type: 'string', description: 'Absolute or relative path to the file.' },
+                maxBytes: { type: 'number', description: 'Max bytes to read. Default: 1048576 (1 MB).' },
+              },
+              required: ['path'],
+            },
+          },
+          {
+            name: 'fs_write',
+            description: 'Write text to a file on the server filesystem. Creates parent directories as needed. High-risk.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                path:    { type: 'string', description: 'Absolute or relative path to the file.' },
+                content: { type: 'string', description: 'Text content to write.' },
+                append:  { type: 'boolean', description: 'Append instead of overwrite. Default: false.' },
+              },
+              required: ['path', 'content'],
+            },
+          },
+          {
+            name: 'fs_list',
+            description: 'List entries in a directory on the server filesystem.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                path:       { type: 'string', description: 'Absolute or relative path to the directory.' },
+                filter:     { type: 'string', enum: ['all', 'files', 'directories'], description: 'Filter entry type. Default: "all".' },
+                maxEntries: { type: 'number', description: 'Max entries to return. Default: 500.' },
+              },
+              required: ['path'],
+            },
+          },
         ],
       },
     };
@@ -674,8 +801,8 @@ export class MCPServer {
   /**
    * Call a tool
    */
-  private async handleToolsCall(id: any, params: any): Promise<any> {
-    const { name, arguments: args } = params;
+  private async handleToolsCall(id: any, params: any, isLocal: boolean = true): Promise<any> {
+    const { name, arguments: args, _adminToken: adminToken } = params;
 
     try {
       let result: any;
@@ -687,6 +814,14 @@ export class MCPServer {
             args.targetId,
             args.options
           );
+          if (result) {
+            const { data, truncated, originalChars } = truncateResponse(result as object, {
+              hint: 'UI tree truncated. Use a more specific scope path or reduce depth value.',
+            });
+            if (truncated) {
+              result = { ...data, _originalChars: originalChars };
+            }
+          }
           break;
 
         case 'clickElement':
@@ -722,7 +857,11 @@ export class MCPServer {
           break;
 
         case 'launchProcess':
-          result = await this.automationEngine.launchProcess(args.executable, args.args);
+          result = await this.automationEngine.launchProcess(
+            args.executable, 
+            args.args,
+            { background: args.background === true }
+          );
           break;
 
         case 'terminateProcess':
@@ -730,27 +869,84 @@ export class MCPServer {
           break;
 
         case 'executeScenario':
-          result = await this.executeScenario(args);
+          result = await this.executeScenario(args, isLocal);
           break;
+
+        case 'AutomateUI': {
+          // Resolve helper by short name (without .exe suffix)
+          const helperArg: string = (args.helper || '').replace(/\.exe$/i, '');
+          const allHelpers = this.helperRegistry.getAll();
+          const schema = allHelpers.find(
+            s => s.toolName === helperArg ||
+                 s.helper === helperArg + '.exe' ||
+                 s.helper.replace(/\.exe$/i, '') === helperArg
+          );
+          if (!schema) {
+            throw new Error(
+              `AutomateUI: unknown helper "${helperArg}". ` +
+              `Available: ${allHelpers.map(s => s.toolName).join(', ')}`
+            );
+          }
+          result = await this.helperRegistry.callCommand(
+            schema.helper,
+            args.proc  ?? '',
+            args.action,
+            args.path  ?? '',
+            args.value ?? '',
+          );
+          if (!result || result.success === false) {
+            const rawMsg = result?.error ?? result?.message ?? JSON.stringify(result ?? null);
+            const prefix = `${args.action} failed: `;
+            const msg = typeof rawMsg === 'string' && rawMsg.startsWith(prefix) ? rawMsg : `${prefix}${rawMsg}`;
+            return this.createErrorResponse(id, -32603, msg);
+          }
+          break;
+        }
 
         case 'fetch_webpage':
           result = await this.automationEngine.fetchWebpage(args.url, args.options);
           break;
 
-        case 'listHelpers':
-          result = {
-            success: true,
-            helpers: this.helperRegistry.getAll().map(s => ({
-              name: s.helper,
-              version: s.version,
-              description: s.description,
-              toolName: s.toolName,
-              filePath: s.filePath,
-              commandCount: s.commands.length,
-              commands: s.commands.map(c => ({ name: c.name, description: c.description })),
-            })),
-          };
+        case 'exec_cmd':
+          result = await execCmd(
+            args.executable,
+            args.args ?? '',
+            { cwd: args.cwd, timeoutMs: args.timeoutMs },
+          );
           break;
+
+        case 'fs_read':
+          result = await fsRead(args.path, { maxBytes: args.maxBytes });
+          break;
+
+        case 'fs_write':
+          result = await fsWrite(args.path, args.content, { append: args.append });
+          break;
+
+        case 'fs_list':
+          result = await fsList(args.path, { filter: args.filter, maxEntries: args.maxEntries });
+          break;
+
+        case 'listHelpers': {
+          const full = args.full === true || args.full === 'true' || args.full === 1;
+          const allHelpers = this.helperRegistry.getAll();
+          const helpers = full
+            ? allHelpers.map(s => ({
+                name: s.helper, version: s.version, description: s.description,
+                toolName: s.toolName, filePath: s.filePath,
+                commandCount: s.commands.length,
+                commands: s.commands.map(c => ({ name: c.name, description: c.description })),
+              }))
+            : allHelpers.map(s => slimHelperSummary(s));
+          const raw = { success: true, helpers,
+            _note: full ? undefined : 'Compact view. Pass full:true for complete command schemas.' };
+          const { data } = truncateResponse(raw, {
+            arrayFields: ['helpers'],
+            hint: 'Use listHelpers with full:true and getHelperSchema for per-helper detail.',
+          });
+          result = data;
+          break;
+        }
 
         case 'helpers/reload':
           result = await this.helperRegistry.reloadHelpers();
@@ -773,7 +969,14 @@ export class MCPServer {
           if (!schema) {
             return this.createErrorResponse(id, -32602, `Helper not found: ${args.helperName}`);
           }
-          result = { success: true, schema };
+          const full = args.full === true || args.full === 'true' || args.full === 1;
+          const schemaOut = full ? schema : slimHelperSummary(schema);
+          const raw = { success: true, schema: schemaOut,
+            _note: full ? undefined : 'Compact view. Pass full:true for complete inputSchema detail.' };
+          const { data } = truncateResponse(raw, {
+            hint: 'Pass full:true to getHelperSchema for complete inputSchema detail.',
+          });
+          result = data;
           break;
         }
 
@@ -798,7 +1001,7 @@ export class MCPServer {
               resolved.target,
               resolved.command,
               resolvedParameter,
-              undefined
+              adminToken ? { adminToken } : undefined
             );
             if (helperVerdict === 'DENY') {
               return this.createErrorResponse(id, -32603,
@@ -834,7 +1037,9 @@ export class MCPServer {
         result,
       };
     } catch (error) {
-      return this.createErrorResponse(id, -32603, `Tool execution error: ${error}`);
+      const { message, corrId } = this.sanitiseInternalError(error, 'Tool execution error');
+      const wireMsg = isLocal ? message : 'internal_error';
+      return this.createErrorResponse(id, -32603, wireMsg, { correlationId: corrId });
     }
   }
 
@@ -867,15 +1072,35 @@ export class MCPServer {
   /**
    * Create JSON-RPC 2.0 error response
    */
-  private createErrorResponse(id: any, code: number, message: string): any {
-    return {
-      jsonrpc: '2.0',
-      id,
-      error: {
-        code,
-        message,
-      },
-    };
+  /**
+   * Create a JSON-RPC 2.0 error response.
+   * @param data Optional extra fields (e.g. `{ correlationId: '...' }`) placed in `error.data`.
+   */
+  private createErrorResponse(id: any, code: number, message: string, data?: Record<string, unknown>): any {
+    const errObj: Record<string, unknown> = { code, message };
+    if (data && Object.keys(data).length > 0) errObj.data = data;
+    return { jsonrpc: '2.0', id, error: errObj };
+  }
+
+  /** Returns `true` if the request originates from the local machine (loopback). */
+  private isLocalRequest(req: http.IncomingMessage): boolean {
+    const addr = req.socket?.remoteAddress ?? '';
+    return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+  }
+
+  /**
+   * Sanitise an unexpected internal error for the wire.
+   * - Logs the full message + stack under a unique correlationId.
+   * - Returns the safe wire message (never a stack trace) and the correlationId.
+   * Callers should emit only `message` to local (dev) callers and `'internal_error'`
+   * plus the correlationId to remote callers.
+   */
+  private sanitiseInternalError(error: unknown, context: string): { message: string; corrId: string } {
+    const corrId = crypto.randomBytes(8).toString('hex');
+    const msg   = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? (error.stack ?? msg) : String(error);
+    globalLogger.error('MCP', `[corrId=${corrId}] ${context}: ${stack}`);
+    return { message: `${context}: ${msg}`, corrId };
   }
 
   /**
@@ -895,7 +1120,7 @@ export class MCPServer {
   /**
    * Execute automation scenario
    */
-  private async executeScenario(args: any): Promise<any> {
+  private async executeScenario(args: any, isLocal: boolean = true): Promise<any> {
     try {
       // ── XML template mode (preferred) ──────────────────────────────────────
       if (args.app && args.scenarioId) {
@@ -930,10 +1155,13 @@ export class MCPServer {
 
       return scenarioResult;
     } catch (error: any) {
+      // Never expose stack traces in the response body.
+      // Log under a correlationId so operators can look up the full trace in server logs.
+      const { message, corrId } = this.sanitiseInternalError(error, 'executeScenario');
       return {
         success: false,
-        error: error.message,
-        stack: error.stack
+        error: isLocal ? message : 'scenario_execution_failed',
+        correlationId: corrId,
       };
     }
   }
@@ -960,8 +1188,14 @@ export class MCPServer {
     return runXmlScenario({
       scenario,
       params:  userParams,
-      callFn:  (helper, target, command, parameter) =>
-                 this.helperRegistry.callCommand(helper, target, command, parameter),
+      callFn:  (tool, proc, action, path, value, scroll) => {
+                 if (tool === 'fetch_webpage') {
+                   const opts: Record<string, any> = { method: path || 'GET', extractText: false };
+                   if (value) { try { opts.body = JSON.parse(value); } catch { opts.body = value; } }
+                   return this.automationEngine.fetchWebpage(proc, opts);
+                 }
+                 return this.helperRegistry.callCommand(tool, proc, action, path ?? '', value ?? '', 20000, '', '', scroll ?? false);
+               },
       verbose,
       log: (msg) => globalLogger.info('XmlScenario', msg),
     });

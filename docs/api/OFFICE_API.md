@@ -160,8 +160,32 @@ Applied to the full paragraph range (start → end of paragraph).
 { "target": "word",       "action": "NEWDOC" }
 { "target": "excel",      "action": "NEWDOC" }
 { "target": "powerpoint", "action": "NEWDOC" }
+{ "target": "writer",     "action": "NEWDOC" }
+{ "target": "calc",       "action": "NEWDOC" }
+{ "target": "impress",    "action": "NEWDOC" }
 ```
-Starts the application if not already running. Returns `{"success":true,"result":"created"}`.
+Starts the application if not already running. Returns `{"success":true,"result":"created","name":"<window title>"}`.
+
+#### LibreOffice Impress — template chooser dialog
+
+When `target=impress`, LibreOffice may display a **"Select Template" / "New Presentation"**
+modal dialog (Win32 class `SALSUBFRAME`, no `WS_MAXIMIZEBOX`) before the blank presentation
+window is ready.
+
+`LibreOfficeWin.exe` automatically attempts to dismiss it via `WM_CLOSE` + `VK_ESCAPE`
+during the NEWDOC poll loop.  If the dialog persists after `NEWDOC` returns, the AI **must**
+dismiss it via **`KeyWin.exe`**:
+
+1. `KeyWin LISTWINDOWS target=SYSTEM` — find a `soffice.bin` window whose title does **not**
+   contain "LibreOffice", "Impress", "Calc", "Writer", or "OpenOffice"
+   (that is the dialog; `SALSUBFRAME` class + no `WS_MAXIMIZEBOX`).
+2. `KeyWin SENDKEYS {ESC} target=HANDLE:<hwnd>` — cancels the chooser → blank presentation.
+   Alternatively `{ENTER}` to accept the default template.
+
+> **Architecture note:** this dialog is a plain OS window — it is not addressable via the
+> UNO document bridge.  Interaction **must** go through `KeyWin.exe`.  The apptemplate
+> `apptemplates/libreoffice/scenarios.xml` (scenario id=`newdoc-impress` and
+> `dismiss-transient-dialog`) contains the canonical step sequence.
 
 ---
 

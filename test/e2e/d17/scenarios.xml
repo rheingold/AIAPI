@@ -1,0 +1,115 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D17 Users, Roles & Auth Backend — test/e2e/d17/scenarios.xml
+  app  : d17
+  Layer: L3 (test — never shipped)
+
+  ── Scenarios ─────────────────────────────────────────────────────────────────
+  ur0-access-gate  3× GET _internal endpoints → structured JSON (not a crash)
+  ur1-list-users   GET /api/_internal/users → array with username+id
+  ur6-list-roles   GET /api/_internal/roles → array
+  ur10-get-logs    GET /api/_internal/logs  → logs key present
+  d17-static-suite chain ur0,ur1,ur6,ur10-get
+
+  UR2–UR5, UR7–UR9, UR10-DELETE, UR11:
+    Remain in JS — all require runtime-discovered IDs (createdUserId,
+    createdRoleId, createdApiKeyId) which are returned at create-time
+    and embedded in subsequent DELETE/PUT URLs.  Dynamic URL segments
+    cannot be expressed in sequential XML steps.
+  ─────────────────────────────────────────────────────────────────────────────
+-->
+<Scenarios app="d17" helper="BrowserWin.exe" process="chrome.exe"
+           xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d17">
+
+  <!-- ══ UR0: access gate — 3 _internal GETs return structured JSON ════════ -->
+  <Scenario id="ur0-access-gate" effect="read-only">
+    <Description lang="en">GET /api/_internal/users|roles|logs — each must return structured JSON (array or object), never a crash or unparseable body.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users" path="GET"
+            bind="ur0Users" note="UR0: GET _internal/users (structured check)"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.ur0Users); return r!==null&amp;&amp;typeof r==='object'; })()"
+            note="UR0: users returns structured JSON"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/roles" path="GET"
+            bind="ur0Roles" note="UR0: GET _internal/roles (structured check)"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.ur0Roles); return r!==null&amp;&amp;typeof r==='object'; })()"
+            note="UR0: roles returns structured JSON"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/logs" path="GET"
+            bind="ur0Logs" note="UR0: GET _internal/logs (structured check)"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.ur0Logs); return r!==null&amp;&amp;typeof r==='object'; })()"
+            note="UR0: logs returns structured JSON"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ══ UR1: GET /api/_internal/users → array ════════════════════════════ -->
+  <Scenario id="ur1-list-users" effect="read-only">
+    <Description lang="en">GET /api/_internal/users — assert result is an array with username and id fields.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users" path="GET"
+            bind="ur1Result" note="UR1: GET /api/_internal/users"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.ur1Result); const u=r?.users??r?.data??(Array.isArray(r)?r:null); return Array.isArray(u); })()"
+            note="UR1: assert users is an array"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.ur1Result); const u=r?.users??r?.data??(Array.isArray(r)?r:[]); return u.length===0||u.every(x=>typeof x.username==='string'); })()"
+            note="UR1: assert every user has username field"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.ur1Result); const u=r?.users??r?.data??(Array.isArray(r)?r:[]); return u.length===0||u.every(x=>!!x.id); })()"
+            note="UR1: assert every user has id field"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ══ UR6: GET /api/_internal/roles → array ════════════════════════════ -->
+  <Scenario id="ur6-list-roles" effect="read-only">
+    <Description lang="en">GET /api/_internal/roles — assert result is an array.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/roles" path="GET"
+            bind="ur6Result" note="UR6: GET /api/_internal/roles"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.ur6Result); const roles=r?.roles??r?.data??(Array.isArray(r)?r:null); return Array.isArray(roles); })()"
+            note="UR6: assert roles is an array"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ══ UR10-get: GET /api/_internal/logs → logs present ═════════════════ -->
+  <Scenario id="ur10-get-logs" effect="read-only">
+    <Description lang="en">GET /api/_internal/logs — assert logs key or array present.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/logs" path="GET"
+            bind="ur10Result" note="UR10: GET /api/_internal/logs"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.ur10Result); const l=r?.logs??r?.data??(Array.isArray(r)?r:null); return l!==null||r?.success===true; })()"
+            note="UR10: assert logs key or success present"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ══ d17-static-suite: ur0 + ur1 + ur6 + ur10-get ════════════════════ -->
+  <Scenario id="d17-static-suite" effect="test-suite">
+    <Description lang="en">D17 static read-only checks: access gate + list users + list roles + get logs. CRUD (UR2–UR5,UR7–UR9,UR10-DELETE,UR11) handled in JS (runtime IDs).</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef ref="ur0-access-gate"/>
+      <ScenarioRef ref="ur1-list-users"/>
+      <ScenarioRef ref="ur6-list-roles"/>
+      <ScenarioRef ref="ur10-get-logs"/>
+    </Steps>
+  </Scenario>
+
+</Scenarios>
+

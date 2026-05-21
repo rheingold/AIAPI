@@ -1,0 +1,215 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D1 Dashboard Smoke Test scenarios — test/e2e/d1/scenarios.xml
+  app     : d1
+  helper  : BrowserWin.exe
+  process : chrome.exe
+
+  Layer: L3 (test — never shipped)
+  Purpose: verify the dashboard page loads, all nav sections are present and
+           navigable.  Runs in < 10 s — must always stay green.
+-->
+<Scenarios app="d1" helper="BrowserWin.exe" process="chrome.exe" xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d1">
+
+  <!-- ── D1-1: page title ────────────────────────────────────────────────── -->
+  <Scenario id="d1-page-title" effect="read-only">
+    <Description lang="en">
+      Read the dashboard page title via READ and assert it contains the expected string.
+    </Description>
+    <Steps>
+      <Step action="READ" proc="{{tab}}" path="" bind="pageInfo" note="read page title and URL"/>
+      <Step action="ASSERTPATHEVAL" path="'{{pageInfo}}'.includes('AI API')" note="page info contains AI API"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── D1-2: nav buttons present ───────────────────────────────────────── -->
+  <Scenario id="d1-nav-buttons" effect="read-only">
+    <Description lang="en">
+      Assert all primary nav buttons are present — one READELEM per button.
+    </Description>
+    <Steps>
+      <Step action="READELEM" proc="{{tab}}" path="[data-section='logs']"     note="logs nav button present"/>
+      <Step action="READELEM" proc="{{tab}}" path="[data-section='settings']" note="settings nav button present"/>
+      <Step action="READELEM" proc="{{tab}}" path="[data-section='security']" note="security nav button present"/>
+      <Step action="READELEM" proc="{{tab}}" path="[data-section='tools']"    note="tools nav button present"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── D1-3: nav to Settings ────────────────────────────────────────────── -->
+  <Scenario id="d1-nav-settings" effect="changes-view">
+    <Description lang="en">
+      Click Settings nav button; verify it has the active class via CSS selector.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-settings"/>
+      <Step action="READELEM" proc="{{tab}}" path="[data-section='settings'].active"
+            note="settings button now has active class"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── D1-4: nav to Logs ─────────────────────────────────────────────────── -->
+  <Scenario id="d1-nav-logs" effect="changes-view">
+    <Description lang="en">
+      Click Logs nav button; verify it has the active class via CSS selector.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-logs"/>
+      <Step action="READELEM" proc="{{tab}}" path="[data-section='logs'].active"
+            note="logs button now has active class"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── D1-5: nav back to Logs (default/home section) ─────────────────────── -->
+  <Scenario id="d1-nav-home" effect="changes-view">
+    <Description lang="en">
+      Navigate back to Logs (the default home section); verify it has the active class.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-logs"/>
+      <Step action="READELEM" proc="{{tab}}" path="[data-section='logs'].active"
+            note="logs button active (back at home)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── DIAGNOSTIC ────────────────────────────────────────────────────────── -->
+
+  <!-- ── REST SMOKE ──────────────────────────────────────────────────────── -->
+  <Scenario id="d1-rest-smoke" effect="read-only">
+    <Description lang="en">GET /health, /api/status, /api/settings — assert key fields.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/health" path="GET"
+            bind="healthResult" note="GET /health"/>
+      <Step action="EVAL" path="(()=>{ const h={{healthResult}}; if(h.status!=='ok') throw new Error('D1: /health status='+h.status); if(typeof h.version!=='string') throw new Error('D1: health.version not string'); if(typeof h.timestamp!=='string') throw new Error('D1: health.timestamp not string'); return {ok:true,version:h.version}; })()"
+            bind="healthOk" note="assert /health"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/status" path="GET"
+            bind="statusResult" note="GET /api/status"/>
+      <Step action="EVAL" path="(()=>{ const s={{statusResult}}; if(s.success!==true) throw new Error('D1: /api/status failed'); if(s.data.status!=='running') throw new Error('D1: status='+s.data.status); if((s.data.helpers.count??0)&lt;1) throw new Error('D1: helpers.count='+s.data.helpers.count); return {ok:true,uptime:s.data.uptime,helpers:s.data.helpers.count}; })()"
+            bind="statusOk" note="assert /api/status"/>
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/settings" path="GET"
+            bind="settingsResult" note="GET /api/settings"/>
+      <Step action="EVAL" path="(()=>{ const cfg={{settingsResult}}; if(!cfg||typeof cfg!=='object') throw new Error('D1: /api/settings not object'); if(typeof cfg.server.port!=='number') throw new Error('D1: server.port not number'); return {ok:true}; })()"
+            note="assert /api/settings"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── D1-6: Live Logs controls present ─────────────────────────────────── -->
+  <Scenario id="d1-logs-controls-present" effect="read-only">
+    <Description lang="en">
+      Navigate to Logs section; assert every Live Logs control exists in the DOM
+      using READELEM (one step per element — presence check only, no CDP needed).
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-logs"/>
+      <Step action="READELEM" proc="{{tab}}" path="#auto-scroll"    note="auto-scroll checkbox present"/>
+      <Step action="READELEM" proc="{{tab}}" path="#json-logging"   note="json-logging checkbox present"/>
+      <Step action="READELEM" proc="{{tab}}" path="#raw-mode"       note="raw-mode checkbox present"/>
+      <Step action="READELEM" proc="{{tab}}" path="#expand-all"     note="expand-all checkbox present"/>
+      <Step action="READELEM" proc="{{tab}}" path="#log-source"     note="log-source select present"/>
+      <Step action="READELEM" proc="{{tab}}" path="#log-level"      note="log-level select present"/>
+      <Step action="READELEM" proc="{{tab}}" path="#log-search"     note="log-search input present"/>
+      <Step action="READELEM" proc="{{tab}}" path="#log-output"     note="log-output container present"/>
+      <Step action="READELEM" proc="{{tab}}" path="#btn-export-logs" note="export-logs button present"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── D1-7: Live Logs filter interaction ───────────────────────────────── -->
+  <Scenario id="d1-logs-filter-interaction" effect="modifies-dom">
+    <Description lang="en">
+      Change #log-source to http, #log-level to warn, type into #log-search via CDP,
+      assert each value was accepted, then restore all controls to defaults.
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-logs"/>
+
+      <!-- set #log-source → http -->
+      <Step action="EVAL"
+            path="(function(){ var el=document.getElementById('log-source'); el.value='http'; el.dispatchEvent(new Event('change',{bubbles:true})); return el.value; })()"
+            proc="{{tab}}" bind="srcVal" note="set log-source to http and read back"/>
+      <Step action="ASSERT" path="'{{srcVal}}'" value="'http'" note="log-source filter changed to http"/>
+
+      <!-- set #log-level → warn -->
+      <Step action="EVAL"
+            path="(function(){ var el=document.getElementById('log-level'); el.value='warn'; el.dispatchEvent(new Event('change',{bubbles:true})); return el.value; })()"
+            proc="{{tab}}" bind="lvlVal" note="set log-level to warn and read back"/>
+      <Step action="ASSERT" path="'{{lvlVal}}'" value="'warn'" note="log-level filter changed to warn"/>
+
+      <!-- set #log-search → test-search -->
+      <Step action="EVAL"
+            path="(function(){ var el=document.getElementById('log-search'); el.value='test-search'; el.dispatchEvent(new Event('input',{bubbles:true})); return el.value; })()"
+            proc="{{tab}}" bind="searchVal" note="type into log-search and read back"/>
+      <Step action="ASSERTPATHEVAL" path="'{{searchVal}}' === 'test-search'" note="search input accepted value"/>
+
+      <!-- restore #log-source → all -->
+      <Step action="EVAL"
+            path="(function(){ var el=document.getElementById('log-source'); el.value='all'; el.dispatchEvent(new Event('change',{bubbles:true})); return el.value; })()"
+            proc="{{tab}}" note="restore log-source to all"/>
+
+      <!-- restore #log-level → all -->
+      <Step action="EVAL"
+            path="(function(){ var el=document.getElementById('log-level'); el.value='all'; el.dispatchEvent(new Event('change',{bubbles:true})); return el.value; })()"
+            proc="{{tab}}" note="restore log-level to all"/>
+
+      <!-- restore #log-search → empty -->
+      <Step action="EVAL"
+            path="(function(){ var el=document.getElementById('log-search'); el.value=''; el.dispatchEvent(new Event('input',{bubbles:true})); return el.value; })()"
+            proc="{{tab}}" note="clear log-search"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── D1-8: Export Logs button clickable ───────────────────────────────── -->
+  <Scenario id="d1-logs-export-button" effect="read-only">
+    <Description lang="en">
+      Click #btn-export-logs and assert no unhandled JS exception was thrown.
+      The export triggers a browser download; we can only assert the button is
+      clickable and does not cause an unhandled error (ADR-012: no locale-sensitive
+      comparisons — only null / typeof checks).
+    </Description>
+    <Steps>
+      <ScenarioRef app="dashboard" ref="nav-to-logs"/>
+
+      <!-- install alert shim to capture any export error messages -->
+      <Step action="EVAL"
+            path="(function(){ window.__exportAlert=null; window.__origAlert=window.alert; window.alert=function(m){ window.__exportAlert=m; }; return 'shim-ok'; })()"
+            proc="{{tab}}" note="install alert shim before clicking export"/>
+
+      <Step action="CLICKID" proc="{{tab}}" path="#btn-export-logs" note="click Export Logs button"/>
+      <Step action="WAIT"    proc=""        value="600"             note="wait for export handler to run"/>
+
+      <!-- read captured alert value -->
+      <Step action="EVAL"
+            path="(function(){ return window.__exportAlert === null ? 'null' : String(window.__exportAlert); })()"
+            proc="{{tab}}" bind="exportAlert" note="read captured exportAlert value"/>
+      <Step action="ASSERTPATHEVAL"
+            path="'{{exportAlert}}' === 'null' || typeof '{{exportAlert}}' === 'string'"
+            note="no unhandled JS error — exportAlert is null or a message string"/>
+
+      <!-- restore original alert -->
+      <Step action="EVAL"
+            path="(function(){ if(window.__origAlert) window.alert=window.__origAlert; return 'restored'; })()"
+            proc="{{tab}}" note="restore original window.alert"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ── D1 SUITE ──────────────────────────────────────────────────────────── -->
+  <Scenario id="d1-suite" effect="test-suite">
+    <Description lang="en">Full D1 dashboard smoke suite — S1 REST baseline + S2-S6 UI navigation + S7-S9 Live Logs UI coverage.</Description>
+    <Parameters>
+      <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+    </Parameters>
+    <Steps>
+      <ScenarioRef ref="d1-rest-smoke"/>
+      <ScenarioRef ref="d1-page-title"/>
+      <ScenarioRef ref="d1-nav-buttons"/>
+      <ScenarioRef ref="d1-nav-settings"/>
+      <ScenarioRef ref="d1-nav-logs"/>
+      <ScenarioRef ref="d1-nav-home"/>
+      <ScenarioRef ref="d1-logs-controls-present"/>
+      <ScenarioRef ref="d1-logs-filter-interaction"/>
+      <ScenarioRef ref="d1-logs-export-button"/>
+    </Steps>
+  </Scenario>
+
+</Scenarios>

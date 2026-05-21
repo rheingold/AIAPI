@@ -34,6 +34,7 @@
 | [architecture/CODEBASE_MAP.md](architecture/CODEBASE_MAP.md) | **Full codebase walkthrough** — folder layout, chapters 1-7, startup flow, dispatch flow, ADR index |
 | [architecture/ARCHITECTURE.md](architecture/ARCHITECTURE.md) | System architecture & design principles |
 | [architecture/SECURITY_ARCHITECTURE.md](architecture/SECURITY_ARCHITECTURE.md) | Security model — filter chain, binary signing, auth handshake, trust boundaries |
+| [architecture/PLATFORM_UI_COVERAGE.md](architecture/PLATFORM_UI_COVERAGE.md) | Platform UI technology taxonomy, KeyWin.exe coverage status, unified input architecture proposal |
 
 ### Architecture Decision Records
 
@@ -46,6 +47,7 @@
 | [ADR-005](architecture/decisions/ADR-005-unified-action-addressing.md) | Unified XPath-Style Action Addressing |
 | [ADR-006](architecture/decisions/ADR-006-ai-consent-tier-system.md) | AI Consent Tier System |
 | [ADR-007](architecture/decisions/ADR-007-universal-installer-idempotent-setup.md) | Universal Installer: Idempotent, Re-runnable Setup |
+| [ADR-008](architecture/decisions/ADR-008-dogfood-test-scenario-driven-architecture.md) | Dogfood Test Architecture: Scenario-Driven, UI-Only, No REST |
 
 ---
 

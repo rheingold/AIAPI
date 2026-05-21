@@ -43,7 +43,20 @@ namespace LibreOfficeWin
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
         [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hWnd);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+        [DllImport("user32.dll")] static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+        [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+        [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
+        [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
         delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+        const uint WM_CLOSE       = 0x0010;
+        const uint WM_KEYDOWN     = 0x0100;
+        const uint WM_KEYUP       = 0x0101;
+        const uint WM_CHAR        = 0x0102;
+        const uint GW_OWNER       = 4;
+        const int  GWL_STYLE      = -16;
+        const uint WS_MAXIMIZEBOX = 0x00010000;
+        const int  VK_ESCAPE      = 0x1B;
 
         // ──────────────────────────────────────────────────────────────────────
         //  Entry point
@@ -148,16 +161,47 @@ namespace LibreOfficeWin
 
         static void DispatchCommand(string target, string action)
         {
+            // Strip optional SCROLL_ prefix added by HelperCommon when scroll=true.
+            // Office helpers work via COM/UNO and don't have a screen-scroll concept,
+            // so the flag is silently consumed here.
+            if (action.Length > 8 && action.StartsWith("{SCROLL_", StringComparison.OrdinalIgnoreCase))
+                action = "{" + action.Substring(8);
+
             string cmdType = DetermineCommandType(action);
 
             if (cmdType == "LISTDOCS")
             {
-                CmdListDocs();
+                // When UNO proxy is active, enumerate docs through lo_helper.py instead of
+                // the C# COM path.  TryGetServiceManager() can hang for 20+ seconds via
+                // Activator.CreateInstance when soffice is not running with COM support.
+                if (_unoSocketPort > 0)
+                    SendUnoProxyCommand(target, "LISTDOCS", "", "");
+                else
+                {
+                    // Fast pre-check: if no soffice process exists, skip COM entirely and
+                    // return empty list immediately.  Avoids the Activator.CreateInstance
+                    // hang when LibreOffice has not been launched yet.
+                    bool sofRunning = false;
+                    foreach (var p in System.Diagnostics.Process.GetProcesses())
+                    {
+                        if (p.ProcessName.StartsWith("soffice", StringComparison.OrdinalIgnoreCase))
+                        { sofRunning = true; break; }
+                    }
+                    if (sofRunning)
+                        CmdListDocs();
+                    else
+                        Console.WriteLine("{\"success\":true,\"result\":[]}");
+                }
                 return;
             }
 
             if (cmdType == "NEWDOC")
             {
+                // NEWDOC always uses the CLI path regardless of UNO bridge state.
+                // Routing through lo_helper.py would require reconnecting after every
+                // RELAUNCH and creates proxy-lifecycle complexity; the CLI path is
+                // simpler and the Impress template dialog is handled by
+                // DismissImpressTemplateDialog() in the poll loop.
                 CmdNewDoc(NormaliseAppType(target));
                 return;
             }
@@ -177,6 +221,29 @@ namespace LibreOfficeWin
             if (cmdType == "FOCUS")
             {
                 CmdFocus();
+                return;
+            }
+
+            // ── LO 24+ UNO proxy: route through lo_helper.py when COM bridge is gone ──
+            // When _unoSocketPort > 0 it means RELAUNCH was called because the COM
+            // bridge was unavailable.  Always proxy through lo_helper.py in this case
+            // rather than re-testing TryGetServiceManager(), which can return a
+            // non-null-but-unusable stub when soffice runs with --accept=socket.
+            if (_unoSocketPort > 0)
+            {
+                string param     = ExtractParam(action, cmdType) ?? "";
+                string proxyPath = "", proxyValue = "";
+                if (param.Contains("|"))
+                {
+                    int sep = param.IndexOf('|');
+                    proxyPath  = param.Substring(0, sep);
+                    proxyValue = param.Substring(sep + 1);
+                }
+                else
+                {
+                    proxyPath = param;
+                }
+                SendUnoProxyCommand(target, cmdType, proxyPath, proxyValue);
                 return;
             }
 
@@ -462,11 +529,27 @@ namespace LibreOfficeWin
                     flag + " --norestore --nofirststartwizard");
 
                 // Wait for the new window to appear (up to ~8 s, poll every 500 ms).
+                // For Impress: also actively dismiss the "Select Template" dialog that
+                // appears before the blank document window (locale-independent detection:
+                // any soffice visible top-level window whose title contains none of the
+                // known app-window keywords is treated as the template chooser dialog).
                 string title = "";
                 for (int i = 0; i < 16 && string.IsNullOrEmpty(title); i++)
                 {
                     System.Threading.Thread.Sleep(500);
+                    if (appType == "impress") DismissImpressTemplateDialog();
                     title = FindNewestLoWindowTitle(appType);
+                }
+                // The Impress template dialog often appears CONCURRENTLY with (or just after)
+                // the document window — so keep dismissing for 3 more seconds even after
+                // the title was found.  Without this the dialog stays visible indefinitely.
+                if (appType == "impress")
+                {
+                    for (int j = 0; j < 6; j++)
+                    {
+                        System.Threading.Thread.Sleep(500);
+                        DismissImpressTemplateDialog();
+                    }
                 }
 
                 Console.WriteLine("{\"success\":true,\"result\":\"created\",\"name\":\""
@@ -480,16 +563,82 @@ namespace LibreOfficeWin
         }
 
         /// <summary>
+        /// Detect and close the Impress "Select Template" / "New Presentation" dialog
+        /// that appears when opening a blank Impress document.
+        ///
+        /// Detection strategy (locale-independent): enumerate all visible top-level
+        /// windows belonging to running soffice/soffice.bin processes.  A window is
+        /// treated as the template dialog if its title is non-empty and does NOT
+        /// contain any of the known document-window keywords (Impress, Calc, Writer,
+        /// LibreOffice, OpenOffice).  Such windows are dismissed with WM_CLOSE, which
+        /// is equivalent to the user pressing the dialog's X / Close button and
+        /// produces a blank presentation.
+        /// </summary>
+        /// <summary>
+        /// Detect and dismiss the Impress "Select Template" / "New Presentation" dialog.
+        ///
+        /// Detection (locale-independent): LibreOffice document windows always carry
+        /// WS_MAXIMIZEBOX in their Win32 style; the template-chooser dialog does not.
+        /// Any visible top-level soffice window that lacks WS_MAXIMIZEBOX is the dialog.
+        ///
+        /// Dismissal: PostMessage(WM_CLOSE) — instant, never blocks the poll loop, and
+        /// semantically equivalent to pressing the dialog's X / Cancel button, which
+        /// cancels the chooser and opens a blank presentation.
+        /// </summary>
+        static void DismissImpressTemplateDialog()
+        {
+            // Collect PIDs for all soffice* processes.
+            // NOTE: Process.GetProcessesByName strips .exe but NOT .bin, so
+            // "soffice.bin" (the process that actually owns LO windows) is NOT found by
+            // GetProcessesByName("soffice.bin") on all .NET versions.  Use GetProcesses()
+            // with a StartsWith filter to reliably capture both soffice.exe and soffice.bin.
+            var sofficeProcs = new HashSet<uint>();
+            foreach (var p in System.Diagnostics.Process.GetProcesses())
+                if (p.ProcessName.StartsWith("soffice", StringComparison.OrdinalIgnoreCase))
+                    sofficeProcs.Add((uint)p.Id);
+            if (sofficeProcs.Count == 0) return;
+
+            EnumWindows((hWnd, lp) =>
+            {
+                if (!IsWindowVisible(hWnd)) return true;
+                uint pid;
+                GetWindowThreadProcessId(hWnd, out pid);
+                if (!sofficeProcs.Contains(pid)) return true;
+
+                // Primary discriminator: window class.
+                //   SALFRAME     = LibreOffice document window (always has WS_MAXIMIZEBOX)
+                //   SALSUBFRAME  = LibreOffice dialog / floating window (no WS_MAXIMIZEBOX)
+                // Check both class AND WS_MAXIMIZEBOX so a single stray window never causes
+                // a false dismissal.
+                var cls = new StringBuilder(64);
+                GetClassName(hWnd, cls, 64);
+                int style = GetWindowLong(hWnd, GWL_STYLE);
+                bool isDialog = string.Equals(cls.ToString(), "SALSUBFRAME", StringComparison.OrdinalIgnoreCase)
+                             && ((uint)style & WS_MAXIMIZEBOX) == 0;
+                if (isDialog)
+                {
+                    // 1. Synchronous WM_CLOSE — LO must process it before SendMessage returns.
+                    //    (PostMessage is fire-and-forget; LO's SALSUBFRAME ignores queued WM_CLOSE.)
+                    SendMessage(hWnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                    // 2. ESC-key fallback — covers dialogs that veto WM_CLOSE but respond to ESC.
+                    PostMessage(hWnd, WM_KEYDOWN, (IntPtr)VK_ESCAPE, (IntPtr)0x00010001);
+                    PostMessage(hWnd, WM_KEYUP,   (IntPtr)VK_ESCAPE, (IntPtr)0xC0010001);
+                }
+
+                return true;
+            }, IntPtr.Zero);
+        }
+
+        /// <summary>
         /// Enumerate visible top-level windows belonging to soffice.exe and return a title
         /// that matches the requested app type (writer / calc / impress).
         /// </summary>
         static string FindNewestLoWindowTitle(string appType)
         {
             var sofficeProcs = new HashSet<uint>();
-            foreach (var p in System.Diagnostics.Process.GetProcessesByName("soffice"))
-                sofficeProcs.Add((uint)p.Id);
-            foreach (var p in System.Diagnostics.Process.GetProcessesByName("soffice.bin"))
-                sofficeProcs.Add((uint)p.Id);
+            foreach (var p in System.Diagnostics.Process.GetProcesses())
+                if (p.ProcessName.StartsWith("soffice", StringComparison.OrdinalIgnoreCase))
+                    sofficeProcs.Add((uint)p.Id);
             if (sofficeProcs.Count == 0) return "";
 
             var titles = new List<string>();
@@ -568,6 +717,115 @@ namespace LibreOfficeWin
             return null;
         }
 
+        /// <summary>
+        /// Locate LibreOffice's bundled python.exe (the only environment that has
+        /// <c>import uno</c> available).  Returns null if not found.
+        /// </summary>
+        static string FindLibreOfficePythonExe()
+        {
+            string[] candidates = {
+                @"C:\Program Files\LibreOffice\program\python.exe",
+                @"C:\Program Files (x86)\LibreOffice\program\python.exe",
+                @"C:\Program Files\LibreOffice 7\program\python.exe",
+                @"C:\Program Files\LibreOffice 6\program\python.exe",
+            };
+            foreach (string c in candidates)
+                if (File.Exists(c)) return c;
+            return null;
+        }
+
+        /// <summary>
+        /// Ensure lo_helper.py is running and connected on the given UNO socket port.
+        /// If the proxy is already alive, this is a no-op.
+        /// </summary>
+        static void EnsureUnoProxy(int port)
+        {
+            // Reuse existing if alive
+            if (_unoProxy != null && !_unoProxy.HasExited)
+                return;
+
+            string pythonExe = FindLibreOfficePythonExe();
+            if (pythonExe == null)
+                throw new Exception("LibreOffice python.exe not found. "
+                    + "Install LibreOffice from https://www.libreoffice.org");
+
+            // Locate lo_helper.py next to this executable
+            string helperScript = Path.Combine(
+                Path.GetDirectoryName(
+                    System.Reflection.Assembly.GetExecutingAssembly().Location)
+                ?? AppDomain.CurrentDomain.BaseDirectory,
+                "lo_helper.py");
+            if (!File.Exists(helperScript))
+                throw new Exception("lo_helper.py not found at: " + helperScript);
+
+            var psi = new System.Diagnostics.ProcessStartInfo(pythonExe,
+                "\"" + helperScript + "\" --port " + port + " --persistent")
+            {
+                RedirectStandardInput  = true,
+                RedirectStandardOutput = true,
+                UseShellExecute        = false,
+                CreateNoWindow         = true,
+            };
+
+            _unoProxy   = System.Diagnostics.Process.Start(psi);
+            _unoProxyIn  = _unoProxy.StandardInput;
+            _unoProxyOut = _unoProxy.StandardOutput;
+
+            // Wait for { "id":"", "success":true, "result":"ready" }
+            string ready = _unoProxyOut.ReadLine();
+            if (string.IsNullOrEmpty(ready) || !ready.Contains("\"ready\""))
+            {
+                _unoProxy.Kill();
+                _unoProxy = null; _unoProxyIn = null; _unoProxyOut = null;
+                throw new Exception("lo_helper.py did not send ready signal. Response: " + ready);
+            }
+        }
+
+        static int _unoProxyCmdId = 0;
+
+        /// <summary>
+        /// Send one command to the lo_helper.py proxy and forward the JSON response
+        /// directly to Console.Out (exactly as the C# Cmd* methods do).
+        /// </summary>
+        static void SendUnoProxyCommand(
+            string target, string action, string path, string value)
+        {
+            try
+            {
+                EnsureUnoProxy(_unoSocketPort);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("{\"success\":false,\"error\":\"UNO proxy start failed: "
+                    + JsonEscape(ex.Message) + "\"}");
+                return;
+            }
+
+            int id = System.Threading.Interlocked.Increment(ref _unoProxyCmdId);
+            string req = "{\"id\":\"" + id + "\",\"target\":\"" + JsonEscape(target)
+                + "\",\"action\":\"" + JsonEscape(action)
+                + "\",\"path\":\""  + JsonEscape(path)
+                + "\",\"value\":\"" + JsonEscape(value) + "\"}";
+
+            try
+            {
+                _unoProxyIn.WriteLine(req);
+                _unoProxyIn.Flush();
+                string resp = _unoProxyOut.ReadLine();
+                // Strip the id field added by lo_helper and re-emit as plain response
+                // so downstream callers see the same shape as native C# commands.
+                Console.WriteLine(resp ?? "{\"success\":false,\"error\":\"lo_helper no response\"}");
+            }
+            catch (Exception ex)
+            {
+                // Proxy died — reset so EnsureUnoProxy respawns next time
+                try { if (_unoProxy != null) _unoProxy.Kill(); } catch { }
+                _unoProxy = null; _unoProxyIn = null; _unoProxyOut = null;
+                Console.WriteLine("{\"success\":false,\"error\":\"UNO proxy error: "
+                    + JsonEscape(ex.Message) + "\"}");
+            }
+        }
+
         // ──────────────────────────────────────────────────────────────────────
         //  RELAUNCH / LAUNCH  — restart soffice with UNO socket --accept flag
         // ──────────────────────────────────────────────────────────────────────
@@ -600,6 +858,11 @@ namespace LibreOfficeWin
 
         static int _unoSocketPort = 0; // remembered across calls in persistent mode
 
+        // ── UNO Python proxy (LO 24+ fallback when COM bridge unavailable) ─────────
+        static System.Diagnostics.Process _unoProxy   = null;
+        static System.IO.StreamWriter     _unoProxyIn  = null;
+        static System.IO.StreamReader     _unoProxyOut = null;
+
         static void CmdRelaunch(string param)
         {
             try
@@ -623,13 +886,13 @@ namespace LibreOfficeWin
                 }
                 catch { }
 
-                // Kill all soffice processes
-                foreach (string pname in new[] { "soffice", "soffice.bin" })
+                // Kill all soffice* processes (soffice.exe and soffice.bin).
+                // GetProcessesByName("soffice.bin") is unreliable because .NET only
+                // strips .exe — use GetProcesses() with StartsWith filter instead.
+                foreach (var p in System.Diagnostics.Process.GetProcesses())
                 {
-                    foreach (var p in System.Diagnostics.Process.GetProcessesByName(pname))
-                    {
-                        try { p.Kill(); p.WaitForExit(4000); } catch { }
-                    }
+                    if (!p.ProcessName.StartsWith("soffice", StringComparison.OrdinalIgnoreCase)) continue;
+                    try { p.Kill(); p.WaitForExit(4000); } catch { }
                 }
                 System.Threading.Thread.Sleep(1500); // wait for port release
 

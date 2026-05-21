@@ -1,13 +1,13 @@
 {
   "scenariosPath": "./scenarios",
   "securityPath": "./security",
-  "publicKeyPath": "./config/security/public.key.enc",
-  "privateKeyPath": "./config/security/private.key.enc",
+  "publicKeyPath": "./security/public.key.enc",
+  "privateKeyPath": "./security/private.key.enc",
   "helperPaths": [
-    "./dist/win/*.exe"
+    "./dist/helpers"
   ],
   "mcpPort": 3457,
-  "logLevel": "info",
+  "logLevel": "debug",
   "tokenExpiry": 60,
   "requireBinarySignature": false,
   "requireOsEnforcement": false,
@@ -37,5 +37,35 @@
     }
   ],
   "disabledHelpers": [],
-  "appTemplatesDir": "./apptemplates"
+  "appTemplateRoots": [
+    "./components/helpers/shared/dist-resources/apptemplates",
+    "./components/helpers/windows/dist-resources/apptemplates",
+    "./test/e2e"
+  ],
+  "testSessionDir": "./test/sessionlogs",
+  "appTemplatesDir": "./apptemplates",
+  "auth": {
+    "mode": "none",
+    "debugExternalAuth": false,
+    "jwt": {
+      "expiry": 90
+    },
+    "users": {
+      "storeSource": "json",
+      "jsonPath": "./config/users.json",
+      "db": {
+        "type": "postgresql",
+        "host": "192.168.254.16",
+        "port": 5432,
+        "database": "aiapi_test",
+        "table": "aiapi_users",
+        "auth": {
+          "method": "password",
+          "username": "ddladmin",
+          "password": "1/ddladmin.2"
+        },
+        "tls": false
+      }
+    }
+  }
 }

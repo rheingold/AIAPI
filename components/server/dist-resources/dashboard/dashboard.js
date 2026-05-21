@@ -34,10 +34,12 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeActions();
   initializeSettings();
   initializeHelpers();
+  initializeAuth();
   loadTools();
   loadScenarios();
   loadAppTemplates();
   loadSettings();
+  loadSetupStatus();
   startUptimeCounter();
   startStatusPoller();
 });
@@ -60,10 +62,15 @@ function initializeNavigation() {
       // Auto-validate config whenever Settings section is opened
       if (section === 'settings') {
         validateConfiguration();
+        loadSetupStatus();
       }
       // Refresh app templates list when that section is opened
       if (section === 'templates') {
         loadAppTemplates();
+      }
+      // Load auth config when auth section is opened
+      if (section === 'auth') {
+        loadAuthConfig();
       }
     });
   });
@@ -565,7 +572,19 @@ function initializeSettings() {
   // Change directory button
   document.getElementById('btn-change-dir')?.addEventListener('click', async () => {
     const currentDir = document.getElementById('current-working-dir')?.textContent || '.';
-    const newDir = prompt('Enter new working directory (absolute or relative):', currentDir);
+    let newDir = null;
+    try {
+      const res = await fetch('/api/shell/openFileDialog', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder: true, title: 'Select Working Directory', initialDir: currentDir }),
+      });
+      const data = await res.json();
+      if (data.success && data.path) newDir = data.path;
+      else if (!data.success) newDir = prompt('Enter new working directory (absolute or relative):', currentDir);
+    } catch {
+      newDir = prompt('Enter new working directory (absolute or relative):', currentDir);
+    }
     
     if (newDir && newDir !== currentDir) {
       try {
@@ -591,16 +610,40 @@ function initializeSettings() {
     }
   });
   
-  // Browse buttons — remember last entered path per field (localStorage)
+  // Browse buttons — use native Windows file/folder dialog via server endpoint
   document.querySelectorAll('.btn-browse').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const targetId = btn.dataset.target;
-      const input = document.getElementById(targetId);
-      const current = input.value || getLastBrowsed(targetId);
-      const path = prompt('Enter path:', current);
-      if (path !== null && path !== undefined) {
-        input.value = path;
-        saveLastBrowsed(targetId, path);
+    btn.addEventListener('click', async () => {
+      const targetId  = btn.dataset.target;
+      const isFolder  = btn.dataset.folder === 'true';
+      const filter    = btn.dataset.filter  || 'All files (*.*)|*.*';
+      const input     = document.getElementById(targetId);
+      const current   = input?.value || getLastBrowsed(targetId) || 'C:\\';
+      try {
+        const res = await fetch('/api/shell/openFileDialog', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ folder: isFolder, filter, initialDir: current }),
+        });
+        const data = await res.json();
+        if (data.success && data.path) {
+          if (input) input.value = data.path;
+          saveLastBrowsed(targetId, data.path);
+        } else if (!data.success) {
+          // Fallback to prompt when native dialog unavailable (non-Windows / permission issue)
+          const path = prompt('Enter path:', current);
+          if (path !== null && path !== undefined) {
+            if (input) input.value = path;
+            saveLastBrowsed(targetId, path);
+          }
+        }
+        // data.path === null means user cancelled the dialog — do nothing
+      } catch {
+        // Network error or server not running — fall back to prompt
+        const path = prompt('Enter path:', current);
+        if (path !== null && path !== undefined) {
+          if (input) input.value = path;
+          saveLastBrowsed(targetId, path);
+        }
       }
     });
   });
@@ -687,11 +730,12 @@ async function loadSettings() {
       document.getElementById('setting-allow-unsigned-scenarios').checked = settings.security.allowUnsignedScenarios || false;
       document.getElementById('setting-enable-session-auth').checked = settings.security.enableSessionAuth !== false;
       
-      // Security filters
-      document.getElementById('setting-allowed-exes').value = (settings.security.allowedExecutables || []).join('\n');
-      document.getElementById('setting-blocked-exes').value = (settings.security.blockedExecutables || []).join('\n');
-      document.getElementById('setting-allowed-paths').value = (settings.security.allowedPaths || []).join('\n');
-      document.getElementById('setting-blocked-paths').value = (settings.security.blockedPaths || []).join('\n');
+      // Security filter textareas — only present in older HTML structure
+      const setTA = (id, lines) => { const el = document.getElementById(id); if (el) el.value = (lines || []).join('\n'); };
+      setTA('setting-allowed-exes',   settings.security.allowedExecutables);
+      setTA('setting-blocked-exes',   settings.security.blockedExecutables);
+      setTA('setting-allowed-paths',  settings.security.allowedPaths);
+      setTA('setting-blocked-paths',  settings.security.blockedPaths);
     }
     
     if (settings.server) {
@@ -725,14 +769,14 @@ async function saveSettings() {
           .filter(x => x.length > 0),
       },
       security: {
-        requireSignature: document.getElementById('setting-require-signature').checked,
-        requireOsEnforcement: document.getElementById('setting-require-os-enforcement').checked,
-        allowUnsignedScenarios: document.getElementById('setting-allow-unsigned-scenarios').checked,
-        enableSessionAuth: document.getElementById('setting-enable-session-auth').checked,
-        allowedExecutables: document.getElementById('setting-allowed-exes').value.split('\n').filter(x => x.trim()),
-        blockedExecutables: document.getElementById('setting-blocked-exes').value.split('\n').filter(x => x.trim()),
-        allowedPaths: document.getElementById('setting-allowed-paths').value.split('\n').filter(x => x.trim()),
-        blockedPaths: document.getElementById('setting-blocked-paths').value.split('\n').filter(x => x.trim()),
+        requireSignature: document.getElementById('setting-require-signature')?.checked ?? false,
+        requireOsEnforcement: document.getElementById('setting-require-os-enforcement')?.checked ?? false,
+        allowUnsignedScenarios: document.getElementById('setting-allow-unsigned-scenarios')?.checked ?? false,
+        enableSessionAuth: document.getElementById('setting-enable-session-auth')?.checked ?? false,
+        allowedExecutables: (document.getElementById('setting-allowed-exes')?.value ?? '').split('\n').filter(x => x.trim()),
+        blockedExecutables: (document.getElementById('setting-blocked-exes')?.value ?? '').split('\n').filter(x => x.trim()),
+        allowedPaths: (document.getElementById('setting-allowed-paths')?.value ?? '').split('\n').filter(x => x.trim()),
+        blockedPaths: (document.getElementById('setting-blocked-paths')?.value ?? '').split('\n').filter(x => x.trim()),
       },
       server: {
         port: parseInt(document.getElementById('setting-port').value),
@@ -877,6 +921,7 @@ function openFilterEditor(filterId = null) {
     document.getElementById('filter-command').value     = filter.command;
     document.getElementById('filter-pattern').value     = filter.pattern;
     document.getElementById('filter-description').value = filter.description || '';
+    document.getElementById('filter-role').value        = filter.role || '';
   } else {
     title.textContent = 'Add Security Filter';
     document.getElementById('filter-action').value      = 'allow';
@@ -885,6 +930,7 @@ function openFilterEditor(filterId = null) {
     document.getElementById('filter-command').value     = '';
     document.getElementById('filter-pattern').value     = '';
     document.getElementById('filter-description').value = '';
+    document.getElementById('filter-role').value        = '';
   }
   
   updateFilterPreview();
@@ -907,11 +953,13 @@ function updateFilterPreview() {
   const actionText = action === 'allow' ? '✅ ALLOW' : '🚫 DENY';
   const preview = `${actionText} ${process} → ${helper}::${command}/${pattern}`;
   
+  const role = (document.getElementById('filter-role')?.value || '').trim();
   const previewEl = document.getElementById('filter-preview-text');
+  const roleHtml = role ? ` <span style="color:var(--accent);font-size:0.82em;">[role: ${role}]</span>` : '';
   previewEl.innerHTML = `
     <span class="preview-action" style="color: ${action === 'allow' ? 'var(--success)' : 'var(--error)'}">${actionText}</span>
     <span class="preview-process">${process}</span> → 
-    <span class="preview-helper">${helper}</span>::<span class="preview-command">${command}</span>/<span class="preview-pattern">${pattern}</span>
+    <span class="preview-helper">${helper}</span>::<span class="preview-command">${command}</span>/<span class="preview-pattern">${pattern}</span>${roleHtml}
   `;
 }
 
@@ -922,6 +970,7 @@ function saveFilter() {
   const command = document.getElementById('filter-command').value.trim();
   const pattern = document.getElementById('filter-pattern').value.trim();
   const description = document.getElementById('filter-description').value.trim();
+  const role = (document.getElementById('filter-role')?.value || '').trim();
 
   if (!process) { alert('Target process is required (use * for all)'); return; }
   if (!command)  { alert('Command is required'); return; }
@@ -930,14 +979,16 @@ function saveFilter() {
   if (editingFilterId) {
     const filter = advancedFilters.find(f => f.id === editingFilterId);
     if (filter) {
-      Object.assign(filter, { action, process, helper, command, pattern, description });
+      Object.assign(filter, { action, process, helper, command, pattern, description, role: role || undefined });
       // Remove any old invented fields that no longer belong
       delete filter.windowTitle; delete filter.processPath;
       delete filter.binaryHash;  delete filter.hashAlgorithm;
       addLogEntry('info', 'settings', `Filter updated: ${action.toUpperCase()} ${process} → ${helper}::${command}/${pattern}`);
     }
   } else {
-    advancedFilters.push({ id: nextFilterId++, action, process, helper, command, pattern, description });
+    const newFilter = { id: nextFilterId++, action, process, helper, command, pattern, description };
+    if (role) newFilter.role = role;
+    advancedFilters.push(newFilter);
     addLogEntry('info', 'settings', `Filter added: ${action.toUpperCase()} ${process} → ${helper}::${command}/${pattern}`);
   }
 
@@ -990,13 +1041,14 @@ function renderFilters(filterTerm = '') {
     const ruleFormula = `${process} → ${filter.helper}::${filter.command}/${filter.pattern}`;
     const actionIcon = filter.action === 'allow' ? '✅' : '🚫';
     const desc = filter.description ? escapeHtml(filter.description) : '<em style="opacity:0.5;">No description</em>';
+    const roleBadge = filter.role ? `<span style="margin-left:6px;font-size:0.75em;padding:1px 6px;border-radius:3px;background:var(--accent,#7c3aed22);color:var(--accent,#a78bfa);border:1px solid var(--accent,#7c3aed44);" title="Required role">👤 ${escapeHtml(filter.role)}</span>` : '';
 
     return `
       <div class="filter-rule">
         <div class="filter-rule-body">
           <div class="rule-title">
             <span class="filter-type ${filter.action}">${actionIcon} ${filter.action.toUpperCase()}</span>
-            <span>${escapeHtml(ruleFormula)}</span>
+            <span>${escapeHtml(ruleFormula)}</span>${roleBadge}
           </div>
           <div class="rule-description">${desc}</div>
         </div>
@@ -1060,20 +1112,37 @@ function renderPermissionsSummary() {
 
 // ── Security Audit Log ─────────────────────────────────────────────
 let _securityLogTimer = null;
+let _securityLogOffset = 0;  // current page start index
 
-async function loadSecurityLog() {
-  const list  = document.getElementById('security-log-list');
-  const count = document.getElementById('security-log-count');
+async function loadSecurityLog(offset) {
+  const list     = document.getElementById('security-log-list');
+  const count    = document.getElementById('security-log-count');
+  const pager    = document.getElementById('security-log-pager');
+  const pageInfo = document.getElementById('security-log-page-info');
+  const prevBtn  = document.getElementById('security-log-prev');
+  const nextBtn  = document.getElementById('security-log-next');
+  const psEl     = document.getElementById('security-log-pagesize');
   if (!list) return;
+
+  if (offset !== undefined) _securityLogOffset = offset;
+  const pageSize = psEl ? parseInt(psEl.value, 10) : 100;
+
   try {
-    const r = await fetch('/api/security/log');
+    const r = await fetch(`/api/security/log?limit=${pageSize}&offset=${_securityLogOffset}`);
     const d = await r.json();
     const entries = d.entries || [];
-    if (count) count.textContent = `${entries.length} event${entries.length !== 1 ? 's' : ''}`;
-    if (entries.length === 0) {
+    const total   = d.total  ?? entries.length;
+    const limit   = d.limit  ?? pageSize;
+    const off     = d.offset ?? _securityLogOffset;
+
+    if (count) count.textContent = `${total} event${total !== 1 ? 's' : ''} total`;
+
+    if (entries.length === 0 && total === 0) {
       list.innerHTML = '<em style="opacity:0.6;">No security events recorded yet. Events appear here when filter rules evaluate incoming requests.</em>';
+      if (pager) pager.style.display = 'none';
       return;
     }
+
     list.innerHTML = entries.map(e => {
       const isBlock = /DENY|blocked|Invalid admin|ADMIN MODE/i.test(e.message);
       const isAllow = /ALLOW/i.test(e.message);
@@ -1085,22 +1154,39 @@ async function loadSecurityLog() {
         <span style="color:${color};">${escapeHtml(e.message)}</span>
       </div>`;
     }).join('');
+
+    // Pagination controls
+    if (pager) {
+      const showingFrom = total === 0 ? 0 : off + 1;
+      const showingTo   = Math.min(off + entries.length, total);
+      if (pageInfo) pageInfo.textContent = `${showingFrom}–${showingTo} of ${total}`;
+      pager.style.display = total > limit ? 'flex' : 'none';
+      if (prevBtn) prevBtn.disabled = off <= 0;
+      if (nextBtn) nextBtn.disabled = off + limit >= total;
+    }
   } catch(e) {
     if (list) list.innerHTML = `<em style="color:var(--error);">Failed to load: ${escapeHtml(String(e))}</em>`;
   }
+}
+
+function securityLogPage(dir) {
+  const psEl = document.getElementById('security-log-pagesize');
+  const pageSize = psEl ? parseInt(psEl.value, 10) : 100;
+  _securityLogOffset = Math.max(0, _securityLogOffset + dir * pageSize);
+  loadSecurityLog();
 }
 
 function toggleSecurityLogAutoRefresh() {
   const cb = document.getElementById('security-log-autorefresh');
   if (_securityLogTimer) { clearInterval(_securityLogTimer); _securityLogTimer = null; }
   if (cb && cb.checked) {
-    _securityLogTimer = setInterval(loadSecurityLog, 5000);
+    _securityLogTimer = setInterval(() => loadSecurityLog(), 5000);
   }
 }
 
 // Load security log when the panel is opened
 document.addEventListener('toggle', e => {
-  if (e.target?.id === 'security-log-panel' && e.target.open) loadSecurityLog();
+  if (e.target?.id === 'security-log-panel' && e.target.open) loadSecurityLog(0);
 }, true);
 
 function filterSearch(term) {
@@ -1153,6 +1239,7 @@ function renderFiltersTableView(filters) {
       <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Helper</th>
       <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Command</th>
       <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Pattern</th>
+      <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Role</th>
       <th style="padding:4px 6px;text-align:left;white-space:nowrap;">Description</th>
       <th style="padding:4px 6px;text-align:center;white-space:nowrap;">\u21d5 \ud83d\uddd1</th>
     </tr>
@@ -1179,6 +1266,7 @@ function renderFiltersTableView(filters) {
       </td>
       <td style="padding:2px 4px;"><input type="text" value="${esc(f.command||'')}" onchange="_ftUpdate(${f.id},'command',this.value)" style="width:100%;min-width:90px;padding:2px;box-sizing:border-box;" placeholder="CMD"></td>
       <td style="padding:2px 4px;"><input type="text" value="${esc(f.pattern||'')}" onchange="_ftUpdate(${f.id},'pattern',this.value)" style="width:100%;min-width:80px;padding:2px;box-sizing:border-box;" placeholder="*"></td>
+      <td style="padding:2px 4px;"><input type="text" value="${esc(f.role||'')}" onchange="_ftUpdate(${f.id},'role',this.value)" style="width:100%;min-width:60px;padding:2px;box-sizing:border-box;" placeholder="any"></td>
       <td style="padding:2px 4px;"><input type="text" value="${esc(f.description||'')}" onchange="_ftUpdate(${f.id},'description',this.value)" style="width:100%;min-width:120px;padding:2px;box-sizing:border-box;"></td>
       <td style="padding:2px 4px;text-align:center;white-space:nowrap;">
         <button onclick="_ftMove(${f.id},-1)" ${i===0?'disabled':''} style="padding:1px 5px;cursor:pointer;" title="Move up">\u2191</button>
@@ -1894,7 +1982,7 @@ function escapeHtml(text) {
 // Wire up filter input live-preview
 document.addEventListener('DOMContentLoaded', () => {
   // Update preview when any filter input changes
-  const filterInputs = ['filter-action', 'filter-process', 'filter-helper', 'filter-command', 'filter-pattern'];
+  const filterInputs = ['filter-action', 'filter-process', 'filter-helper', 'filter-command', 'filter-pattern', 'filter-role'];
   filterInputs.forEach(id => {
     const el = document.getElementById(id);
     if (el) {
@@ -2352,6 +2440,8 @@ async function scenarioEditorPick(scenarioId) {
     document.getElementById('scenario-editor-btn-addref').disabled = false;
     document.getElementById('scenario-editor-btn-save').disabled = false;
     _seRenderRows();
+    _seRefreshCommandList();
+    _seRefreshTargetList();
     addLog('debug', 'templates', `Loaded ${scenarioEditor.steps.length} steps for ${app}/${scenarioId}`);
   } catch(e) {
     addLog('error', 'templates', `Failed to load steps: ${e.message}`);
@@ -2374,17 +2464,27 @@ function _seRenderRows() {
   steps.forEach((step, i) => {
     const tr = document.createElement('tr');
     tr.style.borderBottom = '1px solid var(--border)';
+    // ── Drag-and-drop: make each row draggable ───────────────────────────
+    tr.setAttribute('draggable', 'true');
+    tr.dataset.seIdx = String(i);
+    tr.addEventListener('dragstart', e => _seDragStart(i, e, tr));
+    tr.addEventListener('dragover',  e => _seDragOver(i, e));
+    tr.addEventListener('drop',      e => _seDrop(i, e));
+    tr.addEventListener('dragend',   ()  => _seDragEnd(tbody));
+    tr.addEventListener('dragenter', e => e.preventDefault());
+    // ────────────────────────────────────────────────────────────────────
     const moveUp   = `<button onclick="_seMoveStep(${i},-1)" title="Move up" ${i===0?'disabled':''} style="padding:1px 5px;cursor:pointer;">↑</button>`;
     const moveDown = `<button onclick="_seMoveStep(${i},1)" title="Move down" ${i===n-1?'disabled':''} style="padding:1px 5px;cursor:pointer;">↓</button>`;
     const del      = `<button onclick="_seDeleteStep(${i})" title="Delete" style="padding:1px 5px;cursor:pointer;color:var(--error);">🗑</button>`;
     const dup      = `<button onclick="_seDuplicateStep(${i})" title="Duplicate step" style="padding:1px 5px;cursor:pointer;">📋</button>`;
+    const seqCell  = `<td style="padding:3px 6px;color:var(--text-secondary);cursor:grab;user-select:none;" title="Drag to reorder">⠿\u00a0${i+1}</td>`;
     const typeSel  = `<select onchange="_seUpdateType(${i},this.value)" style="width:100%;">
       <option${step.type==='Step'?' selected':''}>Step</option>
       <option${step.type==='ScenarioRef'?' selected':''}>ScenarioRef</option>
     </select>`;
     if (step.type === 'ScenarioRef') {
       tr.innerHTML = `
-        <td style="padding:3px 6px;color:var(--text-secondary);">${i+1}</td>
+        ${seqCell}
         <td style="padding:3px;">${typeSel}</td>
         <td colspan="5" style="padding:3px 6px;">
           <label style="font-size:0.75rem;opacity:0.7;">ref:</label>
@@ -2396,11 +2496,11 @@ function _seRenderRows() {
       const expanded = scenarioEditor._expandedFilters.has(i);
       const filterBtn = `<button onclick="_seToggleFilters(${i})" title="Linked filter rules" style="padding:1px 5px;cursor:pointer;${expanded ? 'color:var(--accent);font-weight:bold;' : ''}">🛡️</button>`;
       tr.innerHTML = `
-        <td style="padding:3px 6px;color:var(--text-secondary);">${i+1}</td>
+        ${seqCell}
         <td style="padding:3px;">${typeSel}</td>
-        <td style="padding:3px;"><input type="text" value="${_seEsc(step.command)}" oninput="_seUpdate(${i},'command',this.value)" placeholder="{SENDKEYS}" style="width:100%;"></td>
-        <td style="padding:3px;"><input type="text" value="${_seEsc(step.target)}" oninput="_seUpdate(${i},'target',this.value)" placeholder="HANDLE:main" style="width:100%;"></td>
-        <td style="padding:3px;"><input type="text" value="${_seEsc(step.parameter)}" oninput="_seUpdate(${i},'parameter',this.value)" placeholder="value" style="width:100%;"></td>
+        <td style="padding:3px;"><input type="text" list="se-cmd-list" value="${_seEsc(step.command)}" oninput="_seUpdate(${i},'command',this.value)" placeholder="{SENDKEYS}" style="width:100%;"></td>
+        <td style="padding:3px;"><input type="text" list="se-tgt-list" value="${_seEsc(step.target)}" oninput="_seUpdate(${i},'target',this.value)" onfocus="_seOnTargetFocus()" placeholder="HANDLE:main" style="width:100%;"></td>
+        <td style="padding:3px;"><input type="text" list="se-par-list" value="${_seEsc(step.parameter)}" oninput="_seUpdate(${i},'parameter',this.value)" onfocus="_seOnParamFocus(${i})" placeholder="value" style="width:100%;"></td>
         <td style="padding:3px;"><input type="text" value="${_seEsc(step.conditional)}" oninput="_seUpdate(${i},'conditional',this.value)" placeholder="" style="width:100%;"></td>
         <td style="padding:3px;"><input type="text" value="${_seEsc(step.note)}" oninput="_seUpdate(${i},'note',this.value)" placeholder="" style="width:100%;"></td>
         <td style="padding:3px;white-space:nowrap;">${filterBtn}${dup}${moveUp}${moveDown}${del}</td>`;
@@ -2438,6 +2538,49 @@ function _seRenderRows() {
 
 function _seUpdate(i, field, val) {
   scenarioEditor.steps[i][field] = val;
+}
+
+// ── Scenario editor drag-and-drop row reordering ──────────────────────────────
+
+/** Module-level drag state for the scenario editor step list. */
+const _seDrag = { srcIdx: null };
+
+function _seDragStart(i, evt, trEl) {
+  _seDrag.srcIdx = i;
+  evt.dataTransfer.effectAllowed = 'move';
+  // Slight fade on the dragged row for visual feedback.
+  setTimeout(() => { trEl.style.opacity = '0.4'; }, 0);
+}
+
+function _seDragOver(i, evt) {
+  evt.preventDefault();
+  evt.dataTransfer.dropEffect = 'move';
+  // Highlight the current drop target row.
+  const tbody = document.getElementById('scenario-editor-steps-body');
+  if (!tbody) return;
+  Array.from(tbody.rows).forEach(r => r.style.outline = '');
+  if (_seDrag.srcIdx !== null && _seDrag.srcIdx !== i) {
+    evt.currentTarget.style.outline = '2px dashed var(--accent, #7c3aed)';
+  }
+}
+
+function _seDrop(i, evt) {
+  evt.preventDefault();
+  const src = _seDrag.srcIdx;
+  if (src === null || src === i) { _seDragEnd(document.getElementById('scenario-editor-steps-body')); return; }
+  _seSnapshot();
+  const [moved] = scenarioEditor.steps.splice(src, 1);
+  // Adjust target index after splicing out the source row.
+  const dest = src < i ? i - 1 : i;
+  scenarioEditor.steps.splice(dest, 0, moved);
+  _seDrag.srcIdx = null;
+  _seRenderRows();
+}
+
+function _seDragEnd(tbody) {
+  _seDrag.srcIdx = null;
+  const el = tbody || document.getElementById('scenario-editor-steps-body');
+  if (el) Array.from(el.rows).forEach(r => { r.style.opacity = ''; r.style.outline = ''; });
 }
 
 /** Returns true if a filter rule's command matches the step's command (glob or /regex/, case-insensitive). */
@@ -2619,3 +2762,774 @@ async function scenarioEditorSave() {
     btn.disabled = false;
   }
 }
+
+// ─── Auth Configuration UI ────────────────────────────────────────────────────
+
+function initializeAuth() {
+  document.getElementById('btn-save-auth')?.addEventListener('click', saveAuthConfig);
+  document.getElementById('btn-reload-auth')?.addEventListener('click', loadAuthConfig);
+}
+
+// Active sub-tab: 'config' | 'users'
+let _authActiveTab = 'config';
+
+function switchAuthTab(tab) {
+  _authActiveTab = tab;
+  document.querySelectorAll('.auth-tab-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.authTab === tab);
+  });
+  document.getElementById('auth-tab-config').style.display  = (tab === 'config') ? '' : 'none';
+  document.getElementById('auth-tab-users').style.display   = (tab === 'users')  ? '' : 'none';
+  if (tab === 'users') loadUsersAndRoles();
+}
+
+// ── Load auth config from server ──────────────────────────────────────────────
+async function loadAuthConfig() {
+  try {
+    const r = await fetch('/api/auth/config');
+    if (!r.ok) {
+      addLog('warn', 'auth', `GET /api/auth/config → ${r.status}`);
+      return;
+    }
+    const cfg = await r.json();
+
+    // Auth mode
+    const modeEl = document.getElementById('auth-mode');
+    if (modeEl) modeEl.value = cfg.mode || 'none';
+    const debugEl = document.getElementById('auth-debug-external');
+    if (debugEl) debugEl.checked = Boolean(cfg.debugExternalAuth);
+    onAuthModeChange();
+
+    // JWT
+    const jwtEnabledEl = document.getElementById('auth-jwt-enabled');
+    if (jwtEnabledEl) jwtEnabledEl.checked = cfg.jwt?.enabled !== false;
+    // Do NOT pre-fill jwt secret (server sends placeholder)
+    const jwtExpiryEl = document.getElementById('auth-jwt-expiry');
+    if (jwtExpiryEl) jwtExpiryEl.value = cfg.jwt?.expiryMinutes ?? 60;
+
+    // Password
+    const roundsEl = document.getElementById('auth-password-rounds');
+    if (roundsEl && cfg.password) roundsEl.value = cfg.password.bcryptRounds ?? 10;
+
+    // API Key
+    const apikeyUserEl = document.getElementById('auth-apikey-default-user');
+    if (apikeyUserEl && cfg.apikey) apikeyUserEl.value = cfg.apikey.defaultUser ?? '';
+
+    // Certificate
+    const caPathEl = document.getElementById('auth-cert-ca-path');
+    if (caPathEl && cfg.certificate) caPathEl.value = cfg.certificate.caPath ?? '';
+    const certRequireEl = document.getElementById('auth-cert-require');
+    if (certRequireEl && cfg.certificate) certRequireEl.checked = cfg.certificate.requireClientCert !== false;
+
+    // OAuth
+    if (cfg.oauth) {
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
+      set('auth-oauth-client-id',    cfg.oauth.clientId);
+      // clientSecret: server sends '***' sentinel; clear field so user must re-enter to change
+      document.getElementById('auth-oauth-client-secret').value = '';
+      set('auth-oauth-auth-url',     cfg.oauth.authorizationUrl);
+      set('auth-oauth-token-url',    cfg.oauth.tokenUrl);
+      set('auth-oauth-userinfo-url', cfg.oauth.userInfoUrl);
+      set('auth-oauth-scope',        cfg.oauth.scope);
+      set('auth-oauth-callback-url', cfg.oauth.callbackUrl);
+      set('auth-oauth-username-path',cfg.oauth.usernamePath);
+      set('auth-oauth-groups-path',  cfg.oauth.groupsPath);
+      const pkceEl = document.getElementById('auth-oauth-pkce');
+      if (pkceEl) pkceEl.checked = Boolean(cfg.oauth.pkce);
+    }
+
+    // SAML
+    if (cfg.saml) {
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
+      set('auth-saml-entry-point',   cfg.saml.entryPoint);
+      set('auth-saml-issuer',        cfg.saml.issuer);
+      set('auth-saml-cert',          cfg.saml.cert);
+      // privateKey: never sent back to browser
+      set('auth-saml-callback-url',  cfg.saml.callbackUrl);
+      set('auth-saml-username-path', cfg.saml.usernamePath);
+      set('auth-saml-groups-path',   cfg.saml.groupsPath);
+      const sigEl = document.getElementById('auth-saml-sig-alg');
+      if (sigEl) sigEl.value = cfg.saml.signatureAlgorithm || 'sha256';
+    }
+
+    // User store
+    const storeSourceEl = document.getElementById('auth-users-store-source');
+    if (storeSourceEl) storeSourceEl.value = cfg.users?.storeSource ?? 'json';
+    onUserStoreSourceChange();
+    const jsonPathEl = document.getElementById('auth-users-json-path');
+    if (jsonPathEl) jsonPathEl.value = cfg.users?.jsonPath ?? './config/users.json';
+    if (cfg.users?.db) {
+      const db = cfg.users.db;
+      const setDb = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined) el.value = v; };
+      setDb('auth-users-db-engine',      db.type);
+      // Support both flat (legacy) and nested auth object (canonical DbConfig shape).
+      setDb('auth-users-db-auth-method', db.authMethod ?? db.auth?.method);
+      setDb('auth-users-db-host',        db.host);
+      setDb('auth-users-db-port',        db.port);
+      setDb('auth-users-db-name',        db.database);
+      setDb('auth-users-db-user',        db.username ?? db.auth?.username);
+      // password: never pre-filled
+    }
+
+    addLog('info', 'auth', 'Auth config loaded');
+  } catch (e) {
+    addLog('error', 'auth', `Failed to load auth config: ${e.message}`);
+  }
+}
+
+// ── Save auth config to server ────────────────────────────────────────────────
+async function saveAuthConfig() {
+  try {
+    const mode = document.getElementById('auth-mode').value;
+    const cfg = {
+      mode,
+      debugExternalAuth: document.getElementById('auth-debug-external').checked,
+      jwt: {
+        enabled: document.getElementById('auth-jwt-enabled').checked,
+        expiryMinutes: parseInt(document.getElementById('auth-jwt-expiry').value) || 60,
+      },
+    };
+
+    // Include secret only if the user typed something
+    const secret = document.getElementById('auth-jwt-secret').value.trim();
+    if (secret) cfg.jwt.secret = secret;
+
+    if (mode === 'password') {
+      cfg.password = { bcryptRounds: parseInt(document.getElementById('auth-password-rounds').value) || 10 };
+    }
+    if (mode === 'apikey') {
+      const defaultUser = document.getElementById('auth-apikey-default-user').value.trim();
+      if (defaultUser) cfg.apikey = { defaultUser };
+    }
+    if (mode === 'certificate') {
+      cfg.certificate = {
+        caPath: document.getElementById('auth-cert-ca-path').value.trim(),
+        requireClientCert: document.getElementById('auth-cert-require').checked,
+      };
+    }
+    if (mode === 'oauth') {
+      const clientSecret = document.getElementById('auth-oauth-client-secret').value.trim();
+      cfg.oauth = {
+        clientId:         document.getElementById('auth-oauth-client-id').value.trim(),
+        authorizationUrl: document.getElementById('auth-oauth-auth-url').value.trim(),
+        tokenUrl:         document.getElementById('auth-oauth-token-url').value.trim(),
+        userInfoUrl:      document.getElementById('auth-oauth-userinfo-url').value.trim() || undefined,
+        scope:            document.getElementById('auth-oauth-scope').value.trim(),
+        callbackUrl:      document.getElementById('auth-oauth-callback-url').value.trim(),
+        usernamePath:     document.getElementById('auth-oauth-username-path').value.trim(),
+        groupsPath:       document.getElementById('auth-oauth-groups-path').value.trim() || undefined,
+        pkce:             document.getElementById('auth-oauth-pkce').checked,
+      };
+      if (clientSecret) cfg.oauth.clientSecret = clientSecret;
+    }
+    if (mode === 'saml') {
+      const privateKey = document.getElementById('auth-saml-private-key').value.trim();
+      cfg.saml = {
+        entryPoint:         document.getElementById('auth-saml-entry-point').value.trim(),
+        issuer:             document.getElementById('auth-saml-issuer').value.trim(),
+        cert:               document.getElementById('auth-saml-cert').value.trim(),
+        callbackUrl:        document.getElementById('auth-saml-callback-url').value.trim(),
+        usernamePath:       document.getElementById('auth-saml-username-path').value.trim(),
+        groupsPath:         document.getElementById('auth-saml-groups-path').value.trim() || undefined,
+        signatureAlgorithm: document.getElementById('auth-saml-sig-alg').value,
+      };
+      if (privateKey) cfg.saml.privateKey = privateKey;
+    }
+
+    // User store
+    const storeSource = document.getElementById('auth-users-store-source').value;
+    cfg.users = { storeSource };
+    cfg.users.jsonPath = document.getElementById('auth-users-json-path').value.trim() || './config/users.json';
+    if (storeSource === 'db') {
+      const authMethod = document.getElementById('auth-users-db-auth-method').value;
+      // Build nested auth object to match DbConfig shape (DbConfig.auth.{method,username,password}).
+      const dbAuth = { method: authMethod };
+      if (authMethod === 'constant') {
+        dbAuth.connectionString = document.getElementById('auth-users-db-connstr-val').value.trim() || undefined;
+      } else {
+        dbAuth.username = document.getElementById('auth-users-db-user').value.trim() || undefined;
+        const pw = document.getElementById('auth-users-db-password').value.trim();
+        if (pw) dbAuth.password = pw;
+      }
+      cfg.users.db = {
+        type:     document.getElementById('auth-users-db-engine').value,
+        host:     document.getElementById('auth-users-db-host').value.trim() || undefined,
+        port:     parseInt(document.getElementById('auth-users-db-port').value) || undefined,
+        database: document.getElementById('auth-users-db-name').value.trim() || undefined,
+        tls:      false,
+        table:    'aiapi_users',
+        auth:     dbAuth,
+      };
+    }
+
+    const r = await fetch('/api/auth/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cfg),
+    });
+    const result = await r.json();
+    if (result.success) {
+      addLog('info', 'auth', 'Auth config saved successfully');
+      // Clear secret field so it is not accidentally re-submitted
+      document.getElementById('auth-jwt-secret').value = '';
+    } else {
+      addLog('error', 'auth', `Failed to save auth config: ${result.error}`);
+    }
+  } catch (e) {
+    addLog('error', 'auth', `Failed to save auth config: ${e.message}`);
+  }
+}
+
+// ── Mode-conditional panel visibility ─────────────────────────────────────────
+function onAuthModeChange() {
+  const mode = document.getElementById('auth-mode')?.value || 'none';
+  const panels = {
+    password:    'auth-panel-password',
+    apikey:      'auth-panel-apikey',
+    certificate: 'auth-panel-certificate',
+    oauth:       'auth-panel-oauth',
+    saml:        'auth-panel-saml',
+  };
+  Object.entries(panels).forEach(([key, id]) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = (key === mode) ? '' : 'none';
+  });
+}
+
+function onUserStoreSourceChange() {
+  const src = document.getElementById('auth-users-store-source')?.value || 'json';
+  const jsonPanel = document.getElementById('auth-users-json-panel');
+  const dbPanel   = document.getElementById('auth-users-db-panel');
+  if (jsonPanel) jsonPanel.style.display = (src === 'json') ? '' : 'none';
+  if (dbPanel)   dbPanel.style.display   = (src === 'db')   ? '' : 'none';
+}
+
+function onDbAuthMethodChange(scope) {
+  const methodEl = document.getElementById(scope === 'users' ? 'auth-users-db-auth-method' : null);
+  if (!methodEl) return;
+  const method = methodEl.value;
+  const credsPanel = document.getElementById('auth-users-db-creds');
+  const connStrPanel = document.getElementById('auth-users-db-connstr-panel');
+  if (credsPanel)    credsPanel.style.display    = (method === 'constant') ? 'none' : '';
+  if (connStrPanel)  connStrPanel.style.display  = (method === 'constant') ? '' : 'none';
+}
+
+// ── DB Provisioner ─────────────────────────────────────────────────────────────
+async function provisionDb() {
+  const btn    = document.getElementById('btn-provision-db');
+  const result = document.getElementById('auth-db-provision-result');
+  if (btn) btn.disabled = true;
+  if (result) { result.textContent = '⏳ Provisioning…'; result.style.display = ''; }
+
+  try {
+    // Build targetDb from the runtime credentials currently filled in the form.
+    const authMethod = document.getElementById('auth-users-db-auth-method')?.value || 'password';
+    const targetDb = {
+      type:     document.getElementById('auth-users-db-engine')?.value,
+      authMethod,
+      host:     document.getElementById('auth-users-db-host')?.value.trim()   || undefined,
+      port:     parseInt(document.getElementById('auth-users-db-port')?.value) || undefined,
+      database: document.getElementById('auth-users-db-name')?.value.trim()   || undefined,
+      table:    'aiapi_settings',
+    };
+    if (authMethod === 'constant') {
+      targetDb.connectionString = document.getElementById('auth-users-db-connstr-val')?.value.trim() || undefined;
+    } else {
+      targetDb.username = document.getElementById('auth-users-db-user')?.value.trim()     || undefined;
+      const pw = document.getElementById('auth-users-db-password')?.value.trim();
+      if (pw) targetDb.password = pw;
+    }
+
+    const createDb    = document.getElementById('auth-db-provision-create')?.checked || false;
+    const seed        = document.getElementById('auth-db-provision-seed')?.checked    || false;
+    const body        = { targetDb, createDb, seed };
+
+    // Build optional adminDb from the DDL credentials sub-form (only when createDb is checked).
+    if (createDb) {
+      const adminHost = document.getElementById('auth-db-admin-host')?.value.trim();
+      const adminUser = document.getElementById('auth-db-admin-user')?.value.trim();
+      if (adminHost || adminUser) {
+        body.adminDb = {
+          type:     targetDb.type,
+          auth:     { method: 'password' },
+          host:     adminHost || targetDb.host,
+          port:     parseInt(document.getElementById('auth-db-admin-port')?.value) || targetDb.port,
+          database: document.getElementById('auth-db-admin-name')?.value.trim() || 'postgres',
+          username: adminUser || undefined,
+          password: document.getElementById('auth-db-admin-password')?.value.trim() || undefined,
+        };
+      }
+    }
+
+    const r = await fetch('/api/_internal/db/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+
+    // Render per-step result.
+    let lines = [];
+    if (Array.isArray(data.steps)) {
+      for (const step of data.steps) {
+        const icon = step.status === 'ok' ? '✅' : step.status === 'skipped' ? '⏭️' : '❌';
+        lines.push(`${icon} ${step.step}: ${step.status}${
+          step.applied?.length   ? ` (applied v${step.applied.join(',')})` :
+          step.alreadyApplied?.length ? ` (already at v${step.alreadyApplied.join(',')})` : ''
+        }${step.error ? ' — ' + step.error : ''}`);
+      }
+    }
+    if (result) {
+      result.textContent = lines.length
+        ? lines.join('\n')
+        : (data.ok ? '✅ Done (no steps reported)' : `❌ ${data.error || 'Unknown error'}`);
+    }
+    addLog(data.ok ? 'info' : 'error', 'auth', `DB provision: ${data.ok ? 'OK' : 'FAILED'}`);
+  } catch (e) {
+    if (result) result.textContent = `❌ Error: ${e.message}`;
+    addLog('error', 'auth', `DB provision error: ${e.message}`);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ── JWT secret generator ───────────────────────────────────────────────────────
+function generateJwtSecret() {
+  const arr = new Uint8Array(32);
+  crypto.getRandomValues(arr);
+  const hex = Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+  const el = document.getElementById('auth-jwt-secret');
+  if (el) { el.value = hex; el.type = 'text'; }
+}
+
+// ── Users & Roles ──────────────────────────────────────────────────────────────
+async function loadUsersAndRoles() {
+  const mode = document.getElementById('auth-mode')?.value || 'none';
+  const notice = document.getElementById('auth-mode-none-notice');
+  const panel  = document.getElementById('auth-users-roles-panel');
+  if (mode === 'none') {
+    if (notice) notice.style.display = '';
+    if (panel)  panel.style.display  = 'none';
+    return;
+  }
+  if (notice) notice.style.display = 'none';
+  if (panel)  panel.style.display  = '';
+  await Promise.all([loadUsers(), loadRoles()]);
+}
+
+async function loadUsers() {
+  const tbody = document.getElementById('auth-users-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:1rem;opacity:0.6;">Loading…</td></tr>';
+  try {
+    const r = await fetch('/api/_internal/users');
+    if (!r.ok) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:1rem;color:var(--danger);">Error ${r.status}</td></tr>`;
+      return;
+    }
+    const data = await r.json();
+    const users = data.users || [];
+    if (users.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:1rem;opacity:0.6;">No users yet. Click ➕ Add User to create one.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = users.map(u => `
+      <tr>
+        <td style="padding:5px 8px;">${escapeHtml(u.username)}</td>
+        <td style="padding:5px 8px;text-align:center;">
+          <input type="checkbox" ${u.enabled !== false ? 'checked' : ''}
+                 onchange="toggleUserEnabled('${escapeHtml(u.id)}', this.checked)"
+                 title="Toggle enabled">
+        </td>
+        <td style="padding:5px 8px;">${(u.roles || []).map(r => `<span class="role-badge">${escapeHtml(r)}</span>`).join(' ')}</td>
+        <td style="padding:5px 8px;text-align:center;">${u.apiKeyCount ?? 0}
+          <button class="btn-tool" style="padding:1px 6px;font-size:0.75rem;margin-left:4px;"
+                  onclick="generateApiKeyForUser('${escapeHtml(u.id)}')" title="Generate new API key">🗝️</button>
+        </td>
+        <td style="padding:5px 8px;text-align:center;">
+          <button class="btn-secondary" style="padding:2px 8px;font-size:0.75rem;"
+                  onclick="deleteUser('${escapeHtml(u.id)}', '${escapeHtml(u.username)}')">🗑️ Delete</button>
+        </td>
+      </tr>`).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--danger);">${e.message}</td></tr>`;
+  }
+}
+
+async function loadRoles() {
+  const tbody = document.getElementById('auth-roles-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:1rem;opacity:0.6;">Loading…</td></tr>';
+  try {
+    const r = await fetch('/api/_internal/roles');
+    if (!r.ok) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:1rem;color:var(--danger);">Error ${r.status}</td></tr>`;
+      return;
+    }
+    const data = await r.json();
+    const roles = data.roles || [];
+    if (roles.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:1rem;opacity:0.6;">No roles defined yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = roles.map(role => `
+      <tr>
+        <td style="padding:5px 8px;font-weight:600;">${escapeHtml(role.name)}</td>
+        <td style="padding:5px 8px;opacity:0.8;">${escapeHtml(role.description || '')}</td>
+        <td style="padding:5px 8px;text-align:center;">${role.memberCount ?? '—'}</td>
+        <td style="padding:5px 8px;text-align:center;">
+          <button class="btn-secondary" style="padding:2px 8px;font-size:0.75rem;"
+                  onclick="deleteRole('${escapeHtml(role.name)}')">🗑️ Delete</button>
+        </td>
+      </tr>`).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--danger);">${e.message}</td></tr>`;
+  }
+}
+
+// User CRUD
+function openAddUserModal() {
+  document.getElementById('new-user-username').value = '';
+  document.getElementById('new-user-password').value = '';
+  document.getElementById('new-user-roles').value = '';
+  document.getElementById('new-user-enabled').checked = true;
+  document.getElementById('add-user-modal').classList.add('active');
+}
+
+function closeAddUserModal() {
+  document.getElementById('add-user-modal').classList.remove('active');
+}
+
+async function saveNewUser() {
+  const username = document.getElementById('new-user-username').value.trim();
+  if (!username) { alert('Username is required'); return; }
+  const password = document.getElementById('new-user-password').value;
+  const rolesRaw = document.getElementById('new-user-roles').value.trim();
+  const roles = rolesRaw ? rolesRaw.split(',').map(r => r.trim()).filter(Boolean) : [];
+  const enabled = document.getElementById('new-user-enabled').checked;
+  try {
+    const r = await fetch('/api/_internal/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, roles, enabled }),
+    });
+    const data = await r.json();
+    if (data.success || data.user) {
+      closeAddUserModal();
+      addLog('info', 'auth', `User "${username}" created`);
+      await loadUsers();
+    } else {
+      alert(`Failed to create user: ${data.error || 'Unknown error'}`);
+    }
+  } catch (e) {
+    alert(`Error: ${e.message}`);
+  }
+}
+
+async function toggleUserEnabled(userId, enabled) {
+  try {
+    await fetch(`/api/_internal/users/${encodeURIComponent(userId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    addLog('info', 'auth', `User ${userId} ${enabled ? 'enabled' : 'disabled'}`);
+  } catch (e) {
+    addLog('error', 'auth', `Failed to toggle user: ${e.message}`);
+  }
+}
+
+async function deleteUser(userId, username) {
+  if (!confirm(`Delete user "${username}"? This cannot be undone.`)) return;
+  try {
+    const r = await fetch(`/api/_internal/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+    const data = await r.json();
+    if (data.success) {
+      addLog('info', 'auth', `User "${username}" deleted`);
+      await loadUsers();
+    } else {
+      alert(`Failed to delete user: ${data.error}`);
+    }
+  } catch (e) {
+    alert(`Error: ${e.message}`);
+  }
+}
+
+async function generateApiKeyForUser(userId) {
+  try {
+    const r = await fetch(`/api/_internal/users/${encodeURIComponent(userId)}/apikeys`, { method: 'POST' });
+    const data = await r.json();
+    if (data.apiKey || data.key) {
+      const key = data.apiKey || data.key;
+      document.getElementById('apikey-result-value').value = key;
+      document.getElementById('apikey-result-modal').classList.add('active');
+      await loadUsers();
+    } else {
+      alert(`Failed to generate key: ${data.error || 'Unknown error'}`);
+    }
+  } catch (e) {
+    alert(`Error: ${e.message}`);
+  }
+}
+
+function copyApiKey() {
+  const el = document.getElementById('apikey-result-value');
+  if (el) { el.select(); navigator.clipboard?.writeText(el.value); }
+}
+
+function closeApiKeyResultModal() {
+  document.getElementById('apikey-result-modal').classList.remove('active');
+}
+
+// Role CRUD
+function openAddRoleModal() {
+  document.getElementById('new-role-name').value = '';
+  document.getElementById('new-role-description').value = '';
+  document.getElementById('add-role-modal').classList.add('active');
+}
+
+function closeAddRoleModal() {
+  document.getElementById('add-role-modal').classList.remove('active');
+}
+
+async function saveNewRole() {
+  const name = document.getElementById('new-role-name').value.trim();
+  if (!name) { alert('Role name is required'); return; }
+  const description = document.getElementById('new-role-description').value.trim();
+  try {
+    const r = await fetch('/api/_internal/roles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description }),
+    });
+    const data = await r.json();
+    if (data.success || data.role) {
+      closeAddRoleModal();
+      addLog('info', 'auth', `Role "${name}" created`);
+      await loadRoles();
+    } else {
+      alert(`Failed to create role: ${data.error || 'Unknown error'}`);
+    }
+  } catch (e) {
+    alert(`Error: ${e.message}`);
+  }
+}
+
+async function deleteRole(roleName) {
+  if (!confirm(`Delete role "${roleName}"? Users assigned this role will lose it.`)) return;
+  try {
+    const r = await fetch(`/api/_internal/roles/${encodeURIComponent(roleName)}`, { method: 'DELETE' });
+    const data = await r.json();
+    if (data.success) {
+      addLog('info', 'auth', `Role "${roleName}" deleted`);
+      await loadRoles();
+    } else {
+      alert(`Failed to delete role: ${data.error}`);
+    }
+  } catch (e) {
+    alert(`Error: ${e.message}`);
+  }
+}
+
+// ── Scenario editor — IntelliSense autocomplete ───────────────────────────────
+
+/** Re-populate #se-cmd-list from the currently selected helper's cached schema. */
+function _seRefreshCommandList() {
+  const datalist = document.getElementById('se-cmd-list');
+  if (!datalist) return;
+  datalist.innerHTML = '';
+  const helperName = document.getElementById('se-meta-helper')?.value;
+  const schema = helperName ? cachedHelperSchemas[helperName] : null;
+  if (schema?.commands?.length) {
+    schema.commands.forEach(cmd => {
+      const raw = cmd.name.replace(/^\{|\}$/g, '');
+      const opt = document.createElement('option');
+      opt.value = `{${raw}}`;
+      opt.label = cmd.description || '';
+      datalist.appendChild(opt);
+    });
+    // If schema was not yet fetched, trigger a fetch so we can populate later
+  } else if (helperName) {
+    // Lazy-fetch schema and refresh once ready
+    fetch(`/api/getHelperSchema?name=${encodeURIComponent(helperName)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.schema?.commands?.length) {
+          cachedHelperSchemas[helperName] = data.schema;
+          _seRefreshCommandList();  // second pass now that schema is cached
+        }
+      })
+      .catch(() => {});
+    // Fallback built-ins while waiting
+    const DEFAULTS = [
+      '{SENDKEYS}', '{CLICKID}', '{CLICKNAME}', '{CLICK}', '{READ}',
+      '{QUERYTREE}', '{LISTWINDOWS}', '{SET}', '{LAUNCH}', '{KILL}',
+      '{GETPROVIDERS}', '{CDP_EVALUATE}', '{CDP_CLICK}', '{CDP_FILL}',
+    ];
+    DEFAULTS.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v;
+      datalist.appendChild(opt);
+    });
+  } else {
+    // No helper selected — show built-ins only
+    const DEFAULTS = [
+      '{SENDKEYS}', '{CLICKID}', '{CLICKNAME}', '{CLICK}', '{READ}',
+      '{QUERYTREE}', '{LISTWINDOWS}', '{SET}', '{LAUNCH}', '{KILL}',
+    ];
+    DEFAULTS.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v;
+      datalist.appendChild(opt);
+    });
+  }
+}
+
+/** Populate #se-tgt-list with static target prefixes + live window handles. */
+async function _seRefreshTargetList() {
+  const datalist = document.getElementById('se-tgt-list');
+  if (!datalist) return;
+  // Static prefixes (from CONVENTIONS.md §3)
+  const statics = [
+    { v: 'HANDLE:', l: 'Window handle (numeric or title)' },
+    { v: 'PAGE:',   l: 'Browser page URL/title' },
+    { v: 'chrome:', l: 'Chrome extension target' },
+    { v: 'SYSTEM',  l: 'System-level target' },
+  ];
+  datalist.innerHTML = statics.map(s => `<option value="${s.v}" label="${s.l}"></option>`).join('');
+  // Live window handles — best-effort, silently skip if helper not running
+  try {
+    const res = await fetch('/api/listWindows', { method: 'POST', body: '{}' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.success || !Array.isArray(data.data)) return;
+    const seen = new Set(statics.map(s => s.v));
+    data.data.forEach(win => {
+      if (!win.handle) return;
+      const v = `HANDLE:${win.handle}`;
+      if (seen.has(v)) return;
+      seen.add(v);
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.label = [win.title, win.processName].filter(Boolean).join(' — ');
+      datalist.appendChild(opt);
+    });
+  } catch { /* best-effort */ }
+}
+
+/**
+ * Called when a parameter cell receives focus. Fills #se-par-list with
+ * example parameter values extracted from the helper schema for the
+ * command in that row.
+ */
+function _seOnParamFocus(i) {
+  const datalist = document.getElementById('se-par-list');
+  if (!datalist) return;
+  datalist.innerHTML = '';
+  const step = scenarioEditor.steps[i];
+  if (!step) return;
+  const helperName = document.getElementById('se-meta-helper')?.value;
+  const schema = helperName ? cachedHelperSchemas[helperName] : null;
+  if (!schema?.commands) return;
+  const cmdName = (step.command || '').replace(/^\{|\}$/g, '').toUpperCase();
+  if (!cmdName) return;
+  const cmd = schema.commands.find(c => c.name.replace(/^\{|\}$/g, '').toUpperCase() === cmdName);
+  if (!cmd?.examples?.length) return;
+  const seen = new Set();
+  cmd.examples.forEach(ex => {
+    // Extract inline parameter: "{CLICKNAME:num5Button}" → "num5Button"
+    const match = ex.match(/\{[^:}]+:([^}]+)\}/);
+    const val = match ? match[1] : ex;
+    if (val && !seen.has(val)) {
+      seen.add(val);
+      const opt = document.createElement('option');
+      opt.value = val;
+      datalist.appendChild(opt);
+    }
+  });
+}
+
+/** Called when target input is focused — refresh live window list lazily. */
+function _seOnTargetFocus() {
+  _seRefreshTargetList();
+}
+
+// ── Setup Wizard ──────────────────────────────────────────────────────────────
+
+/** Toggle visibility of the setup wizard panel body. */
+function toggleSetupPanel() {
+  const body = document.getElementById('setup-panel-body');
+  const chevron = document.getElementById('setup-panel-chevron');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (chevron) chevron.textContent = open ? '▼' : '▲';
+  if (!open) loadSetupStatus();  // refresh on expand
+}
+
+/** Load + render setup step status from GET /api/_internal/setup/status. */
+async function loadSetupStatus() {
+  const table = document.getElementById('setup-step-table');
+  if (!table) return;
+  try {
+    const res = await fetch('/api/_internal/setup/status');
+    const data = await res.json();
+    renderSetupStepTable(data.steps || []);
+  } catch (e) {
+    table.innerHTML = `<p style="color:var(--error);font-size:0.8rem;">Error loading setup status: ${e.message}</p>`;
+  }
+}
+
+/** Render the step status table. */
+function renderSetupStepTable(steps) {
+  const table = document.getElementById('setup-step-table');
+  if (!table) return;
+  if (!steps.length) { table.innerHTML = ''; return; }
+  const allDone = steps.every(s => s.done);
+  table.innerHTML = `
+    <p style="margin:0 0 0.4rem;font-size:0.8rem;color:${allDone ? 'var(--success,#22c55e)' : 'var(--warning,#f59e0b)'};">
+      ${allDone ? '✅ All setup steps complete!' : '⚠ Some steps are incomplete.'}
+    </p>
+    <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
+      <thead><tr style="background:var(--bg-secondary);">
+        <th style="padding:3px 8px;text-align:left;">Step</th>
+        <th style="padding:3px 8px;text-align:left;">Description</th>
+        <th style="padding:3px 8px;text-align:left;">Status</th>
+        <th style="padding:3px 8px;text-align:left;">Note</th>
+      </tr></thead>
+      <tbody>
+        ${steps.map(s => `<tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:3px 8px;font-weight:600;">${escapeHtml(s.id)}</td>
+          <td style="padding:3px 8px;">${escapeHtml(s.label)}</td>
+          <td style="padding:3px 8px;">${s.done ? '✅ Done' : '⬜ Needed'}</td>
+          <td style="padding:3px 8px;color:var(--text-secondary);">${escapeHtml(s.message)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+/** Run setup via POST /api/_internal/setup and show results. */
+async function runSetup() {
+  const btn = document.getElementById('btn-run-setup');
+  const output = document.getElementById('setup-output');
+  if (btn) btn.disabled = true;
+  if (output) { output.style.display = 'block'; output.textContent = 'Running setup…\n'; }
+  try {
+    const res = await fetch('/api/_internal/setup', { method: 'POST' });
+    const data = await res.json();
+    const lines = (data.steps || []).map(s => {
+      const icon = s.status === 'done' ? '✅' : s.status === 'skip' ? '⏭' : '❌';
+      return `${icon} [${s.id}] ${s.message}`;
+    }).join('\n');
+    if (output) output.textContent = lines || (data.success ? 'Setup complete.' : 'Setup failed.');
+    addLog('info', 'setup', data.success ? 'Setup complete.' : `Setup finished with errors.`);
+    await loadSetupStatus();  // refresh table
+  } catch (e) {
+    if (output) output.textContent = `Error: ${e.message}`;
+    addLog('error', 'setup', `Setup failed: ${e.message}`);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+

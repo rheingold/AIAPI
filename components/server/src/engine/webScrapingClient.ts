@@ -69,6 +69,10 @@ export interface WebFetchOptions {
   timeout?: number;
   userAgent?: string;
   headers?: Record<string, string>;
+  /** HTTP method override (default: 'GET') */
+  method?: string;
+  /** Request body for POST/PUT/PATCH.  Serialised to JSON if object. */
+  body?: unknown;
   maxContentLength?: number;
   extractText?: boolean;
   selector?: string;
@@ -221,6 +225,11 @@ export class WebScrapingClient {
    */
   private validateRateLimit(domain: string): { valid: boolean; error?: string; waitTimeMs?: number } {
     if (!this.securityFilter.rateLimiting) {
+      return { valid: true };
+    }
+    // localhost / loopback is always allowed without rate limiting —
+    // it targets the server's own API, not an external site.
+    if (domain === 'localhost' || domain === '127.0.0.1' || domain === '::1') {
       return { valid: true };
     }
 
@@ -520,14 +529,19 @@ export class WebScrapingClient {
 
       const rejectUnauthorized = options.rejectUnauthorized ?? true;
 
+      const httpMethod = (options.method || 'GET').toUpperCase();
+      const bodyPayload: string | undefined = options.body !== undefined
+        ? (typeof options.body === 'string' ? options.body : JSON.stringify(options.body))
+        : undefined;
       const requestOptions: https.RequestOptions = {
         hostname: parsedUrl.hostname,
         port: parsedUrl.port || (isHttps ? 443 : 80),
         path: parsedUrl.pathname + parsedUrl.search,
-        method: 'GET',
+        method: httpMethod,
         headers: {
           'User-Agent': options.userAgent || this.defaultOptions.userAgent,
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept': 'application/json,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          ...(bodyPayload ? { 'Content-Type': 'application/json', 'Content-Length': String(Buffer.byteLength(bodyPayload)) } : {}),
           ...authHeader,
           ...options.headers   // explicit caller headers take final precedence
         },
@@ -763,6 +777,7 @@ export class WebScrapingClient {
         reject(new Error('Request timeout'));
       });
 
+      if (bodyPayload) { req.write(bodyPayload); }
       req.end();
     });
   }

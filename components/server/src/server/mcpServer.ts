@@ -37,6 +37,7 @@ export class MCPServer {
     pattern: string;
     description?: string;
   }> = [];
+  private sseClients = new Map<string, http.ServerResponse>();
   private disabledHelpers: string[] = [];
   private appTemplateRoots: string[];
   private readonly settingsPath = path.resolve(process.cwd(), 'config', 'dashboard-settings.json');
@@ -288,6 +289,20 @@ export class MCPServer {
       return;
     }
 
+    const url = req.url?.split('?')[0] ?? '/';
+
+    // SSE handshake — MCP HTTP+SSE transport
+    if (req.method === 'GET' && url === '/sse') {
+      this.handleSseConnect(req, res);
+      return;
+    }
+
+    // SSE message ingress — MCP HTTP+SSE transport
+    if (req.method === 'POST' && url === '/messages') {
+      await this.handleSseMessage(req, res);
+      return;
+    }
+
     // Handle GET requests for health check and documentation
     if (req.method === 'GET') {
       this.handleGetRequest(req, res);
@@ -312,51 +327,113 @@ export class MCPServer {
       }
       
       const request = JSON.parse(body);
-
-      // Log incoming request (if JSON logging enabled)
-      if (process.env.LOG_JSON !== 'false') {
-        globalLogger.info('mcp', '═══════════════════════════════════════════════════════════');
-        globalLogger.info('mcp', '← INCOMING JSON-RPC REQUEST');
-        globalLogger.info('mcp', '═══════════════════════════════════════════════════════════');
-        globalLogger.logJSON('info', 'mcp', 'Request', request);
-      }
-
-      // Validate JSON-RPC 2.0 structure
-      if (request.jsonrpc !== '2.0') {
-        res.writeHead(400);
-        res.end(JSON.stringify(this.createErrorResponse(request.id, -32600, 'Invalid Request: jsonrpc must be "2.0"')));
-        return;
-      }
-
-      if (!request.method) {
-        res.writeHead(400);
-        res.end(JSON.stringify(this.createErrorResponse(request.id, -32600, 'Invalid Request: method is required')));
-        return;
-      }
-
-      // Route to appropriate handler
-      // Propagate X-Admin-Token HTTP header into params so the security filter
-      // can perform an admin-bypass when a valid token is supplied.
-      const adminTokenHeader = req.headers['x-admin-token'];
-      if (adminTokenHeader && typeof adminTokenHeader === 'string' && request.params) {
-        request.params._adminToken = adminTokenHeader;
-      }
       const isLocal = this.isLocalRequest(req);
-      const response = await this.handleMethod(request, isLocal);
-      
-      // Log outgoing response (if JSON logging enabled)
-      if (process.env.LOG_JSON !== 'false') {
-        globalLogger.info('mcp', '→ OUTGOING JSON-RPC RESPONSE');
-        globalLogger.logJSON('info', 'mcp', 'Response', response);
-        globalLogger.info('mcp', '═══════════════════════════════════════════════════════════');
-      }
-      
-      res.writeHead(200);
+      const response = await this._dispatchRequest(request, isLocal, req);
+
+      // Return 400 for JSON-RPC validation errors (-32600) to preserve backward compat
+      const httpStatus = response?.error?.code === -32600 ? 400 : 200;
+      res.writeHead(httpStatus);
       res.end(JSON.stringify(response));
     } catch (error) {
       console.error('MCP request error:', error);
       res.writeHead(400);
       res.end(JSON.stringify(this.createErrorResponse(null, -32700, 'Parse error')));
+    }
+  }
+
+  /**
+   * Shared JSON-RPC dispatch: validates, propagates admin token, calls handleMethod.
+   * Used by both the plain-POST handler and the SSE message handler.
+   */
+  private async _dispatchRequest(
+    request: any,
+    isLocal: boolean,
+    req: http.IncomingMessage,
+  ): Promise<any> {
+    // Log incoming request (if JSON logging enabled)
+    if (process.env.LOG_JSON !== 'false') {
+      globalLogger.info('mcp', '═══════════════════════════════════════');
+      globalLogger.info('mcp', '← INCOMING JSON-RPC REQUEST');
+      globalLogger.logJSON('info', 'mcp', 'Request', request);
+    }
+
+    // Validate JSON-RPC 2.0 structure
+    if (request.jsonrpc !== '2.0') {
+      return this.createErrorResponse(request.id, -32600, 'Invalid Request: jsonrpc must be "2.0"');
+    }
+    if (!request.method) {
+      return this.createErrorResponse(request.id, -32600, 'Invalid Request: method is required');
+    }
+
+    // Propagate X-Admin-Token HTTP header into params so the security filter
+    // can perform an admin-bypass when a valid token is supplied.
+    const adminTokenHeader = req.headers['x-admin-token'];
+    if (adminTokenHeader && typeof adminTokenHeader === 'string' && request.params) {
+      request.params._adminToken = adminTokenHeader;
+    }
+
+    const response = await this.handleMethod(request, isLocal);
+
+    // Log outgoing response (if JSON logging enabled)
+    if (process.env.LOG_JSON !== 'false') {
+      globalLogger.info('mcp', '→ OUTGOING JSON-RPC RESPONSE');
+      globalLogger.logJSON('info', 'mcp', 'Response', response);
+      globalLogger.info('mcp', '═══════════════════════════════════════');
+    }
+
+    return response;
+  }
+
+  /**
+   * Handle SSE handshake — MCP HTTP+SSE transport (GET /sse).
+   * Sends the mandatory "endpoint" event with the session-specific POST URL.
+   */
+  private handleSseConnect(req: http.IncomingMessage, res: http.ServerResponse): void {
+    const sessionId = crypto.randomUUID();
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+    });
+    // MCP SSE spec: first event must be "endpoint" announcing where to POST messages
+    res.write(`event: endpoint\ndata: /messages?sessionId=${sessionId}\n\n`);
+    this.sseClients.set(sessionId, res);
+    req.on('close', () => {
+      this.sseClients.delete(sessionId);
+    });
+  }
+
+  /**
+   * Handle SSE message ingress — MCP HTTP+SSE transport (POST /messages?sessionId=...).
+   * Returns HTTP 202; actual JSON-RPC response is delivered via the SSE stream.
+   */
+  private async handleSseMessage(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    // CORS headers for preflight compatibility
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Token');
+
+    const sessionId = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.get('sessionId') ?? '';
+    const sseStream = this.sseClients.get(sessionId);
+
+    try {
+      const body = await this.readBody(req);
+      const request = JSON.parse(body);
+      const isLocal = this.isLocalRequest(req);
+      const response = await this._dispatchRequest(request, isLocal, req);
+
+      // 202 Accepted — actual response delivered via SSE stream
+      res.writeHead(202);
+      res.end();
+
+      if (sseStream && !sseStream.destroyed) {
+        sseStream.write(`event: message\ndata: ${JSON.stringify(response)}\n\n`);
+      }
+    } catch (error) {
+      console.error('SSE message error:', error);
+      res.writeHead(400);
+      res.end(JSON.stringify({ error: 'Parse error' }));
     }
   }
 

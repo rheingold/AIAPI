@@ -35,6 +35,8 @@
 | ADM | 📝 Admin / Legal                              | ⚪ backlog  | LICENSE.md — requires owner input on licence choice    |
 | NEW-2 | ✂️ Output Truncation                        | ✅ done     | `truncateResponse()` + slim `listHelpers`/`getHelperSchema` + `queryTree` budget cap |
 
+- [x] NEW-7: SSE transport — GET /sse + POST /messages added to mcpServer.ts; single _dispatchRequest() path; backward-compat POST / preserved; integration tests added *(2026-05-21)*
+- [x] NEW-5: git commit + push + local redeploy; fix update-service.ps1 build paths + -BuildTarget param *(2026-05-21)*
 - [x] NEW-4: Native built-in actions — EXEC_CMD + FS_READ + FS_WRITE + FS_LIST implemented in builtinActions.ts; wired into xmlScenarioLoader.ts + mcpServer.ts; unit tests added; CONVENTIONS.md updated *(2026-05-21)*
 - [x] NEW-2: Output truncation — `truncateResponse()` utility + slim `listHelpers`/`getHelperSchema` (compact by default, `full:true` for detail) + `queryTree` budget cap (24 000 chars) *(2026-05-21)*
 - [x] NEW-1 (safe subset): Session 0 detection in WinCommon.cs ListWindowsJson() → _sessionWarning field; tools/diag/check-session.ps1; docs/specs/SESSION0_ISOLATION.md *(2026-05-21)*

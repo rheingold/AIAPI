@@ -621,3 +621,103 @@ describe('D3 — admin token bypass of security filter', () => {
     expect(res.error.message.toLowerCase()).toContain('security filter');
   });
 });
+
+// ─── SSE transport ────────────────────────────────────────────────────────────
+
+describe('SSE transport', () => {
+  it('GET /sse returns text/event-stream content-type', (done) => {
+    const req = http.request(
+      { hostname: '127.0.0.1', port, method: 'GET', path: '/sse' },
+      (res) => {
+        expect(res.statusCode).toBe(200);
+        expect(res.headers['content-type']).toContain('text/event-stream');
+        req.destroy();
+        done();
+      },
+    );
+    req.on('error', () => { /* destroyed */ });
+    req.end();
+  });
+
+  it('GET /sse emits endpoint event containing /messages?sessionId=', (done) => {
+    const req = http.request(
+      { hostname: '127.0.0.1', port, method: 'GET', path: '/sse' },
+      (res) => {
+        let buf = '';
+        res.on('data', (chunk: Buffer) => {
+          buf += chunk.toString();
+          if (buf.includes('event: endpoint')) {
+            expect(buf).toContain('event: endpoint');
+            expect(buf).toContain('/messages?sessionId=');
+            req.destroy();
+            done();
+          }
+        });
+      },
+    );
+    req.on('error', () => { /* destroyed */ });
+    req.setTimeout(5_000, () => { req.destroy(); done(new Error('timeout waiting for endpoint event')); });
+    req.end();
+  });
+
+  it('POST /messages returns 202 and SSE stream receives event: message', (done) => {
+    // Step 1: open SSE connection, read sessionId from endpoint event
+    const sseReq = http.request(
+      { hostname: '127.0.0.1', port, method: 'GET', path: '/sse' },
+      (sseRes) => {
+        let sseBuf = '';
+        sseRes.on('data', (chunk: Buffer) => {
+          sseBuf += chunk.toString();
+
+          // Extract sessionId from "data: /messages?sessionId=<uuid>"
+          const match = sseBuf.match(/data: \/messages\?sessionId=([^\s\n]+)/);
+          if (!match) return;
+          const sessionId = match[1];
+
+          // Step 2: POST a tools/list request to /messages?sessionId=...
+          const rpcBody = JSON.stringify({ jsonrpc: '2.0', id: 10, method: 'tools/list' });
+          const postReq = http.request(
+            {
+              hostname: '127.0.0.1',
+              port,
+              method: 'POST',
+              path: `/messages?sessionId=${sessionId}`,
+              headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': String(Buffer.byteLength(rpcBody)),
+              },
+            },
+            (postRes) => {
+              // POST must return 202
+              expect(postRes.statusCode).toBe(202);
+
+              // Step 3: SSE stream must emit event: message with the JSON-RPC response
+              sseRes.on('data', (chunk2: Buffer) => {
+                sseBuf += chunk2.toString();
+                if (sseBuf.includes('event: message')) {
+                  expect(sseBuf).toContain('event: message');
+                  expect(sseBuf).toContain('"jsonrpc":"2.0"');
+                  sseReq.destroy();
+                  done();
+                }
+              });
+            },
+          );
+          postReq.on('error', () => { /* ignored after destroy */ });
+          postReq.write(rpcBody);
+          postReq.end();
+        });
+      },
+    );
+    sseReq.on('error', () => { /* destroyed */ });
+    sseReq.setTimeout(10_000, () => { sseReq.destroy(); done(new Error('SSE test timeout')); });
+    sseReq.end();
+  });
+
+  it('POST / plain JSON-RPC still works (backward compat)', async () => {
+    const res = await rpc(port, 'tools/list');
+    expect(res.error).toBeUndefined();
+    expect(Array.isArray(res.result.tools)).toBe(true);
+    expect(res.result.tools.length).toBeGreaterThanOrEqual(10);
+  });
+});

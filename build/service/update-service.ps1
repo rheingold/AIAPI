@@ -238,6 +238,23 @@ if (-not $NoRestart) {
     Write-Host "⚠ Service not restarted (use Start-Service $serviceName to start)" -ForegroundColor Yellow
 }
 
+# ── Post-deploy smoke test ────────────────────────────────────────────────
+if (-not $NoRestart) {
+    Write-Host "Running post-deploy smoke test..." -ForegroundColor Cyan
+    Start-Sleep -Seconds 3
+    $smokeScript = Join-Path $PSScriptRoot "..\..\test\smoke\service-mode.ps1"
+    if (Test-Path $smokeScript) {
+        & powershell -NonInteractive -ExecutionPolicy Bypass -File $smokeScript
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Smoke test FAILED (exit $LASTEXITCODE) — service is running but may be degraded."
+        } else {
+            Write-Host "Smoke test PASSED." -ForegroundColor Green
+        }
+    } else {
+        Write-Warning "Smoke test script not found at $smokeScript — skipping."
+    }
+}
+
 Write-Section "Update Complete"
 
 # Get git info

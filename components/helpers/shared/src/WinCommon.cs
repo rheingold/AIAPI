@@ -337,6 +337,21 @@ public static class WinUtils
     // ── Session isolation detection ───────────────────────────────────────────
 
     /// <summary>
+    /// Builds the standard _sessionWarning string for any Session-0-broken operation.
+    /// <paramref name="operation"/> is the command name (e.g. "QUERYTREE", "SENDKEYS").
+    /// </summary>
+    public static string BuildSessionWarning(string operation, uint consoleSession)
+    {
+        string sessionLabel = consoleSession == uint.MaxValue
+            ? "N/A (no user logged in)"
+            : consoleSession.ToString();
+        return "Helper is running in Windows Session 0 (service context). "
+            + operation + " cannot reach user-desktop windows in Session " + sessionLabel + ". "
+            + "Fix: configure the Windows Service to run helpers via Task Scheduler or CreateProcessAsUser in the active session. "
+            + "See docs/specs/SESSION0_ISOLATION.md for details.";
+    }
+
+    /// <summary>
     /// Returns true when this process is running in Windows Session 0
     /// (i.e. launched by a Windows Service). In Session 0, EnumWindows
     /// and SendInput do not reach the user's interactive desktop (Session 1+).
@@ -397,12 +412,7 @@ public static class WinUtils
         if (IsSession0())
         {
             uint consoleSession = GetActiveConsoleSessionId();
-            sessionWarning = "Helper is running in Windows Session 0 (service context). "
-                + "EnumWindows cannot see user-desktop windows in Session "
-                + (consoleSession == uint.MaxValue ? "N/A (no user logged in)" : consoleSession.ToString())
-                + ". "
-                + "Fix: configure the Windows Service to run helpers via Task Scheduler or CreateProcessAsUser in the active session. "
-                + "See docs/specs/SESSION0_ISOLATION.md for details.";
+            sessionWarning = BuildSessionWarning("LISTWINDOWS", consoleSession);
             Console.Error.WriteLine("AIAPI SESSION0 WARNING: " + sessionWarning);
         }
         string json = "{\"success\":true,\"windows\":["
@@ -466,6 +476,16 @@ public static class WinUtils
     {
         try
         {
+            // Session 0 warning: QUERYTREE cross-session fails silently or returns empty
+            if (IsSession0())
+            {
+                uint consoleSession = GetActiveConsoleSessionId();
+                string sw = BuildSessionWarning("QUERYTREE", consoleSession);
+                Console.Error.WriteLine("AIAPI SESSION0 WARNING: " + sw);
+                return "{\"success\":true,\"command\":\"QUERYTREE\",\"mode\":\"uia\","
+                    + "\"depth\":" + maxDepth + ",\"tree\":null"
+                    + ",\"_sessionWarning\":\"" + EscapeJson(sw) + "\"}";
+            }
             var root = AutomationElement.FromHandle(hwnd);
             var tree = BuildTreeJson(root, 0, maxDepth);
             // Wrap in QUERYTREE envelope
@@ -573,6 +593,12 @@ public static class WinUtils
     /// </summary>
     public static string ReadDisplayText(IntPtr hwnd)
     {
+        if (IsSession0())
+        {
+            uint cs = GetActiveConsoleSessionId();
+            string sw = BuildSessionWarning("READ/SCREENSHOT", cs);
+            Console.Error.WriteLine("AIAPI SESSION0 WARNING: " + sw);
+        }
         try
         {
             var root = AutomationElement.FromHandle(hwnd);
@@ -762,6 +788,12 @@ public static class WinUtils
     /// </summary>
     public static bool FillElement(AutomationElement root, string selector, string value, bool scroll = false)
     {
+        if (IsSession0())
+        {
+            uint cs = GetActiveConsoleSessionId();
+            string sw = BuildSessionWarning("SETPROPERTY/FILL", cs);
+            Console.Error.WriteLine("AIAPI SESSION0 WARNING: " + sw);
+        }
         if (root == null || string.IsNullOrEmpty(selector)) return false;
         AutomationElement elem = null;
 
@@ -961,6 +993,12 @@ public static class WinUtils
 
     public static bool FocusOrClickElement(AutomationElement root, string selector, bool scroll = false)
     {
+        if (IsSession0())
+        {
+            uint cs = GetActiveConsoleSessionId();
+            string sw = BuildSessionWarning("CLICKID/FOCUSORELEMENT", cs);
+            Console.Error.WriteLine("AIAPI SESSION0 WARNING: " + sw);
+        }
         if (root == null || string.IsNullOrEmpty(selector)) return false;
         AutomationElement elem = null;
         try
@@ -1318,6 +1356,12 @@ public static class WinUtils
     /// </summary>
     public static void DirectSendKeys(IntPtr hwnd, string keys)
     {
+        if (IsSession0())
+        {
+            uint cs = GetActiveConsoleSessionId();
+            string sw = BuildSessionWarning("SENDKEYS", cs);
+            Console.Error.WriteLine("AIAPI SESSION0 WARNING: " + sw);
+        }
         Console.Error.WriteLine("DEBUG[WinUtils]: DirectSendKeys hwnd=" + hwnd + " keys='" + keys + "'");
         bool hasSpecialTokens = keys.Contains("{") && keys.Contains("}");
 

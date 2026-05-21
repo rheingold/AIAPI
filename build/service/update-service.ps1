@@ -1,4 +1,4 @@
-# ═══════════════════════════════════════════════════════════════════════════════
+﻿# ═══════════════════════════════════════════════════════════════════════════════
 # AIAPI Service Update Script (WinSW-based)
 # ═══════════════════════════════════════════════════════════════════════════════
 #
@@ -83,7 +83,7 @@ if ($NoBuild -or $BuildTarget -eq 'None') {
     Write-Section "Building Project"
     Push-Location $projectRoot
     try {
-        # TypeScript compile (tsc only — produces dist/*.js)
+        # TypeScript compile (tsc only - produces dist/*.js)
         if ($BuildTarget -eq 'All' -or $BuildTarget -eq 'TS') {
             Write-Host "Compiling TypeScript..." -ForegroundColor Cyan
             & npm run compile
@@ -105,7 +105,7 @@ if ($NoBuild -or $BuildTarget -eq 'None') {
             Write-Host "✓ C# helpers built" -ForegroundColor Green
         }
 
-        # pkg standalone exe — MUST run after TS compile because the service runs
+        # pkg standalone exe - MUST run after TS compile because the service runs
         # aiapi-server.exe (a pkg bundle of dist/). 'TS' includes this step so that
         # TypeScript changes actually reach the deployed exe. 'Exe' alone re-packages
         # whatever is currently in dist/ without recompiling.

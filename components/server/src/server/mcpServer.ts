@@ -551,7 +551,7 @@ export class MCPServer {
         tools: [
           {
             name: 'queryTree',
-            description: 'Query UI element tree from a provider',
+            description: '[DEPRECATED - use KeyWin helper via AutomateUI instead] Query UI element tree from a provider',
             inputSchema: {
               type: 'object',
               properties: {
@@ -577,7 +577,7 @@ export class MCPServer {
           },
           {
             name: 'clickElement',
-            description: 'Click a UI element',
+            description: '[DEPRECATED - use KeyWin helper via AutomateUI instead] Click a UI element',
             inputSchema: {
               type: 'object',
               properties: {
@@ -595,7 +595,7 @@ export class MCPServer {
           },
           {
             name: 'setProperty',
-            description: 'Set a property on a UI element',
+            description: '[DEPRECATED - use KeyWin helper via AutomateUI instead] Set a property on a UI element',
             inputSchema: {
               type: 'object',
               properties: {
@@ -609,7 +609,7 @@ export class MCPServer {
           },
           {
             name: 'readProperty',
-            description: 'Read a property from a UI element',
+            description: '[DEPRECATED - use KeyWin helper via AutomateUI instead] Read a property from a UI element',
             inputSchema: {
               type: 'object',
               properties: {
@@ -622,7 +622,7 @@ export class MCPServer {
           },
           {
             name: 'getProviders',
-            description: 'Get list of available automation providers',
+            description: '[DEPRECATED - use KeyWin helper via AutomateUI instead] Get list of available automation providers',
             inputSchema: {
               type: 'object',
               properties: {},
@@ -630,7 +630,7 @@ export class MCPServer {
           },
           {
             name: 'listWindows',
-            description: 'List all visible windows with titles and process information',
+            description: '[DEPRECATED - use KeyWin helper via AutomateUI instead] List all visible windows with titles and process information',
             inputSchema: {
               type: 'object',
               properties: {},
@@ -638,7 +638,7 @@ export class MCPServer {
           },
           {
             name: 'launchProcess',
-            description: 'Launch an application process',
+            description: '[DEPRECATED - use KeyWin helper via AutomateUI instead] Launch an application process',
             inputSchema: {
               type: 'object',
               properties: {
@@ -662,7 +662,7 @@ export class MCPServer {
           },
           {
             name: 'terminateProcess',
-            description: 'Terminate a running process by name or PID',
+            description: '[DEPRECATED - use KeyWin helper via AutomateUI instead] Terminate a running process by name or PID',
             inputSchema: {
               type: 'object',
               properties: {

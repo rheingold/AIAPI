@@ -83,7 +83,7 @@ if ($NoBuild -or $BuildTarget -eq 'None') {
     Write-Section "Building Project"
     Push-Location $projectRoot
     try {
-        # TypeScript
+        # TypeScript compile (tsc only — produces dist/*.js)
         if ($BuildTarget -eq 'All' -or $BuildTarget -eq 'TS') {
             Write-Host "Compiling TypeScript..." -ForegroundColor Cyan
             & npm run compile
@@ -105,9 +105,12 @@ if ($NoBuild -or $BuildTarget -eq 'None') {
             Write-Host "✓ C# helpers built" -ForegroundColor Green
         }
 
-        # pkg standalone exe
-        if ($BuildTarget -eq 'All' -or $BuildTarget -eq 'Exe') {
-            Write-Host "Building standalone executable..." -ForegroundColor Cyan
+        # pkg standalone exe — MUST run after TS compile because the service runs
+        # aiapi-server.exe (a pkg bundle of dist/). 'TS' includes this step so that
+        # TypeScript changes actually reach the deployed exe. 'Exe' alone re-packages
+        # whatever is currently in dist/ without recompiling.
+        if ($BuildTarget -eq 'All' -or $BuildTarget -eq 'TS' -or $BuildTarget -eq 'Exe') {
+            Write-Host "Building standalone executable (pkg)..." -ForegroundColor Cyan
             & npm run package:exe
             if ($LASTEXITCODE -ne 0) {
                 Write-Host "✗ pkg build failed" -ForegroundColor Red

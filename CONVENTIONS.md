@@ -35,10 +35,12 @@ They are technology-level primitives, not application scenarios.
 | `SCREENSHOT` | BrowserWin, KeyWin | Capture the current page / window as a base64 PNG. Returns `{"success":true,"command":"SCREENSHOT","data":"<base64>"}`. KeyWin uses `PrintWindow` + GDI+; BrowserWin uses CDP `Page.captureScreenshot`. |
 | `COOKIES`    | BrowserWin | Return the cookie jar for the current page as a JSON array. No arguments needed. |
 | `DIALOG`     | BrowserWin | Detect or inject a browser dialog. `path="inject:JS:timeoutMs"` to trigger an alert; bare `path="accept"` / `path="dismiss"` to interact with a pending dialog. |
-| `EXEC_CMD`   | *(built-in)*       | Run a shell command on the server. **`proc=`** executable name/path; **`value=`** arguments string. `bind=` captures stdout. High-risk. |
-| `FS_READ`    | *(built-in)*       | Read a file's text content. **`path=`** file path (absolute or relative). `bind=` captures text. Max 1 MB by default. |
-| `FS_WRITE`   | *(built-in)*       | Write text to a file. **`path=`** file path; **`value=`** text content. Creates parent directories. High-risk. |
-| `FS_LIST`    | *(built-in)*       | List directory entries. **`path=`** directory path. `bind=` captures JSON array of `{name, type, size, modified}`. |
+| `EXEC_CMD`   | NativeWin          | Run a shell command on the server. **`proc=`** executable name/path; **`value=`** arguments string. `bind=` captures stdout. High-risk. |
+| `FS_READ`    | NativeWin          | Read a file's text content. **`path=`** file path (absolute or relative). `bind=` captures text. Max 1 MB by default. |
+| `FS_WRITE`   | NativeWin          | Write text to a file. **`path=`** file path; **`value=`** text content. Creates parent directories. High-risk. |
+| `FS_LIST`    | NativeWin          | List directory entries. **`path=`** directory path. `bind=` captures JSON array of `{name, type, size, modified}`. |
+
+> **NativeWin** is a virtual helper — no executable, implemented natively in the server TypeScript/Node.js runtime. It groups `exec_cmd`, `fs_read`, `fs_write`, `fs_list`, and `fetch_webpage`. It appears in `listHelpers` (with `virtual: true`) and `getHelperSchema` but has no subprocess. Tool IDs remain unchanged.
 
 ### 1.1b QUERYTREE path syntax — cross-stack root addressing
 

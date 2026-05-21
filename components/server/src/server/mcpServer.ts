@@ -730,8 +730,8 @@ export class MCPServer {
               properties: {
                 helper: {
                   type: 'string',
-                  enum: ['BrowserWin', 'KeyWin', 'LibreOfficeWin', 'MSOfficeWin'],
-                  description: 'Which helper to route to. Matches tool name (without .exe).',
+                  enum: ['BrowserWin', 'KeyWin', 'LibreOfficeWin', 'MSOfficeWin', 'NativeWin'],
+                  description: 'Which helper to route to. Matches tool name (without .exe). NativeWin routes to the built-in dispatch path (no subprocess).',
                 },
                 action: {
                   type: 'string',
@@ -1010,14 +1010,32 @@ export class MCPServer {
         case 'listHelpers': {
           const full = args.full === true || args.full === 'true' || args.full === 1;
           const allHelpers = this.helperRegistry.getAll();
+          const nativeWinEntry = {
+            name: 'NativeWin',
+            virtual: true,
+            description: 'Server-side built-in actions (no helper .exe required): exec_cmd, fs_read, fs_write, fs_list, fetch_webpage',
+            ...(full ? {
+              commandCount: 5,
+              commands: [
+                { name: 'exec_cmd',      description: 'Run a shell command on the server and capture stdout/stderr. High-risk: subject to security policy.' },
+                { name: 'fs_read',       description: "Read a file's text content from the server filesystem. Returns up to 1 MB." },
+                { name: 'fs_write',      description: 'Write text to a file on the server filesystem. Creates parent directories as needed. High-risk.' },
+                { name: 'fs_list',       description: 'List entries in a directory on the server filesystem.' },
+                { name: 'fetch_webpage', description: 'Fetch content from a webpage with security filtering.' },
+              ],
+            } : {
+              commandCount: 5,
+              commands: ['exec_cmd', 'fs_read', 'fs_write', 'fs_list', 'fetch_webpage'],
+            }),
+          };
           const helpers = full
-            ? allHelpers.map(s => ({
+            ? [nativeWinEntry, ...allHelpers.map(s => ({
                 name: s.helper, version: s.version, description: s.description,
                 toolName: s.toolName, filePath: s.filePath,
                 commandCount: s.commands.length,
                 commands: s.commands.map(c => ({ name: c.name, description: c.description })),
-              }))
-            : allHelpers.map(s => slimHelperSummary(s));
+              }))]
+            : [nativeWinEntry, ...allHelpers.map(s => slimHelperSummary(s))];
           const raw = { success: true, helpers,
             _note: full ? undefined : 'Compact view. Pass full:true for complete command schemas.' };
           const { data } = truncateResponse(raw, {
@@ -1045,11 +1063,113 @@ export class MCPServer {
           break;
 
         case 'getHelperSchema': {
+          const full = args.full === true || args.full === 'true' || args.full === 1;
+          // NativeWin is a virtual helper — no exe, implemented natively in the server
+          if ((args.helperName || '').toLowerCase() === 'nativewin') {
+            const nativeWinSchema = {
+              name: 'NativeWin',
+              virtual: true,
+              description: 'Server-side built-in actions (no helper .exe required): exec_cmd, fs_read, fs_write, fs_list, fetch_webpage',
+              commandCount: 5,
+              commands: [
+                {
+                  name: 'exec_cmd',
+                  description: 'Run a shell command on the server and capture stdout/stderr. High-risk: subject to security policy.',
+                  inputSchema: {
+                    type: 'object',
+                    properties: {
+                      executable: { type: 'string', description: 'Executable path or name (e.g. "cmd.exe", "node", "powershell")' },
+                      args:       { type: 'string', description: 'Arguments as a single string (space-separated; double-quote tokens with spaces)', default: '' },
+                      cwd:        { type: 'string', description: 'Working directory. Default: server cwd.' },
+                      timeoutMs:  { type: 'number', description: 'Max execution time ms. Default: 30000.' },
+                    },
+                    required: ['executable'],
+                  },
+                },
+                {
+                  name: 'fs_read',
+                  description: "Read a file's text content from the server filesystem. Returns up to 1 MB.",
+                  inputSchema: {
+                    type: 'object',
+                    properties: {
+                      path:     { type: 'string', description: 'Absolute or relative path to the file.' },
+                      maxBytes: { type: 'number', description: 'Max bytes to read. Default: 1048576 (1 MB).' },
+                    },
+                    required: ['path'],
+                  },
+                },
+                {
+                  name: 'fs_write',
+                  description: 'Write text to a file on the server filesystem. Creates parent directories as needed. High-risk.',
+                  inputSchema: {
+                    type: 'object',
+                    properties: {
+                      path:    { type: 'string', description: 'Absolute or relative path to the file.' },
+                      content: { type: 'string', description: 'Text content to write.' },
+                      append:  { type: 'boolean', description: 'Append instead of overwrite. Default: false.' },
+                    },
+                    required: ['path', 'content'],
+                  },
+                },
+                {
+                  name: 'fs_list',
+                  description: 'List entries in a directory on the server filesystem.',
+                  inputSchema: {
+                    type: 'object',
+                    properties: {
+                      path:       { type: 'string', description: 'Absolute or relative path to the directory.' },
+                      filter:     { type: 'string', enum: ['all', 'files', 'directories'], description: 'Filter entry type. Default: "all".' },
+                      maxEntries: { type: 'number', description: 'Max entries to return. Default: 500.' },
+                    },
+                    required: ['path'],
+                  },
+                },
+                {
+                  name: 'fetch_webpage',
+                  description: 'Fetch content from a webpage with security filtering.',
+                  inputSchema: {
+                    type: 'object',
+                    properties: {
+                      url: { type: 'string', description: 'URL to fetch (HTTP/HTTPS)' },
+                      options: {
+                        type: 'object',
+                        description: 'Fetch options',
+                        properties: {
+                          method:          { type: 'string', default: 'GET' },
+                          headers:         { type: 'object' },
+                          timeout:         { type: 'number', default: 30000 },
+                          extractText:     { type: 'boolean', default: true },
+                          extractElements: { type: 'string', description: 'CSS selector to extract specific elements' },
+                          maxResponseSize: { type: 'number', default: 10485760 },
+                          allowRedirects:  { type: 'boolean', default: true },
+                          userAgent:       { type: 'string' },
+                        },
+                      },
+                    },
+                    required: ['url'],
+                  },
+                },
+              ],
+            };
+            const schemaOut = full ? nativeWinSchema : {
+              name: nativeWinSchema.name,
+              virtual: nativeWinSchema.virtual,
+              description: nativeWinSchema.description,
+              commandCount: nativeWinSchema.commandCount,
+              commands: nativeWinSchema.commands.map(c => c.name),
+            };
+            const raw = { success: true, schema: schemaOut,
+              _note: full ? undefined : 'Compact view. Pass full:true for complete inputSchema detail.' };
+            const { data } = truncateResponse(raw, {
+              hint: 'Pass full:true to getHelperSchema for complete inputSchema detail.',
+            });
+            result = data;
+            break;
+          }
           const schema = this.helperRegistry.get(args.helperName);
           if (!schema) {
             return this.createErrorResponse(id, -32602, `Helper not found: ${args.helperName}`);
           }
-          const full = args.full === true || args.full === 'true' || args.full === 1;
           const schemaOut = full ? schema : slimHelperSummary(schema);
           const raw = { success: true, schema: schemaOut,
             _note: full ? undefined : 'Compact view. Pass full:true for complete inputSchema detail.' };

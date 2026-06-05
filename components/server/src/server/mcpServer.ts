@@ -1231,10 +1231,18 @@ export class MCPServer {
         }
       }
 
+      // MCP protocol requires tools/call responses to wrap result in content array
       return {
         jsonrpc: '2.0',
         id,
-        result,
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        },
       };
     } catch (error) {
       const { message, corrId } = this.sanitiseInternalError(error, 'Tool execution error');

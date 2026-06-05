@@ -33,7 +33,8 @@ const path  = require('path');
 const { DASH_PORT, TEST_TAG, runSuite, skip } = require('./_shared');
 const { ScenarioRunner }                       = require('./_scenario-runner');
 
-const DASH_URL = `http://localhost:${DASH_PORT}`;
+// Use 127.0.0.1 — Node 18+ resolves 'localhost' to ::1 but server binds 127.0.0.1 only.
+const DASH_URL = `http://127.0.0.1:${DASH_PORT}`;
 const BROWSER  = process.env.BROWSER || 'chrome';
 
 /**

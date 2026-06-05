@@ -12,7 +12,8 @@ const http = require('http');
 // ── Ports (env-overridable) ──────────────────────────────────────────────────
 const MCP_PORT      = parseInt(process.env.MCP_PORT  || '3457', 10);
 const DASH_PORT     = parseInt(process.env.DASH_PORT || '3458', 10);
-const DASHBOARD_URL = `http://localhost:${DASH_PORT}`;
+// Use 127.0.0.1 — Node 18+ resolves 'localhost' to ::1 but server binds 127.0.0.1 only.
+const DASHBOARD_URL = `http://127.0.0.1:${DASH_PORT}`;
 
 // ── Unique tag per run — injected into test data for deterministic cleanup ───
 const TEST_TAG = `dogfood_${Date.now()}`;
@@ -71,7 +72,16 @@ function mcpCall(toolName, args, timeoutMs = 15000) {
           const rpc = JSON.parse(data);
           if (rpc.error) return reject(new Error(`RPC error: ${JSON.stringify(rpc.error)}`));
           if (rpc.result === undefined || rpc.result === null) return reject(new Error('Null result'));
-          resolve(rpc.result);
+          // MCP spec wraps tool results in result.content[{type:'text',text:'...'}].
+          // Unwrap to keep e2e tests working with plain result objects.
+          let result = rpc.result;
+          if (result && Array.isArray(result.content)) {
+            const textBlock = result.content.find(b => b.type === 'text');
+            if (textBlock && typeof textBlock.text === 'string') {
+              try { result = JSON.parse(textBlock.text); } catch { /* non-JSON text — leave as-is */ }
+            }
+          }
+          resolve(result);
         } catch (e) { reject(e); }
       });
     });

@@ -1871,3 +1871,13 @@ nav {
   border-radius: 4px;
   font-size: 0.875rem;
 }
+  
+.role-badge {  
+  display: inline-block;  
+  background: var(--accent-soft, #2a3a5a);  
+  color: var(--accent, #88aaff);  
+  padding: 1px 8px;  
+  border-radius: 10px;  
+  font-size: 0.72rem;  
+  margin: 1px 2px;  
+} 

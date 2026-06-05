@@ -613,11 +613,12 @@ function initializeSettings() {
   // Browse buttons — use native Windows file/folder dialog via server endpoint
   document.querySelectorAll('.btn-browse').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const targetId  = btn.dataset.target;
-      const isFolder  = btn.dataset.folder === 'true';
-      const filter    = btn.dataset.filter  || 'All files (*.*)|*.*';
-      const input     = document.getElementById(targetId);
-      const current   = input?.value || getLastBrowsed(targetId) || 'C:\\';
+      const targetId      = btn.dataset.target;
+      const textareaTarget = btn.dataset.targetTextarea;
+      const isFolder      = btn.dataset.folder === 'true';
+      const filter        = btn.dataset.filter  || 'All files (*.*)|*.*';
+      const input         = targetId ? document.getElementById(targetId) : null;
+      const current       = input?.value || getLastBrowsed(targetId || textareaTarget || '') || 'C:\\';
       try {
         const res = await fetch('/api/shell/openFileDialog', {
           method: 'POST',
@@ -625,15 +626,34 @@ function initializeSettings() {
           body: JSON.stringify({ folder: isFolder, filter, initialDir: current }),
         });
         const data = await res.json();
-        if (data.success && data.path) {
-          if (input) input.value = data.path;
-          saveLastBrowsed(targetId, data.path);
+        const selectedPath = (data.success && data.path) ? data.path : null;
+        if (selectedPath) {
+          if (input) { input.value = selectedPath; saveLastBrowsed(targetId, selectedPath); }
+          // If browse target is a <textarea> (data-target-textarea), read file content
+          if (textareaTarget) {
+            fetch(`/api/_internal/read-file?path=${encodeURIComponent(selectedPath)}`)
+              .then(r => r.json())
+              .then(d => {
+                const ta = document.getElementById(textareaTarget);
+                if (ta && (d.content || d.text)) ta.value = d.content || d.text;
+                else if (ta) ta.value = selectedPath;
+              })
+              .catch(() => {
+                const ta = document.getElementById(textareaTarget);
+                if (ta) ta.value = selectedPath;
+              });
+            return;
+          }
         } else if (!data.success) {
           // Fallback to prompt when native dialog unavailable (non-Windows / permission issue)
           const path = prompt('Enter path:', current);
           if (path !== null && path !== undefined) {
-            if (input) input.value = path;
-            saveLastBrowsed(targetId, path);
+            if (input) { input.value = path; saveLastBrowsed(targetId, path); }
+            if (textareaTarget) {
+              const ta = document.getElementById(textareaTarget);
+              if (ta) ta.value = path;
+              return;
+            }
           }
         }
         // data.path === null means user cancelled the dialog — do nothing
@@ -641,8 +661,12 @@ function initializeSettings() {
         // Network error or server not running — fall back to prompt
         const path = prompt('Enter path:', current);
         if (path !== null && path !== undefined) {
-          if (input) input.value = path;
-          saveLastBrowsed(targetId, path);
+          if (input) { input.value = path; saveLastBrowsed(targetId, path); }
+          if (textareaTarget) {
+            const ta = document.getElementById(textareaTarget);
+            if (ta) ta.value = path;
+            return;
+          }
         }
       }
     });
@@ -2806,6 +2830,8 @@ async function loadAuthConfig() {
     // Do NOT pre-fill jwt secret (server sends placeholder)
     const jwtExpiryEl = document.getElementById('auth-jwt-expiry');
     if (jwtExpiryEl) jwtExpiryEl.value = cfg.jwt?.expiryMinutes ?? 60;
+    const jwtIssuerEl = document.getElementById('auth-jwt-issuer');
+    if (jwtIssuerEl) jwtIssuerEl.value = cfg.jwt?.issuer ?? 'aiapi';
 
     // Password
     const roundsEl = document.getElementById('auth-password-rounds');
@@ -2885,8 +2911,9 @@ async function saveAuthConfig() {
       mode,
       debugExternalAuth: document.getElementById('auth-debug-external').checked,
       jwt: {
-        enabled: document.getElementById('auth-jwt-enabled').checked,
+        enabled:       document.getElementById('auth-jwt-enabled').checked,
         expiryMinutes: parseInt(document.getElementById('auth-jwt-expiry').value) || 60,
+        issuer:        (document.getElementById('auth-jwt-issuer')?.value.trim()) || 'aiapi',
       },
     };
 
@@ -3141,14 +3168,29 @@ async function loadUsers() {
                  onchange="toggleUserEnabled('${escapeHtml(u.id)}', this.checked)"
                  title="Toggle enabled">
         </td>
-        <td style="padding:5px 8px;">${(u.roles || []).map(r => `<span class="role-badge">${escapeHtml(r)}</span>`).join(' ')}</td>
-        <td style="padding:5px 8px;text-align:center;">${u.apiKeyCount ?? 0}
-          <button class="btn-tool" style="padding:1px 6px;font-size:0.75rem;margin-left:4px;"
-                  onclick="generateApiKeyForUser('${escapeHtml(u.id)}')" title="Generate new API key">🗝️</button>
+        <td style="padding:5px 8px;cursor:pointer;"
+            onclick="editUserRoles('${escapeHtml(u.id)}', this)"
+            title="Click to edit roles">
+          ${(u.roles || []).map(r => `<span class="role-badge">${escapeHtml(r)}</span>`).join(' ')
+            || '<em style="opacity:0.5;">click to assign</em>'}
+        </td>
+        <td style="padding:5px 8px;text-align:center;">
+          <button class="btn-tool" style="padding:1px 6px;font-size:0.75rem;"
+                  onclick="toggleUserApiKeys('${escapeHtml(u.id)}')">
+            ${u.apiKeyCount ?? 0} 🔽
+          </button>
+          <button class="btn-tool" style="padding:1px 6px;font-size:0.75rem;"
+                  onclick="generateApiKeyForUser('${escapeHtml(u.id)}')"
+                  title="Generate new API key">🗝️＋</button>
         </td>
         <td style="padding:5px 8px;text-align:center;">
           <button class="btn-secondary" style="padding:2px 8px;font-size:0.75rem;"
                   onclick="deleteUser('${escapeHtml(u.id)}', '${escapeHtml(u.username)}')">🗑️ Delete</button>
+        </td>
+      </tr>
+      <tr id="apikeys-row-${escapeHtml(u.id)}" style="display:none;">
+        <td colspan="5" style="background:var(--bg-secondary);padding:0.5rem 1rem;">
+          <div id="apikeys-list-${escapeHtml(u.id)}"><em>Loading…</em></div>
         </td>
       </tr>`).join('');
   } catch (e) {
@@ -3176,10 +3218,17 @@ async function loadRoles() {
       <tr>
         <td style="padding:5px 8px;font-weight:600;">${escapeHtml(role.name)}</td>
         <td style="padding:5px 8px;opacity:0.8;">${escapeHtml(role.description || '')}</td>
+        <td style="padding:5px 8px;font-size:0.75rem;">
+          ${(role.permissions || []).map(p =>
+            `<span class="role-badge">${escapeHtml(p)}</span>`).join(' ')
+            || '<em style="opacity:0.5;">none</em>'}
+        </td>
         <td style="padding:5px 8px;text-align:center;">${role.memberCount ?? '—'}</td>
         <td style="padding:5px 8px;text-align:center;">
           <button class="btn-secondary" style="padding:2px 8px;font-size:0.75rem;"
-                  onclick="deleteRole('${escapeHtml(role.name)}')">🗑️ Delete</button>
+                  onclick='openEditRoleModal(${JSON.stringify(role).replace(/'/g,"&#39;")})'>✏️ Edit</button>
+          <button class="btn-secondary" style="padding:2px 8px;font-size:0.75rem;"
+                  onclick="deleteRole('${escapeHtml(role.name)}')">🗑️</button>
         </td>
       </tr>`).join('');
   } catch (e) {
@@ -3285,6 +3334,7 @@ function closeApiKeyResultModal() {
 function openAddRoleModal() {
   document.getElementById('new-role-name').value = '';
   document.getElementById('new-role-description').value = '';
+  _renderPermMatrix('new-role-permissions', []);
   document.getElementById('add-role-modal').classList.add('active');
 }
 
@@ -3300,7 +3350,7 @@ async function saveNewRole() {
     const r = await fetch('/api/_internal/roles', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description }),
+      body: JSON.stringify({ name, description, permissions: _collectPermMatrix('new-role-permissions') }),
     });
     const data = await r.json();
     if (data.success || data.role) {
@@ -3313,6 +3363,149 @@ async function saveNewRole() {
   } catch (e) {
     alert(`Error: ${e.message}`);
   }
+}
+
+// ── Permissions matrix helpers ────────────────────────────────────────────────
+// Canonical permission list (must stay in sync with server AuthService permission keys).
+const AUTH_PERMISSIONS = [
+  'admin',
+  'users.read',   'users.write',
+  'roles.read',   'roles.write',
+  'config.read',  'config.write',
+  'scenarios.read','scenarios.write','scenarios.execute',
+  'helpers.execute',
+  'logs.read',
+];
+
+function _renderPermMatrix(containerId, selected) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = AUTH_PERMISSIONS.map(p =>
+    `<label style="font-size:0.85rem;display:flex;align-items:center;gap:4px;cursor:pointer;">
+       <input type="checkbox" data-perm="${p}" ${selected.includes(p) ? 'checked' : ''}>
+       ${p}
+     </label>`
+  ).join('');
+}
+
+function _collectPermMatrix(containerId) {
+  return Array.from(
+    document.querySelectorAll(`#${containerId} input[data-perm]`)
+  ).filter(el => el.checked).map(el => el.dataset.perm);
+}
+
+// ── Role-edit modal handlers ──────────────────────────────────────────────────
+function openEditRoleModal(role) {
+  document.getElementById('edit-role-name').textContent = role.name;
+  document.getElementById('edit-role-description').value = role.description || '';
+  _renderPermMatrix('edit-role-permissions', role.permissions || []);
+  const modal = document.getElementById('edit-role-modal');
+  modal.classList.add('active');
+  modal.dataset.roleName = role.name;
+}
+
+function closeEditRoleModal() {
+  document.getElementById('edit-role-modal').classList.remove('active');
+}
+
+async function saveEditedRole() {
+  const name = document.getElementById('edit-role-modal').dataset.roleName;
+  const body = {
+    description: document.getElementById('edit-role-description').value.trim(),
+    permissions: _collectPermMatrix('edit-role-permissions'),
+  };
+  try {
+    const r = await fetch(`/api/_internal/roles/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    if (data.success || data.role) {
+      closeEditRoleModal();
+      addLog('info', 'auth', `Role "${name}" updated`);
+      await loadRoles();
+    } else {
+      alert(`Failed to update role: ${data.error || 'Unknown error'}`);
+    }
+  } catch (e) { alert(`Error: ${e.message}`); }
+}
+
+// ── User role editing & API-key management ────────────────────────────────────
+function editUserRoles(userId, td) {
+  const current = Array.from(td.querySelectorAll('.role-badge'))
+    .map(s => s.textContent.trim()).join(', ');
+  const input = prompt('Roles (comma-separated):', current);
+  if (input === null) return;
+  const roles = input.split(',').map(s => s.trim()).filter(Boolean);
+  fetch(`/api/_internal/users/${encodeURIComponent(userId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ roles }),
+  }).then(r => r.json()).then(d => {
+    if (d.success || d.user) {
+      addLog('info', 'auth', `Roles updated for user ${userId}`);
+      loadUsers();
+    } else {
+      alert(`Failed: ${d.error || 'unknown'}`);
+    }
+  }).catch(e => alert(`Error: ${e.message}`));
+}
+
+async function toggleUserApiKeys(userId) {
+  const row = document.getElementById(`apikeys-row-${userId}`);
+  if (!row) return;
+  row.style.display = row.style.display === 'none' ? '' : 'none';
+  if (row.style.display !== 'none') await loadUserApiKeys(userId);
+}
+
+async function loadUserApiKeys(userId) {
+  const list = document.getElementById(`apikeys-list-${userId}`);
+  if (!list) return;
+  try {
+    const r = await fetch(`/api/_internal/users/${encodeURIComponent(userId)}/apikeys`);
+    if (!r.ok) { list.innerHTML = `<em>Error ${r.status}</em>`; return; }
+    const data = await r.json();
+    const keys = data.apiKeys || data.keys || [];
+    if (keys.length === 0) { list.innerHTML = '<em>No API keys.</em>'; return; }
+    list.innerHTML = `
+      <table style="width:100%;font-size:0.8rem;">
+        <thead><tr>
+          <th align="left">Key ID</th><th align="left">Prefix</th>
+          <th align="left">Created</th><th align="left">Last used</th><th></th>
+        </tr></thead>
+        <tbody>${keys.map(k => `
+          <tr>
+            <td>${escapeHtml(k.id)}</td>
+            <td><code>${escapeHtml(k.prefix || '—')}</code></td>
+            <td>${escapeHtml(k.createdAt || '—')}</td>
+            <td>${escapeHtml(k.lastUsedAt || 'never')}</td>
+            <td>
+              <button class="btn-secondary" style="padding:1px 6px;font-size:0.75rem;"
+                      onclick="revokeApiKey('${escapeHtml(userId)}','${escapeHtml(k.id)}')">
+                🚫 Revoke
+              </button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch (e) { list.innerHTML = `<em>${e.message}</em>`; }
+}
+
+async function revokeApiKey(userId, keyId) {
+  if (!confirm(`Revoke key ${keyId}? Calls using it will fail immediately.`)) return;
+  try {
+    const r = await fetch(
+      `/api/_internal/users/${encodeURIComponent(userId)}/apikeys/${encodeURIComponent(keyId)}`,
+      { method: 'DELETE' }
+    );
+    const data = await r.json();
+    if (data.success) {
+      addLog('info', 'auth', `API key ${keyId} revoked for user ${userId}`);
+      await loadUserApiKeys(userId);
+      await loadUsers();
+    } else { alert(`Failed: ${data.error}`); }
+  } catch (e) { alert(`Error: ${e.message}`); }
 }
 
 async function deleteRole(roleName) {

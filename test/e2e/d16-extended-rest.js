@@ -34,7 +34,7 @@ const { labelFrom }      = require('./_make-suite');
 const { ScenarioRunner } = require('./_scenario-runner');
 
 const DASH_PORT = parseInt(process.env.DASH_PORT || '3458', 10);
-const DASH_URL  = `http://localhost:${DASH_PORT}`;
+const DASH_URL  = `http://127.0.0.1:${DASH_PORT}`;
 
 // ── EX3: openFileDialog — JS-only (requires concurrent ESC timer) ─────────────
 // Cannot be expressed in sequential XML steps: POST /api/shell/openFileDialog

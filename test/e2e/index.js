@@ -44,6 +44,7 @@ const SUITES = [
   { id: 'd18', label: 'LibreOfficeWin',                file: './d18-libreoffice-win'        },
   { id: 'd19', label: 'Users, Roles & Auth — DB backend', file: './d19-users-roles-db'     },
   { id: 'd8',  label: 'Security Filter Enforcement',  file: './d8-security-enforcement'   }, // LAST
+  { id: 'd20', label: 'Service-Mode Session 0 Isolation', file: './d20-service-mode'       },
 ];
 
 // ── CLI flag parsing ──────────────────────────────────────────────────────────

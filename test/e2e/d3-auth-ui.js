@@ -34,7 +34,7 @@ const { labelFrom }      = require('./_make-suite');
 const { ScenarioRunner } = require('./_scenario-runner');
 
 const BROWSER  = process.env.BROWSER || 'chrome';
-const DASH_URL = `http://localhost:${DASH_PORT}`;
+const DASH_URL = `http://127.0.0.1:${DASH_PORT}`;
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
@@ -78,6 +78,12 @@ async function run() {
     await runner.runOk('d3', 'a10-user-crud-rest',        { dashUrl: DASH_URL, testTag: TEST_TAG });
     await runner.runOk('d3', 'a11-users-table');
     await runner.runOk('d3', 'a11-add-user-modal');
+
+    // ── New scenarios a12–a15 (REST round-trips) ──────────────────────────────
+    await runner.runOk('d3', 'a12-jwt-issuer',       { dashUrl: DASH_URL, testTag: TEST_TAG });
+    await runner.runOk('d3', 'a13-role-permissions',  { dashUrl: DASH_URL, testTag: TEST_TAG });
+    await runner.runOk('d3', 'a14-apikey-revoke',     { dashUrl: DASH_URL, testTag: TEST_TAG });
+    await runner.runOk('d3', 'a15-user-role-edit',    { dashUrl: DASH_URL, testTag: TEST_TAG });
   });
 }
 

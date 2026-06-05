@@ -166,15 +166,17 @@ Write-Section "Copying Updated Files"
 
 $filesToCopy = @(
     @{ Src = "dist\release\aiapi-server.exe"; Dest = "aiapi-server.exe"; Desc = "Main executable" },
-    @{ Src = "dist\helpers\KeyWin.exe"; Dest = "dist\win\KeyWin.exe"; Desc = "KeyWin helper" },
-    @{ Src = "dist\helpers\BrowserWin.exe"; Dest = "dist\win\BrowserWin.exe"; Desc = "BrowserWin helper" },
-    @{ Src = "dist\helpers\SecurityLib.dll"; Dest = "dist\win\SecurityLib.dll"; Desc = "Security library" }
+    @{ Src = "dist\helpers\KeyWin.exe"; Dest = "dist\helpers\KeyWin.exe"; Desc = "KeyWin helper" },
+    @{ Src = "dist\helpers\BrowserWin.exe"; Dest = "dist\helpers\BrowserWin.exe"; Desc = "BrowserWin helper" },
+    @{ Src = "dist\helpers\SecurityLib.dll"; Dest = "dist\helpers\SecurityLib.dll"; Desc = "Security library" },
+    @{ Src = "dist\helpers\WinSvcBridge.exe"; Dest = "dist\helpers\WinSvcBridge.exe"; Desc = "Session-0 bridge (WinSvcBridge)" }
 )
 
 $dirsToCopy = @(
     @{ Src = "components\helpers\shared\dist-resources\apptemplates"; Dest = "components\helpers\shared\dist-resources\apptemplates"; Desc = "Shared app templates" },
     @{ Src = "components\helpers\windows\dist-resources\apptemplates"; Dest = "components\helpers\windows\dist-resources\apptemplates"; Desc = "Windows app templates" },
-    @{ Src = "components\server\dist-resources\dashboard"; Dest = "components\server\dist-resources\dashboard"; Desc = "Dashboard UI" }
+    @{ Src = "components\server\dist-resources\dashboard"; Dest = "components\server\dist-resources\dashboard"; Desc = "Dashboard UI" },
+    @{ Src = "test\e2e"; Dest = "test\e2e"; Desc = "E2E scenario XML files (d1-d19 apptemplates)" }
 )
 
 foreach ($item in $filesToCopy) {

@@ -1820,6 +1820,26 @@ namespace KeyWin
         {
             try
             {
+                // hwnd == IntPtr.Zero → capture full virtual screen (all monitors)
+                if (hwnd == IntPtr.Zero)
+                {
+                    System.Drawing.Rectangle vs = SystemInformation.VirtualScreen;
+                    int sw = vs.Width, sh = vs.Height;
+                    if (sw <= 0 || sh <= 0)
+                        return "{\"success\":false,\"error\":\"screenshot_zero_screen_size\"}";
+                    using (var bmp = new Bitmap(sw, sh, PixelFormat.Format32bppArgb))
+                    using (var g = Graphics.FromImage(bmp))
+                    {
+                        g.CopyFromScreen(vs.X, vs.Y, 0, 0, new Size(sw, sh));
+                        using (var ms = new MemoryStream())
+                        {
+                            bmp.Save(ms, ImageFormat.Png);
+                            string b64 = Convert.ToBase64String(ms.ToArray());
+                            return "{\"success\":true,\"command\":\"SCREENSHOT\",\"target\":\"SYSTEM\",\"data\":\"" + b64 + "\"}";
+                        }
+                    }
+                }
+
                 RECT rect;
                 if (!GetWindowRect(hwnd, out rect))
                     return "{\"success\":false,\"error\":\"screenshot_getrect_failed\"}";
@@ -2327,30 +2347,17 @@ namespace KeyWin
                 // Handle global commands that don't need a process/window
                 if (keys != null && keys.Equals("{LISTWINDOWS}", StringComparison.OrdinalIgnoreCase))
                 {
-                    // TODO: Add security validation here
-                    string commandType = DetermineCommandType(keys);
-                    string parameter = ExtractParameter(keys, commandType);
-                    Console.Error.WriteLine("DEBUG: Command=" + commandType + ", Parameter=" + parameter);
-                    
-                    var windows = new System.Collections.Generic.List<string>();
-                    EnumWindows((IntPtr h, IntPtr lParam) =>
-                    {
-                        if (IsWindowVisible(h))
-                        {
-                            int length = GetWindowTextLength(h);
-                            if (length > 0)
-                            {
-                                var sb = new StringBuilder(length + 1);
-                                GetWindowText(h, sb, sb.Capacity);
-                                string title = sb.ToString();
-                                int pid;
-                                GetWindowThreadProcessId(h, out pid);
-                                windows.Add("{\"handle\":" + h.ToInt64() + ",\"title\":\"" + EscapeJson(title) + "\",\"pid\":" + pid + "}");
-                            }
-                        }
-                        return true;
-                    }, IntPtr.Zero);
-                    Console.WriteLine("{\"success\":true,\"windows\":[" + string.Join(",", windows.ToArray()) + "]}");
+                    // QA-3: delegate to WinUtils.ListWindowsJson() which injects _sessionWarning when running in Session 0
+                    Console.WriteLine(WinUtils.ListWindowsJson());
+                    return 0;
+                }
+
+                // Handle {SCREENSHOT} when target is SYSTEM or empty — capture full virtual screen
+                if (keys != null && keys.Equals("{SCREENSHOT}", StringComparison.OrdinalIgnoreCase) &&
+                    (string.IsNullOrEmpty(processName) ||
+                     processName.Equals("SYSTEM", StringComparison.OrdinalIgnoreCase)))
+                {
+                    Console.WriteLine(CmdScreenshot(IntPtr.Zero));
                     return 0;
                 }
 
@@ -3005,7 +3012,17 @@ namespace KeyWin
                     }
 
                     DirectSendKeys(sendTarget, keysToSend);
-                    Console.WriteLine("{\"success\":true,\"action\":\"keys\",\"mode\":\"direct\"}");
+                    // QA-3: inject _sessionWarning when running in Session 0
+                    if (WinUtils.IsSession0())
+                    {
+                        uint cs0 = WinUtils.GetActiveConsoleSessionId();
+                        string sw0 = WinUtils.BuildSessionWarning("SENDKEYS", cs0);
+                        Console.WriteLine("{\"success\":true,\"action\":\"keys\",\"mode\":\"direct\",\"_sessionWarning\":\"" + WinUtils.EscapeJson(sw0) + "\"}");
+                    }
+                    else
+                    {
+                        Console.WriteLine("{\"success\":true,\"action\":\"keys\",\"mode\":\"direct\"}");
+                    }
                 }
                 else
                 {
@@ -3076,7 +3093,8 @@ namespace KeyWin
             sb.AppendLine("    { \"name\": \"UNCHECK\", \"description\": \"Uncheck a checkbox by AutomationId or Name. Uses TogglePattern. Idempotent: no-op if already unchecked.\", \"parameters\": [ { \"name\": \"selector\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"action=UNCHECK path=rememberMe\"] },");
             sb.AppendLine("    { \"name\": \"MOUSEDOWN\", \"description\": \"Press and hold left mouse button at screen coordinates (x,y). Use with MOUSEUP for drag-and-drop. SendInput MOUSEEVENTF_LEFTDOWN.\", \"parameters\": [ { \"name\": \"coordinates\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"action=MOUSEDOWN path=100,200\"] },");
             sb.AppendLine("    { \"name\": \"MOUSEUP\", \"description\": \"Release left mouse button at screen coordinates (x,y). Completes a drag started with MOUSEDOWN. SendInput MOUSEEVENTF_LEFTUP.\", \"parameters\": [ { \"name\": \"coordinates\", \"type\": \"string\", \"required\": true } ], \"examples\": [\"action=MOUSEUP path=300,400\"] },");
-            sb.AppendLine("    { \"name\": \"FOCUS\", \"description\": \"Bring the target window to the foreground. Call before any visible UI interaction in cooperative/showcase mode so the user can see what the AI is doing. Uses ShowWindow(SW_RESTORE) + SetForegroundWindow.\", \"parameters\": [], \"examples\": [\"action=FOCUS\"] }");
+            sb.AppendLine("    { \"name\": \"FOCUS\", \"description\": \"Bring the target window to the foreground. Call before any visible UI interaction in cooperative/showcase mode so the user can see what the AI is doing. Uses ShowWindow(SW_RESTORE) + SetForegroundWindow.\", \"parameters\": [], \"examples\": [\"action=FOCUS\"] },");
+            sb.AppendLine("    { \"name\": \"SCREENSHOT\", \"description\": \"Capture a window or the full virtual screen as a base64-encoded PNG. Target HANDLE:<hwnd> captures that specific window (PrintWindow, works off-screen). Target SYSTEM captures the full virtual screen (all monitors). Prefer the MCP screenshotWindow tool which returns image content directly.\", \"parameters\": [], \"examples\": [\"action=SCREENSHOT target=HANDLE:131234\", \"action=SCREENSHOT target=SYSTEM\"] }");
             sb.AppendLine("  ]\n}");
             return sb.ToString();
         }

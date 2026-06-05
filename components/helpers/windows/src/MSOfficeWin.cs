@@ -170,6 +170,32 @@ namespace MSOfficeWin
         //  Command dispatch
         // ──────────────────────────────────────────────────────────────────────
 
+        // RPC_E_SERVERCALL_RETRYLATER (0x8001010A): Office COM server is momentarily busy.
+        // Retrying with backoff resolves this in nearly all cases (e.g. rapid back-to-back calls).
+        // NOTE: Retry must be placed INSIDE each CmdXxx() before any Console.WriteLine, because
+        // all Cmd functions catch exceptions internally — nothing propagates to this level.
+        const int ComMaxRetries  = 6;
+        const int ComRetryBaseMs = 500;
+
+        /// <summary>
+        /// Executes <paramref name="fn"/> and retries on RPC_E_SERVERCALL_RETRYLATER (0x8001010A)
+        /// with linear backoff: 500ms, 1000ms, 1500ms … up to ComMaxRetries attempts.
+        /// All other exceptions are rethrown immediately.
+        /// </summary>
+        static object ComRetry(Func<object> fn)
+        {
+            for (int i = 0; i <= ComMaxRetries; i++)
+            {
+                try { return fn(); }
+                catch (System.Runtime.InteropServices.COMException ce)
+                {
+                    if ((uint)ce.HResult != 0x8001010A || i >= ComMaxRetries) throw;
+                    System.Threading.Thread.Sleep(ComRetryBaseMs * (i + 1));
+                }
+            }
+            return null; // unreachable
+        }
+
         static void DispatchCommand(string target, string action)
         {
             // QA-3: ALL MSOfficeWin commands require COM ROT access which is per-session.
@@ -201,7 +227,9 @@ namespace MSOfficeWin
             if (cmdType == "NEWDOC")
             {
                 string at = NormaliseAppType(target);
-                CmdNewDoc(at);
+                string newdocParam = ExtractParam(action, "NEWDOC") ?? "";
+                bool silent = newdocParam.Equals("silent", StringComparison.OrdinalIgnoreCase);
+                CmdNewDoc(at, silent);
                 return;
             }
 
@@ -255,6 +283,14 @@ namespace MSOfficeWin
 
                 case "FORMAT":
                     CmdFormat(doc, appType, ExtractParam(action, "FORMAT") ?? "");
+                    break;
+
+                case "INSERT_SHAPE":
+                    CmdInsertShape(doc, appType, ExtractParam(action, "INSERT_SHAPE") ?? "");
+                    break;
+
+                case "INSERT_TABLE":
+                    CmdInsertTable(doc, appType, ExtractParam(action, "INSERT_TABLE") ?? "");
                     break;
 
                 default:
@@ -1279,45 +1315,54 @@ namespace MSOfficeWin
         //  NEWDOC
         // ──────────────────────────────────────────────────────────────────────
 
-        static void CmdNewDoc(string appType)
+        static void CmdNewDoc(string appType, bool silent = false)
         {
             try
             {
-                dynamic app = TryGetApp(appType);
+                // Both Activator.CreateInstance and the app.*.Add() calls can return
+                // RPC_E_SERVERCALL_RETRYLATER (0x8001010A) when Office is still initialising
+                // or busy from a previous operation.  ComRetry() retries with linear backoff.
+                dynamic app = (dynamic)ComRetry(() => {
+                    dynamic a = TryGetApp(appType);
+                    if (a == null)
+                    {
+                        string progId = AppTypeToProgId(appType);
+                        if (progId == null) return null;
+                        Type t = Type.GetTypeFromProgID(progId);
+                        a = Activator.CreateInstance(t);
+                        a.Visible = !silent;
+                    }
+                    else if (!silent)
+                    {
+                        a.Visible = true;
+                    }
+                    return a;
+                });
+
                 if (app == null)
                 {
-                    // Start the application
-                    string progId = AppTypeToProgId(appType);
-                    if (progId == null)
-                    {
-                        Console.WriteLine("{\"success\":false,\"error\":\"Unknown app type: " + JsonEscape(appType) + "\"}");
-                        return;
-                    }
-                    Type t = Type.GetTypeFromProgID(progId);
-                    app = Activator.CreateInstance(t);
+                    Console.WriteLine("{\"success\":false,\"error\":\"Unknown app type: " + JsonEscape(appType) + "\"}");
+                    return;
                 }
-                // Ensure the application window is visible regardless of whether we
-                // just created it or attached to an already-running instance.
-                app.Visible = true;
 
                 string name = "";
                 switch (appType)
                 {
                     case "excel":
                     {
-                        dynamic wb = app.Workbooks.Add();
+                        dynamic wb = (dynamic)ComRetry(() => (object)app.Workbooks.Add());
                         name = (string)wb.Name;
                         break;
                     }
                     case "word":
                     {
-                        dynamic doc = app.Documents.Add();
+                        dynamic doc = (dynamic)ComRetry(() => (object)app.Documents.Add());
                         name = (string)doc.Name;
                         break;
                     }
                     case "powerpoint":
                     {
-                        dynamic pres = app.Presentations.Add();
+                        dynamic pres = (dynamic)ComRetry(() => (object)app.Presentations.Add());
                         // A blank Presentation has 0 slides; add a title-layout slide so
                         // the presentation is immediately usable (ppLayoutTitle = 1).
                         pres.Slides.Add(1, 1);
@@ -1369,12 +1414,15 @@ namespace MSOfficeWin
         //   "body/para[N]|Heading 1"                          ← style name only (backward compat)
         //   "body/para[N]|bold=true|fontSize=14"              ← key=value only
         //   "body/para[N]|style=Normal|bold=true|italic=true" ← mixed
+        //   "body/para[N]/char[start:end]|bold=true"          ← character sub-range (1-based)
         //
         // Character keys : bold italic underline strikethrough allCaps smallCaps
         //                  fontName fontSize color(#RRGGBB) highlight charSpacingPt
         // Paragraph keys : style alignment(left/center/right/justify)
         //                  spaceBeforePt spaceAfterPt lineSpacing(mult or exactPt:N)
         //                  indentLeftCm indentRightCm indentFirstLineCm
+        // Note: paragraph keys (style, alignment, indent, spacing) are silently skipped
+        //       when a character sub-range is specified (they apply to whole paragraphs only).
         static void CmdFormat(dynamic doc, string appType, string param)
         {
             if (appType != "word")
@@ -1391,6 +1439,20 @@ namespace MSOfficeWin
                     return;
                 }
                 string addr = parts[0].Trim();
+
+                // Check for character sub-range: body/para[N]/char[start:end]
+                int charStart = 0, charEnd = 0;
+                bool hasCharRange = false;
+                var charRangeMatch = System.Text.RegularExpressions.Regex.Match(
+                    addr, @"/char\[(\d+):(\d+)\]$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (charRangeMatch.Success)
+                {
+                    charStart = int.Parse(charRangeMatch.Groups[1].Value);
+                    charEnd   = int.Parse(charRangeMatch.Groups[2].Value);
+                    hasCharRange = true;
+                    addr = addr.Substring(0, addr.Length - charRangeMatch.Length);
+                }
+
                 int n = TryParaIndex(addr);
                 if (n < 1)
                 {
@@ -1407,9 +1469,27 @@ namespace MSOfficeWin
                 }
 
                 dynamic para  = doc.Paragraphs.Item(n);
-                dynamic range = para.Range;
+                dynamic range;
+                if (hasCharRange)
+                {
+                    // Build a sub-range within the paragraph by character offset (1-based).
+                    // Word Range.Characters gives char-level access, or we can use
+                    // Document.Range(start, end) with absolute document character positions.
+                    dynamic paraRange = para.Range;
+                    int paraStart = (int)paraRange.Start;
+                    // Clamp to paragraph length (exclude trailing paragraph mark)
+                    int paraLen = (int)paraRange.End - paraStart;
+                    int s = paraStart + Math.Max(0, charStart - 1);
+                    int e = paraStart + Math.Min(paraLen, charEnd);
+                    range = doc.Range(s, e);
+                }
+                else
+                {
+                    range = para.Range;
+                }
                 dynamic font  = range.Font;
-                dynamic pf    = para.Format;   // Paragraph.Format → ParagraphFormat (not .ParagraphFormat)
+                // Paragraph-level format object (only used for whole-paragraph formatting)
+                dynamic pf    = hasCharRange ? null : para.Format;
                 const double CM_TO_PT = 28.3465;
 
                 string styleName = null;
@@ -1460,12 +1540,13 @@ namespace MSOfficeWin
                             font.Spacing = double.Parse(val, System.Globalization.CultureInfo.InvariantCulture);
                             break;
 
-                        // ── Paragraph properties ──────────────────────────────────────
+                        // ── Paragraph properties (skipped for character sub-ranges) ──
                         case "style":
-                            styleName = val;
+                            if (!hasCharRange) styleName = val;
                             break;
                         case "alignment":
                         {
+                            if (hasCharRange) break;
                             // wdAlignParagraphLeft=0, Center=1, Right=2, Justify=3
                             int align;
                             switch (val.ToLowerInvariant())
@@ -1479,13 +1560,14 @@ namespace MSOfficeWin
                             break;
                         }
                         case "spacebeforept":
-                            pf.SpaceBefore = double.Parse(val, System.Globalization.CultureInfo.InvariantCulture);
+                            if (!hasCharRange) pf.SpaceBefore = double.Parse(val, System.Globalization.CultureInfo.InvariantCulture);
                             break;
                         case "spaceafterpt":
-                            pf.SpaceAfter = double.Parse(val, System.Globalization.CultureInfo.InvariantCulture);
+                            if (!hasCharRange) pf.SpaceAfter = double.Parse(val, System.Globalization.CultureInfo.InvariantCulture);
                             break;
                         case "linespacing":
                         {
+                            if (hasCharRange) break;
                             if (val.StartsWith("exactPt:", StringComparison.OrdinalIgnoreCase))
                             {
                                 double pt = double.Parse(val.Substring(8), System.Globalization.CultureInfo.InvariantCulture);
@@ -1503,20 +1585,20 @@ namespace MSOfficeWin
                             break;
                         }
                         case "indentleftcm":
-                            pf.LeftIndent = (float)(double.Parse(val, System.Globalization.CultureInfo.InvariantCulture) * CM_TO_PT);
+                            if (!hasCharRange) pf.LeftIndent = (float)(double.Parse(val, System.Globalization.CultureInfo.InvariantCulture) * CM_TO_PT);
                             break;
                         case "indentrightcm":
-                            pf.RightIndent = (float)(double.Parse(val, System.Globalization.CultureInfo.InvariantCulture) * CM_TO_PT);
+                            if (!hasCharRange) pf.RightIndent = (float)(double.Parse(val, System.Globalization.CultureInfo.InvariantCulture) * CM_TO_PT);
                             break;
                         case "indentfirstlinecm":
-                            pf.FirstLineIndent = (float)(double.Parse(val, System.Globalization.CultureInfo.InvariantCulture) * CM_TO_PT);
+                            if (!hasCharRange) pf.FirstLineIndent = (float)(double.Parse(val, System.Globalization.CultureInfo.InvariantCulture) * CM_TO_PT);
                             break;
                     }
                     applied.Add(key);
                 }
 
                 // Apply style after char/para props so it does not reset them in advanced scenarios
-                if (styleName != null)
+                if (styleName != null && !hasCharRange)
                 {
                     int? styleId = WordBuiltInStyleId(styleName);
                     if (styleId.HasValue) para.Range.Style = styleId.Value;
@@ -1528,7 +1610,11 @@ namespace MSOfficeWin
                 foreach (string a in applied) { sb2.Append("\"").Append(JsonEscape(a)).Append("\","); }
                 if (sb2.Length > 1) sb2.Length--;
                 sb2.Append("]");
-                Console.WriteLine("{\"success\":true,\"result\":\"formatted\",\"para\":" + n + ",\"applied\":" + sb2 + "}");
+                string charRangeJson = hasCharRange
+                    ? ",\"charRange\":[" + charStart + "," + charEnd + "]"
+                    : "";
+                Console.WriteLine("{\"success\":true,\"result\":\"formatted\",\"para\":" + n
+                    + charRangeJson + ",\"applied\":" + sb2 + "}");
             }
             catch (Exception ex)
             {
@@ -1665,6 +1751,294 @@ namespace MSOfficeWin
         }
 
         // ──────────────────────────────────────────────────────────────────────
+        //  INSERT_SHAPE — insert a shape or image into a Word document
+        // ──────────────────────────────────────────────────────────────────────
+        // Parameter format (pipe-delimited key=value):
+        //   type=textbox|width=200|height=100|left=100|top=100|text=Hello
+        //   type=rectangle|width=120|height=80|left=50|top=50|fillColor=#FFD700
+        //   type=oval|width=100|height=100|left=200|top=200
+        //   type=picture|src=C:\path\to\image.png|width=300|height=200|left=50|top=50
+        //
+        // Position units: points (1 pt = 1/72 inch).  Default left/top = 72 pt (1 inch).
+        // Dimensions:     width/height in points.  Defaults: 200×100.
+        //
+        // MsoShapeType used for AddShape:
+        //   rectangle=1, rounded-rectangle=5, oval=9, diamond=4, triangle=6,
+        //   parallelogram=26, hexagon=10, arrow=13, callout-rect=27.
+        static void CmdInsertShape(dynamic doc, string appType, string param)
+        {
+            if (appType != "word")
+            {
+                Console.WriteLine("{\"success\":false,\"error\":\"INSERT_SHAPE currently supports Word only\"}");
+                return;
+            }
+            try
+            {
+                // Parse key=value pairs
+                string type       = "textbox";
+                float  left       = 72f;
+                float  top        = 72f;
+                float  width      = 200f;
+                float  height     = 100f;
+                string text       = "";
+                string fillColor  = "";
+                string lineColor  = "";
+                string srcPath    = "";
+
+                foreach (string seg in param.Split('|'))
+                {
+                    int eq = seg.IndexOf('=');
+                    if (eq < 0) { type = seg.Trim().ToLowerInvariant(); continue; }
+                    string key = seg.Substring(0, eq).Trim().ToLowerInvariant();
+                    string val = seg.Substring(eq + 1).Trim();
+                    switch (key)
+                    {
+                        case "type":      type      = val.ToLowerInvariant(); break;
+                        case "left":      float.TryParse(val, System.Globalization.NumberStyles.Float,
+                                              System.Globalization.CultureInfo.InvariantCulture, out left); break;
+                        case "top":       float.TryParse(val, System.Globalization.NumberStyles.Float,
+                                              System.Globalization.CultureInfo.InvariantCulture, out top);  break;
+                        case "width":     float.TryParse(val, System.Globalization.NumberStyles.Float,
+                                              System.Globalization.CultureInfo.InvariantCulture, out width);  break;
+                        case "height":    float.TryParse(val, System.Globalization.NumberStyles.Float,
+                                              System.Globalization.CultureInfo.InvariantCulture, out height); break;
+                        case "text":      text      = val; break;
+                        case "fillcolor": fillColor = val; break;
+                        case "linecolor": lineColor = val; break;
+                        case "src":       srcPath   = val; break;
+                    }
+                }
+
+                dynamic shapes = doc.Shapes;
+                dynamic shape  = null;
+
+                switch (type)
+                {
+                    case "textbox":
+                        // orientation 1 = msoTextOrientationHorizontal
+                        shape = shapes.AddTextbox(1, left, top, width, height);
+                        break;
+
+                    case "picture":
+                    case "image":
+                    {
+                        if (string.IsNullOrEmpty(srcPath))
+                        {
+                            Console.WriteLine("{\"success\":false,\"error\":\"INSERT_SHAPE type=picture requires src=<path>\"}");
+                            return;
+                        }
+                        // LinkToFile=false, SaveWithDocument=true, Left, Top, Width, Height
+                        shape = shapes.AddPicture(srcPath, false, true, left, top, width, height);
+                        break;
+                    }
+
+                    case "rectangle":
+                    case "rect":
+                        shape = shapes.AddShape(1, left, top, width, height); // msoShapeRectangle=1
+                        break;
+
+                    case "rounded-rectangle":
+                    case "rounded":
+                        shape = shapes.AddShape(5, left, top, width, height); // msoShapeRoundedRectangle=5
+                        break;
+
+                    case "oval":
+                    case "ellipse":
+                    case "circle":
+                        shape = shapes.AddShape(9, left, top, width, height); // msoShapeOval=9
+                        break;
+
+                    case "diamond":
+                        shape = shapes.AddShape(4, left, top, width, height); // msoShapeDiamond=4
+                        break;
+
+                    case "triangle":
+                        shape = shapes.AddShape(6, left, top, width, height); // msoShapeIsoscelesTriangle=6
+                        break;
+
+                    case "parallelogram":
+                        shape = shapes.AddShape(26, left, top, width, height);
+                        break;
+
+                    case "hexagon":
+                        shape = shapes.AddShape(10, left, top, width, height);
+                        break;
+
+                    case "arrow":
+                    case "right-arrow":
+                        shape = shapes.AddShape(13, left, top, width, height); // msoShapeRightArrow=13
+                        break;
+
+                    default:
+                        Console.WriteLine("{\"success\":false,\"error\":\"INSERT_SHAPE: unknown type '"
+                            + JsonEscape(type) + "'. Supported: textbox, rectangle, rounded-rectangle, oval, diamond, triangle, parallelogram, hexagon, arrow, picture.\"}");
+                        return;
+                }
+
+                if (shape == null)
+                {
+                    Console.WriteLine("{\"success\":false,\"error\":\"INSERT_SHAPE: AddShape returned null\"}");
+                    return;
+                }
+
+                // Apply fill colour (skip for pictures which have no Fill.ForeColor)
+                if (!string.IsNullOrEmpty(fillColor) && type != "picture" && type != "image")
+                {
+                    try
+                    {
+                        string hex = fillColor.TrimStart('#');
+                        if (hex.Length == 6)
+                        {
+                            int r = Convert.ToInt32(hex.Substring(0, 2), 16);
+                            int g = Convert.ToInt32(hex.Substring(2, 2), 16);
+                            int b = Convert.ToInt32(hex.Substring(4, 2), 16);
+                            int oleColor = r + g * 256 + b * 65536; // RGB → OLE
+                            shape.Fill.ForeColor.RGB = oleColor;
+                            shape.Fill.Visible = 1;
+                            shape.Fill.Solid();
+                        }
+                    }
+                    catch { /* non-fatal */ }
+                }
+
+                // Apply line/border colour
+                if (!string.IsNullOrEmpty(lineColor))
+                {
+                    try
+                    {
+                        string hex = lineColor.TrimStart('#');
+                        if (hex.Length == 6)
+                        {
+                            int r = Convert.ToInt32(hex.Substring(0, 2), 16);
+                            int g = Convert.ToInt32(hex.Substring(2, 2), 16);
+                            int b = Convert.ToInt32(hex.Substring(4, 2), 16);
+                            shape.Line.ForeColor.RGB = r + g * 256 + b * 65536;
+                        }
+                    }
+                    catch { /* non-fatal */ }
+                }
+
+                // Set text content (textbox and geometric shapes support TextFrame)
+                if (!string.IsNullOrEmpty(text) && type != "picture" && type != "image")
+                {
+                    try
+                    {
+                        shape.TextFrame.TextRange.Text = text;
+                    }
+                    catch { /* some shape types have no TextFrame — ignore */ }
+                }
+
+                string shapeName = "";
+                try { shapeName = (string)shape.Name; } catch { }
+
+                Console.WriteLine("{\"success\":true,\"result\":\"inserted\",\"shape\":\""
+                    + JsonEscape(shapeName) + "\",\"type\":\"" + JsonEscape(type) + "\"}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("{\"success\":false,\"error\":\"INSERT_SHAPE failed: "
+                    + JsonEscape(ex.Message) + "\"}");
+            }
+        }
+
+        // ──────────────────────────────────────────────────────────────────────
+        //  INSERT_TABLE — insert a table into a Word document
+        // ──────────────────────────────────────────────────────────────────────
+        // Parameter format (pipe-delimited key=value):
+        //   rows=3|cols=4                 ← inserts at end of document
+        //   para=5|rows=3|cols=4          ← inserts before paragraph 5
+        //   rows=3|cols=4|style=TableGrid ← with a built-in table style
+        //   rows=2|cols=3|data=A,B,C;D,E,F  ← with cell data (semicolon=row, comma=col)
+        static void CmdInsertTable(dynamic doc, string appType, string param)
+        {
+            if (appType != "word")
+            {
+                Console.WriteLine("{\"success\":false,\"error\":\"INSERT_TABLE currently supports Word only\"}");
+                return;
+            }
+            try
+            {
+                int    rows    = 2;
+                int    cols    = 2;
+                int    paraIdx = 0; // 0 = end of document
+                string style   = "";
+                string data    = "";
+
+                foreach (string seg in param.Split('|'))
+                {
+                    int eq = seg.IndexOf('=');
+                    if (eq < 0) continue;
+                    string key = seg.Substring(0, eq).Trim().ToLowerInvariant();
+                    string val = seg.Substring(eq + 1).Trim();
+                    switch (key)
+                    {
+                        case "rows": int.TryParse(val, out rows); break;
+                        case "cols": int.TryParse(val, out cols); break;
+                        case "para": int.TryParse(val, out paraIdx); break;
+                        case "style": style = val; break;
+                        case "data":  data  = val; break;
+                    }
+                }
+
+                if (rows < 1) rows = 1;
+                if (cols < 1) cols = 1;
+
+                // Determine insertion range
+                dynamic range;
+                if (paraIdx > 0 && paraIdx <= (int)doc.Paragraphs.Count)
+                {
+                    range = doc.Paragraphs.Item(paraIdx).Range;
+                    range.Collapse(1); // wdCollapseStart
+                }
+                else
+                {
+                    // Insert at end of document content
+                    range = doc.Content;
+                    range.Collapse(0); // wdCollapseEnd
+                }
+
+                dynamic table = doc.Tables.Add(range, rows, cols);
+
+                // Apply table style if provided
+                if (!string.IsNullOrEmpty(style))
+                {
+                    try { table.Style = style; } catch { /* invalid style name — ignore */ }
+                }
+                else
+                {
+                    // Default: Grid style for readable output
+                    try { table.Style = "Table Grid"; } catch { }
+                }
+
+                // Populate cells if data is provided: rows separated by ";", cols by ","
+                if (!string.IsNullOrEmpty(data))
+                {
+                    string[] rowData = data.Split(';');
+                    for (int r = 0; r < rowData.Length && r < rows; r++)
+                    {
+                        string[] colData = rowData[r].Split(',');
+                        for (int c = 0; c < colData.Length && c < cols; c++)
+                        {
+                            try
+                            {
+                                table.Cell(r + 1, c + 1).Range.Text = colData[c].Trim();
+                            }
+                            catch { /* non-fatal */ }
+                        }
+                    }
+                }
+
+                Console.WriteLine("{\"success\":true,\"result\":\"inserted\",\"rows\":"
+                    + rows + ",\"cols\":" + cols + "}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("{\"success\":false,\"error\":\"INSERT_TABLE failed: "
+                    + JsonEscape(ex.Message) + "\"}");
+            }
+        }
+
+        // ──────────────────────────────────────────────────────────────────────
         //  API Schema
         // ──────────────────────────────────────────────────────────────────────
 
@@ -1706,15 +2080,39 @@ namespace MSOfficeWin
                 + " \"parameters\": [ { \"name\": \"format\", \"type\": \"string\", \"required\": false, \"default\": \"pdf\", \"enum\": [\"pdf\"] } ],"
                 + " \"examples\": [\"action=EXPORT path=pdf\", \"action=EXPORT path=C:\\\\Users\\\\me\\\\output.pdf\"] },");
 
-            sb.AppendLine("    { \"name\": \"NEWDOC\", \"description\": \"Create a new document/workbook/presentation. Starts Office if not already running.\", \"parameters\": [], \"examples\": [\"action=NEWDOC\"] },");
+            sb.AppendLine("    { \"name\": \"NEWDOC\", \"description\": \"Create a new document/workbook/presentation. Starts Office if not already running. Pass 'silent' as the path to run in headless (windowless) mode for server-side document generation.\","
+                + " \"parameters\": [ { \"name\": \"mode\", \"type\": \"string\", \"required\": false, \"enum\": [\"silent\"], \"description\": \"Pass silent to suppress the Office window (headless mode).\" } ],"
+                + " \"examples\": [\"action=NEWDOC\", \"action=NEWDOC path=silent\"] },");
 
             sb.AppendLine("    { \"name\": \"EXEC_MACRO\", \"description\": \"Run a named VBA macro (Excel only). The macro must already exist in the workbook.\","
                 + " \"parameters\": [ { \"name\": \"macroName\", \"type\": \"string\", \"required\": true } ],"
                 + " \"examples\": [\"action=EXEC_MACRO path=RefreshData\", \"action=EXEC_MACRO path=Module1.ProcessAll\"] },");
 
-            sb.AppendLine("    { \"name\": \"FORMAT\", \"description\": \"Apply a named paragraph style to a paragraph in a Word document. Use after WRITE to style headings and body text. Path must be a paragraph address such as body/para[N] or para[N]. StyleName is a built-in Word style: 'Normal', 'Title', 'Heading 1'..'Heading 9', 'Subtitle', 'Quote', 'Intense Quote', 'List Bullet', 'List Number', 'Caption'.\","
-                + " \"parameters\": [ { \"name\": \"address_and_style\", \"type\": \"string\", \"required\": true } ],"
-                + " \"examples\": [\"action=FORMAT path=body/para[1] value=Title\", \"action=FORMAT path=body/para[2] value=Heading 1\", \"action=FORMAT path=body/para[3] value=Normal\"] },");
+            sb.AppendLine("    { \"name\": \"FORMAT\", \"description\": \"Apply formatting to a paragraph (or character sub-range) in a Word document. "
+                + "Address: body/para[N] for the whole paragraph, or body/para[N]/char[start:end] for a character range (1-based). "
+                + "Properties (pipe-separated key=value): bold, italic, underline, strikethrough, allCaps, smallCaps, fontName, fontSize, color (#RRGGBB), highlight (yellow/green/cyan/…), charSpacingPt; "
+                + "paragraph-level: style (Normal, Title, Heading 1-9, …), alignment (left/center/right/justify), spaceBeforePt, spaceAfterPt, lineSpacing (1/1.5/2/exactPt:N), indentLeftCm, indentRightCm, indentFirstLineCm.\","
+                + " \"parameters\": [ { \"name\": \"address_and_props\", \"type\": \"string\", \"required\": true } ],"
+                + " \"examples\": [\"action=FORMAT path=body/para[1] value=Title\","
+                + " \"action=FORMAT path=body/para[2] value=bold=true|fontSize=14|color=#003087\","
+                + " \"action=FORMAT path=body/para[2]/char[1:5] value=bold=true|italic=true\"] },");
+
+            sb.AppendLine("    { \"name\": \"INSERT_SHAPE\", \"description\": \"Insert a floating shape or image into a Word document. "
+                + "type: textbox (default), rectangle, rounded-rectangle, oval, diamond, triangle, parallelogram, hexagon, arrow, picture. "
+                + "Position and size in points (1 pt = 1/72 inch). fillColor/lineColor as #RRGGBB. text sets text content for shapes with a text frame. src is required for type=picture.\","
+                + " \"parameters\": [ { \"name\": \"shape_params\", \"type\": \"string\", \"required\": true } ],"
+                + " \"examples\": [\"action=INSERT_SHAPE path=word value=type=textbox|left=72|top=72|width=200|height=60|text=Hello|fontSize=12\","
+                + " \"action=INSERT_SHAPE path=word value=type=rectangle|left=100|top=200|width=120|height=80|fillColor=#FFD700\","
+                + " \"action=INSERT_SHAPE path=word value=type=picture|src=C:\\\\img\\\\logo.png|left=50|top=50|width=150|height=100\"] },");
+
+            sb.AppendLine("    { \"name\": \"INSERT_TABLE\", \"description\": \"Insert a table into a Word document. "
+                + "Specify rows and cols; optionally para=N to insert before paragraph N (default: end of document). "
+                + "style sets the Word table style (default: Table Grid). "
+                + "data populates cells: rows separated by semicolons, columns by commas (e.g. A,B,C;D,E,F for a 2×3 table).\","
+                + " \"parameters\": [ { \"name\": \"table_params\", \"type\": \"string\", \"required\": true } ],"
+                + " \"examples\": [\"action=INSERT_TABLE path=word value=rows=3|cols=4\","
+                + " \"action=INSERT_TABLE path=word value=rows=2|cols=3|data=Name,Age,City;Alice,30,Prague\","
+                + " \"action=INSERT_TABLE path=word value=para=5|rows=2|cols=2|style=Table Grid|data=Q1,100;Q2,200\"] },");
 
             sb.AppendLine("    { \"name\": \"FOCUS\", \"description\": \"Bring the Office application window to the foreground. Call after NEWDOC or before any visible interaction in cooperative/showcase mode so the user can see what the AI is doing. Uses ShowWindow(SW_RESTORE) + SetForegroundWindow.\", \"parameters\": [], \"examples\": [\"action=FOCUS\"] }");
 

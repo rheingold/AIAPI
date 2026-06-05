@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { AutomationEngine } from '../engine/automationEngine';
+import { globalLogger } from '../utils/Logger';
 
 interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -96,7 +97,10 @@ export class FileBridge {
     const res = await this.handleRequest(req);
     this.writeResponse(res, path.basename(filePath));
     // Delete the request after processing
-    try { fs.unlinkSync(filePath); } catch {}
+    try { fs.unlinkSync(filePath); } catch (unlinkErr) {
+      // Non-fatal: file may already be removed or FS is read-only; log and continue.
+      globalLogger.warn('FileBridge', `Failed to delete bridge request file "${filePath}": ${unlinkErr}`);
+    }
   }
 
   private writeResponse(res: JsonRpcResponse, requestFileName: string): void {

@@ -27,6 +27,7 @@ import {
   handleInternalListUsers, handleInternalCreateUser,
   handleInternalUpdateUser, handleInternalDeleteUser,
   handleInternalCreateApiKey, handleInternalRevokeApiKey,
+  handleInternalListUserApiKeys,
   handleInternalListRoles, handleInternalCreateRole,
   handleInternalUpdateRole, handleInternalDeleteRole,
   handleInternalGetLogs, handleInternalClearLogs,
@@ -61,10 +62,14 @@ export class HttpServerWithDashboard {
   private securityAuditLog: LogEntry[] = [];
   /** Estimated total line count in the JSONL file on disk (RAM may hold fewer). */
   private _auditDiskLineCount: number = 0;
-  /** Path to the rolling JSONL file for security audit events. */
-  private readonly securityAuditLogFile: string = path.resolve(
-    path.resolve(__dirname, '..', '..'), 'config', 'security', 'security-audit.jsonl'
-  );
+  /** Path to the rolling JSONL file for security audit events.
+   *  Uses process.execPath dir in pkg-bundled mode so the path resolves to the real
+   *  filesystem (C:\Program Files\AIAPI\...) rather than the pkg snapshot FS. */
+  private readonly securityAuditLogFile: string = (() => {
+    const isPkg = typeof (process as any).pkg !== 'undefined';
+    const base = isPkg ? path.dirname(process.execPath) : path.resolve(__dirname, '..', '..');
+    return path.resolve(base, 'config', 'security', 'security-audit.jsonl');
+  })();
   private requestCount: number = 0;
   private startTime: number = Date.now();
   private sessions: Map<string, DashboardSession> = new Map();
@@ -72,12 +77,19 @@ export class HttpServerWithDashboard {
   private verboseLogging: boolean = true; // Enabled by default
   private config: any = {}; // Configuration storage
   private processHashCache: Map<string, { hash: string; mtimeMs: number }> = new Map();
-  private readonly settingsFilePath: string = path.resolve(path.resolve(__dirname, '..', '..'), 'config', 'dashboard-settings.json');
+  private readonly settingsFilePath: string = (() => {
+    const isPkg = typeof (process as any).pkg !== 'undefined';
+    const base = isPkg ? path.dirname(process.execPath) : path.resolve(__dirname, '..', '..');
+    return path.resolve(base, 'config', 'dashboard-settings.json');
+  })();
   /** Authentication service — null when auth.mode = "none" (default) */
   private authService: AuthService | null = null;
   private authMiddleware: AuthMiddleware | null = null;
-  /** Resolved once at construction time from __dirname; immune to process.chdir(). */
-  private readonly extensionRoot: string = path.resolve(__dirname, '..', '..');
+  /** Resolved once at construction time; pkg-bundle aware — uses execPath dir when bundled. */
+  private readonly extensionRoot: string = (() => {
+    const isPkg = typeof (process as any).pkg !== 'undefined';
+    return isPkg ? path.dirname(process.execPath) : path.resolve(__dirname, '..', '..');
+  })();
 
   constructor(automationEngine: AutomationEngine, sessionTokenManager?: SessionTokenManager, port?: number, helperRegistry?: HelperRegistry) {
     this.automationEngine = automationEngine;
@@ -112,9 +124,14 @@ export class HttpServerWithDashboard {
       testSessionDir: './test/sessionlogs',
     };
     
-    // Register this dashboard as log receiver
+    // Register this dashboard as log receiver.
+    // Guard against re-entrant calls: appendSecurityAuditEntry's catch block must
+    // not route back through globalLogger('security') or we get infinite recursion.
+    let _logInProgress = false;
     globalLogger.onLog((level, source, message) => {
-      this.log(level, source, message);
+      if (_logInProgress) return;
+      _logInProgress = true;
+      try { this.log(level, source, message); } finally { _logInProgress = false; }
     });
 
     // Load persisted settings from disk (overrides defaults)
@@ -184,8 +201,10 @@ export class HttpServerWithDashboard {
         this._auditDiskLineCount = kept.length;
       }
     } catch (err) {
-      // Non-fatal: log file may be on read-only FS
-      globalLogger.warn('security', `Could not write security audit file: ${err}`);
+      // Non-fatal: log file may be on read-only FS.
+      // Do NOT use globalLogger here — that would re-enter this method via the
+      // onLog callback and cause infinite recursion / stack overflow.
+      process.stderr.write(`[security-audit] Could not write security audit file: ${err}\n`);
     }
   }
 
@@ -334,7 +353,7 @@ export class HttpServerWithDashboard {
    */
   private loadSecurityPolicy(): void {
     try {
-      const configPath = path.join(__dirname, '../../config/security/config.json');
+      const configPath = path.join(this.extensionRoot, 'config/security/config.json');
       if (fs.existsSync(configPath)) {
         const configData = fs.readFileSync(configPath, 'utf8').replace(/^\uFEFF/, '');
         this.securityPolicy = JSON.parse(configData);
@@ -806,6 +825,18 @@ export class HttpServerWithDashboard {
         return;
       }
 
+      // ── /api/auth/users/:id/apikeys — dashboard UI endpoints ──────────────
+      if (this.authService) {
+        const authUserApiKeysMatch = pathname.match(/^\/api\/auth\/users\/([^/]+)\/apikeys$/);
+        if (authUserApiKeysMatch && req.method === 'GET') {
+          return handleInternalListUserApiKeys(req as AuthedRequest, res, this.authService, authUserApiKeysMatch[1]);
+        }
+        const authUserRevokeKeyMatch = pathname.match(/^\/api\/auth\/users\/([^/]+)\/apikeys\/([^/]+)$/);
+        if (authUserRevokeKeyMatch && req.method === 'DELETE') {
+          return handleInternalRevokeApiKey(req as AuthedRequest, res, this.authService, authUserRevokeKeyMatch[1], authUserRevokeKeyMatch[2]);
+        }
+      }
+
       // ── /api/auth/* ────────────────────────────────────────────────────────
       if (this.authService) {
         if (pathname === '/api/auth/login' && req.method === 'POST') {
@@ -859,6 +890,9 @@ export class HttpServerWithDashboard {
         const apiKeyMatch = pathname.match(/^\/api\/_internal\/users\/([^/]+)\/apikeys$/);
         if (apiKeyMatch && req.method === 'POST') {
           return handleInternalCreateApiKey(req as AuthedRequest, res, this.authService, apiKeyMatch[1]);
+        }
+        if (apiKeyMatch && req.method === 'GET') {
+          return handleInternalListUserApiKeys(req as AuthedRequest, res, this.authService, apiKeyMatch[1]);
         }
         const revokeKeyMatch = pathname.match(/^\/api\/_internal\/users\/([^/]+)\/apikeys\/([^/]+)$/);
         if (revokeKeyMatch && req.method === 'DELETE') {
@@ -1027,7 +1061,7 @@ export class HttpServerWithDashboard {
    */
   private handleGetConfig(req: http.IncomingMessage, res: http.ServerResponse): void {
     try {
-      const configPath = path.join(__dirname, '../../config/security/config.json');
+      const configPath = path.join(this.extensionRoot, 'config/security/config.json');
       const configData = fs.readFileSync(configPath, 'utf8').replace(/^\uFEFF/, '');
       const config = JSON.parse(configData);
 
@@ -1097,7 +1131,7 @@ export class HttpServerWithDashboard {
       }
 
       // Save configuration
-      const configPath = path.join(__dirname, '../../config/security/config.json');
+      const configPath = path.join(this.extensionRoot, 'config/security/config.json');
       fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 2));
 
       // Reload security policy
@@ -2022,7 +2056,11 @@ export class HttpServerWithDashboard {
       }
       // Provide defaults for required fields if auth config is absent
       if (!auth.mode) auth.mode = 'none';
-      if (!auth.jwt) auth.jwt = { enabled: true, expiryMinutes: 60 };
+      if (!auth.jwt) auth.jwt = { enabled: true, expiryMinutes: 60, issuer: '' };
+      // Ensure jwt.issuer is always present (dashboard reads cfg.jwt?.issuer)
+      if (auth.jwt && (auth.jwt as Record<string, unknown>).issuer === undefined) {
+        (auth.jwt as Record<string, unknown>).issuer = '';
+      }
       if (!auth.users) auth.users = { storeSource: 'json', jsonPath: './config/users.json' };
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(auth));

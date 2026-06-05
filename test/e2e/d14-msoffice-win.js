@@ -409,7 +409,7 @@ async function closeTestDocuments(wordName, excelName, pptName) {
 
 async function run() {
   const DASH_PORT = parseInt(process.env.DASH_PORT || '3458', 10);
-  const DASH_URL  = `http://localhost:${DASH_PORT}`;
+  const DASH_URL  = `http://127.0.0.1:${DASH_PORT}`;
 
   return runSuite(labelFrom(__filename), async () => {
     // Static preflight — always runs, no Office required (ADR-008)

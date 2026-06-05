@@ -46,6 +46,9 @@ export interface XmlStep {
   /** When true, the helper will scroll the target element into view before acting on it.
    *  Opt-in only — has no effect unless the helper supports the SCROLL_ command prefix. */
   scroll?: boolean;
+  /** EXEC_CMD only: If true, skip WinSvcBridge in Session 0 and run directly in service context.
+   *  Use for headless/console commands that don't need user desktop. Default: false (use bridge). */
+  background?: boolean | string;
 }
 // ── Editor types ──────────────────────────────────────────────────────────────
 
@@ -152,7 +155,7 @@ export interface AppTemplateInfo {
   app: string;
   helper: string;
   process: string;
-  scenarios: Array<{ id: string; label: string }>;
+  scenarios: Array<{ id: string; label: string; description?: string; effect?: string }>;
 }
 
 // â”€â”€â”€ Shared executor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -493,12 +496,14 @@ export async function executeXmlScenario(opts: {
     }
 
     // ── EXEC_CMD: run a shell command server-side (no helper .exe needed) ──────────────────────────
-    // XML step: action="EXEC_CMD" proc="<executable>" value="<args>" bind="<varName>"
+    // XML step: action="EXEC_CMD" proc="<executable>" value="<args>" bind="<varName>" background="true|false"
+    // background="true" → skip WinSvcBridge in Session 0, run directly (for headless/console commands)
     if (step.action === 'EXEC_CMD') {
       let r: any;
       try {
         const { execCmd } = await import('../engine/builtinActions');
-        r = await execCmd(proc || 'cmd.exe', stepValue || '');
+        const backgroundMode = step.background === 'true' || step.background === true;
+        r = await execCmd(proc || 'cmd.exe', stepValue || '', { backgroundMode });
       } catch (e: any) {
         stepResults.push({ step: stepNum, tool: '_builtin', action: 'EXEC_CMD', proc, path: stepPath,
                            command: 'EXEC_CMD', target: proc, parameter, success: false, error: e.message });
@@ -852,11 +857,18 @@ export class XmlScenarioLoader {
     const helper  = library?.getAttribute('helper')  ?? 'KeyWin.exe';
     const process = library?.getAttribute('process') ?? app;
 
-    const scenarios: Array<{ id: string; label: string }> = [];
+    const scenarios: Array<{ id: string; label: string; description?: string; effect?: string }> = [];
     for (const s of Array.from(doc.querySelectorAll('Scenario'))) {
       const id    = s.getAttribute('id') ?? '';
       const label = s.getAttribute('label') ?? id;
-      if (id) scenarios.push({ id, label });
+      const effect = s.getAttribute('effect') ?? undefined;
+      if (!id) continue;
+      // Extract first english description (or first available)
+      const descEls = Array.from(s.querySelectorAll('Description'));
+      const enDesc  = descEls.find((d: any) => d.getAttribute('lang') === 'en') ?? descEls[0];
+      const rawText = (enDesc as any)?.textContent ?? '';
+      const description = rawText.trim().replace(/\s+/g, ' ') || undefined;
+      scenarios.push({ id, label, ...(description ? { description } : {}), ...(effect ? { effect } : {}) });
     }
 
     return { app, helper, process, scenarios };

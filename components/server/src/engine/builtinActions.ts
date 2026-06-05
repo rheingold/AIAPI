@@ -18,6 +18,31 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+// Resolve the path to WinSvcBridge.exe relative to this module at runtime.
+// In pkg-bundled exe, __dirname is the snapshot root; we look in the real
+// executable's directory (process.execPath) for helpers.
+function _findBridgeExe(): string | null {
+  if (os.platform() !== 'win32') return null;
+  // Candidates: same dir as the running exe (service layout) or dev dist/helpers/
+  const candidates = [
+    path.join(path.dirname(process.execPath), 'dist', 'helpers', 'WinSvcBridge.exe'),
+    path.join(path.dirname(process.execPath), 'helpers', 'WinSvcBridge.exe'),
+    path.join(path.dirname(process.execPath), 'WinSvcBridge.exe'),
+    // Dev-mode: relative to this source file's compiled output
+    path.resolve(__dirname, '..', '..', '..', 'dist', 'helpers', 'WinSvcBridge.exe'),
+    path.resolve(__dirname, '..', '..', '..', '..', 'dist', 'helpers', 'WinSvcBridge.exe'),
+  ];
+  for (const c of candidates) {
+    try { if (fs.existsSync(c)) return c; } catch { /* ignore */ }
+  }
+  return null;
+}
+let _bridgeExeCache: string | null | undefined = undefined;
+function getBridgeExe(): string | null {
+  if (_bridgeExeCache === undefined) _bridgeExeCache = _findBridgeExe();
+  return _bridgeExeCache;
+}
+
 const execFileAsync = promisify(execFile);
 
 export interface BuiltinResult {
@@ -88,38 +113,98 @@ export interface BuiltinFsEntry {
  * @param opts.cwd    Working directory (default: process.cwd())
  * @param opts.timeoutMs  Max execution time in ms (default: 30 000)
  * @param opts.env    Additional env vars to merge with process.env
+ * @param opts.backgroundMode  If true, skip WinSvcBridge in Session 0 (for headless/console commands)
  */
 export async function execCmd(
   executable: string,
   args: string,
-  opts: { cwd?: string; timeoutMs?: number; env?: Record<string, string> } = {},
+  opts: { cwd?: string; timeoutMs?: number; env?: Record<string, string>; backgroundMode?: boolean } = {},
 ): Promise<BuiltinResult> {
-  const cwd    = opts.cwd      ?? process.cwd();
+  const cwd     = opts.cwd      ?? process.cwd();
   const timeout = opts.timeoutMs ?? 30_000;
-  const env    = opts.env ? { ...process.env, ...opts.env } : process.env;
+  const env     = opts.env ? { ...process.env, ...opts.env } : process.env;
+  const background = opts.backgroundMode ?? false;
 
-  // Simple argument split — handles quoted strings naively; not a full shell parser
+  // When running in Windows Session 0 (as a service), route exec_cmd calls
+  // through WinSvcBridge --exec so they run in the active user session with the
+  // user's identity, environment, drives and profile — not as NT AUTHORITY\SYSTEM.
+  // Skip bridge if backgroundMode: true (for headless operations that don't need desktop).
+  if (isSession0() && !background && os.platform() === 'win32') {
+    const bridgeExe = getBridgeExe();
+    if (bridgeExe) {
+      try {
+        // Build arg array: ["--exec", executable, ...splitArgs(args)]
+        const userArgs = args.trim() ? splitArgs(args) : [];
+        const bridgeArgArray = ['--exec', executable, ...userArgs];
+        const { stdout: rawOut, stderr: rawErr } = await execFileAsync(bridgeExe, bridgeArgArray, {
+          cwd,
+          timeout,
+          env,
+          maxBuffer: 1024 * 1024 * 4,
+        });
+        // WinSvcBridge --exec emits exactly one JSON line on stdout then exits.
+        // Parse it; fall back to raw output if unparsable.
+        let parsed: { exitCode?: number; stdout?: string; stderr?: string } = {};
+        try { parsed = JSON.parse(rawOut.trim()); } catch {
+          // Bridge output was not JSON — treat raw stdout as command output
+          return {
+            success:  true,
+            value:    rawOut.trim(),
+            stdout:   rawOut,
+            stderr:   rawErr || undefined,
+            exitCode: 0,
+            _bridge:  'exec' as any,
+          } as BuiltinResult;
+        }
+        const exitCode = typeof parsed.exitCode === 'number' ? parsed.exitCode : 0;
+        return {
+          success:  exitCode === 0,
+          value:    (parsed.stdout ?? '').trim(),
+          stdout:   parsed.stdout ?? '',
+          stderr:   parsed.stderr || undefined,
+          exitCode,
+          _bridge:  'exec' as any,
+        } as BuiltinResult;
+      } catch (bridgeErr: any) {
+        // Bridge itself failed (not the child command) — fall through to direct exec
+        // and attach a warning so the caller knows the user-session route failed.
+        const fallbackResult = await execCmdDirect(executable, args, { cwd, timeout, env });
+        (fallbackResult as any)._bridgeError =
+          `WinSvcBridge --exec failed (${bridgeErr?.message ?? bridgeErr}); fell back to Session-0 direct exec`;
+        return fallbackResult;
+      }
+    }
+  }
+
+  return execCmdDirect(executable, args, { cwd, timeout, env });
+}
+
+/** Internal: run executable directly in the current process context (Session 0 when service). */
+async function execCmdDirect(
+  executable: string,
+  args: string,
+  opts: { cwd: string; timeout: number; env: NodeJS.ProcessEnv },
+): Promise<BuiltinResult> {
   const argArray = args.trim() ? splitArgs(args) : [];
-
   try {
     const { stdout, stderr } = await execFileAsync(executable, argArray, {
-      cwd,
-      timeout,
-      env,
-      maxBuffer: 1024 * 1024 * 4, // 4 MB
+      cwd:       opts.cwd,
+      timeout:   opts.timeout,
+      env:       opts.env,
+      maxBuffer: 1024 * 1024 * 4,
     });
     const result: BuiltinResult = {
-      success: true,
-      value:   stdout.trim(),
-      stdout:  stdout,
-      stderr:  stderr || undefined,
+      success:  true,
+      value:    stdout.trim(),
+      stdout:   stdout,
+      stderr:   stderr || undefined,
       exitCode: 0,
     };
     // QA-3: warn when running in Session 0 and the command likely spawns a GUI app
     if (isSession0() && looksLikeGuiProcess(executable)) {
       result._sessionWarning = 'exec_cmd launched a process in Session 0 which has no interactive desktop. '
         + 'GUI windows will not be visible to users. '
-        + 'Use Task Scheduler interactive task or the VSIX dev-mode server (port 3457) for GUI automation. '
+        + 'Use launchProcess for GUI automation. '
         + 'See docs/specs/SESSION0_ISOLATION.md for details.';
     }
     return result;

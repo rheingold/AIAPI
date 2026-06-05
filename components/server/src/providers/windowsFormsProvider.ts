@@ -195,7 +195,9 @@ export class WindowsFormsProvider implements IAutomationProvider {
         globalLogger.debug('KeyWin', 'Environment: SKIP_SESSION_AUTH=true (development mode)');
         
         const res = spawnSync(this.winKeysPath, cmdArgs, { env: env });
-        try { fsLocal.unlinkSync(tmpFile); } catch {}
+        try { fsLocal.unlinkSync(tmpFile); } catch (unlinkErr) {
+          globalLogger.warn('KeyWin', `Failed to delete temp file "${tmpFile}": ${unlinkErr}`);
+        }
 
         const stderr = res.stderr ? res.stderr.toString('utf8') : '';
         const stdout = res.stdout ? res.stdout.toString('utf8') : '';
@@ -211,8 +213,10 @@ export class WindowsFormsProvider implements IAutomationProvider {
         return { success: false, error: `${stderr || `Exit code ${res.status}`}` };
       }
 
-      // Fallback mock
-      return { success: true, message: `Clicked element ${elementId}` };
+      // winKeysPath is null — helper exe not found/configured. Return failure so caller
+      // is not misled into believing the click succeeded (code-rule-1: no false success).
+      globalLogger.warn('KeyWin', `clickElement called but WinKeys.exe not available (elementId=${elementId})`);
+      return { success: false, error: 'WinKeys.exe not available — cannot click element' };
     } catch (error) {
       return { success: false, error: `Failed to click element: ${error}` };
     }
@@ -235,7 +239,9 @@ export class WindowsFormsProvider implements IAutomationProvider {
       
       const env = { ...process.env, SKIP_SESSION_AUTH: 'true' };
       const res = spawnSync(this.winKeysPath, [`--inject-mode=${this.injectMode}`, tmpFile], { env });
-      try { fsLocal.unlinkSync(tmpFile); } catch {}
+      try { fsLocal.unlinkSync(tmpFile); } catch (unlinkErr) {
+        globalLogger.warn('KeyWin', `Failed to delete temp file "${tmpFile}": ${unlinkErr}`);
+      }
 
       const stdout = res.stdout ? res.stdout.toString('utf8').trim() : '';
       const stderr = res.stderr ? res.stderr.toString('utf8') : '';
@@ -262,7 +268,9 @@ export class WindowsFormsProvider implements IAutomationProvider {
       
       const env = { ...process.env, SKIP_SESSION_AUTH: 'true' };
       const res = spawnSync(this.winKeysPath, [`--inject-mode=${this.injectMode}`, tmpFile], { env });
-      try { fsLocal.unlinkSync(tmpFile); } catch {}
+      try { fsLocal.unlinkSync(tmpFile); } catch (unlinkErr) {
+        globalLogger.warn('KeyWin', `Failed to delete temp file "${tmpFile}": ${unlinkErr}`);
+      }
 
       const stdout = res.stdout ? res.stdout.toString('utf8').trim() : '';
       const stderr = res.stderr ? res.stderr.toString('utf8') : '';

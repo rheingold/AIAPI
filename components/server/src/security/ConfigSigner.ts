@@ -12,6 +12,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CertificateManager } from './CertificateManager';
+import { globalLogger } from '../utils/Logger';
 
 export interface ConfigSignature {
     signature: string;      // Base64 encoded RSA signature
@@ -103,16 +104,14 @@ export class ConfigSigner {
         const configContent = fs.readFileSync(this.configPath, 'utf8');
         const config = JSON.parse(configContent);
 
-        // Add binary hashes if requested
+        // Add binary hashes if requested — always write the section (even empty {}) so
+        // callers can rely on config.binaryHashes being defined after signConfig(..., true).
         if (addBinaryHashes) {
             const binaryHashes = this.getBinaryHashes();
-            if (Object.keys(binaryHashes).length > 0) {
-                config.binaryHashes = binaryHashes;
-                
-                // Write updated config back
-                fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2), 'utf8');
-                console.log(`Added ${Object.keys(binaryHashes).length} binary hashes to config`);
-            }
+            config.binaryHashes = binaryHashes;
+            // Write updated config back
+            fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2), 'utf8');
+            globalLogger.info('ConfigSigner', `Binary hashes written to config (${Object.keys(binaryHashes).length} entries) at ${this.configPath}`);
         }
 
         // Load private key
@@ -264,7 +263,7 @@ export class ConfigSigner {
      */
     updateBinaryHashes(): void {
         if (!fs.existsSync(this.configPath)) {
-            throw new Error('Config file not found');
+            throw new Error(`Config file not found: ${this.configPath}`);
         }
 
         const config = JSON.parse(fs.readFileSync(this.configPath, 'utf8'));

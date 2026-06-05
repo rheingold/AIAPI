@@ -22,13 +22,14 @@
 #   6. GET /api/settings (dashboard port 4458) -> HTTP 200
 #   7. Session 0 detection -> NativeWin present in listHelpers response
 #   8. Service port assertion -> port 4457 listening (not dev port 3457)
+#   9. KeyWin LISTWINDOWS -> windows.Count > 0 (WinSvcBridge returns real user-session windows)
 # ===============================================================================
 
 $McpUrl    = "http://127.0.0.1:4457"
 $DashUrl   = "http://127.0.0.1:4458"
 $Passed    = 0
 $Failed    = 0
-$Total     = 8
+$Total     = 9
 
 function Write-Pass([string]$msg) {
     Write-Host "[PASS] $msg" -ForegroundColor Green
@@ -58,6 +59,20 @@ function Invoke-McpTool {
 
     Invoke-RestMethod -Uri $McpUrl -Method POST -Body $body `
         -ContentType "application/json" -ErrorAction Stop
+}
+
+# Unwrap MCP spec result: tools/call returns result.content[{type:"text",text:"..."}]
+# Parse the JSON text back to an object for field access.
+function Get-McpResult {
+    param($Response)
+    if ($Response.result.content) {
+        $textBlock = $Response.result.content | Where-Object { $_.type -eq "text" } | Select-Object -First 1
+        if ($textBlock -and $textBlock.text) {
+            try { return $textBlock.text | ConvertFrom-Json } catch { return $textBlock.text }
+        }
+    }
+    # Fallback: legacy direct-result format
+    return $Response.result
 }
 
 Write-Host ""
@@ -100,8 +115,8 @@ Write-Host "Check 3: MCP listHelpers (helpers array present)"
 $listHelpersResult = $null
 try {
     $listHelpersResult = Invoke-McpTool -ToolName "listHelpers" -Id 3
-    # Response shape: result.helpers[] (direct array, not content[0].text)
-    $helpers = $listHelpersResult.result.helpers
+    # Response shape: result.content[0].text (JSON) -> parse -> .helpers[]
+    $helpers = (Get-McpResult $listHelpersResult).helpers
     if ($helpers -and $helpers.Count -ge 1) {
         $names = ($helpers | ForEach-Object { $_.name }) -join ', '
         Write-Pass "listHelpers returned $($helpers.Count) helpers: $names"
@@ -120,8 +135,9 @@ try {
         executable = "cmd.exe"
         args       = "/c echo hello"
     } -Id 4
-    # Response shape: result.stdout / result.value
-    $execText = if ($execResp.result.stdout) { $execResp.result.stdout } else { $execResp.result.value }
+    # Response shape: result.content[0].text (JSON) -> parse -> .stdout / .value
+    $execData = Get-McpResult $execResp
+    $execText = if ($execData.stdout) { $execData.stdout } else { $execData.value }
     if ($execText -match "hello") {
         Write-Pass "exec_cmd 'echo hello' output contains 'hello'"
     } else {
@@ -135,14 +151,15 @@ try {
 Write-Host "Check 5: MCP fs_list"
 try {
     $fsResp = Invoke-McpTool -ToolName "fs_list" -Arguments @{ path = "." } -Id 5
-    # Response shape: result.entries[] (direct array)
-    $entries = $fsResp.result.entries
-    if ($fsResp.result.success -eq $true -and $null -ne $entries) {
+    # Response shape: result.content[0].text (JSON) -> parse -> .entries[] / .success
+    $fsData  = Get-McpResult $fsResp
+    $entries = $fsData.entries
+    if ($fsData.success -eq $true -and $null -ne $entries) {
         Write-Pass "fs_list returned $($entries.Count) entries from path '.'"
-    } elseif ($null -ne $fsResp.result.error) {
-        Write-Fail "fs_list returned an error: $($fsResp.result.error)"
+    } elseif ($null -ne $fsData.error) {
+        Write-Fail "fs_list returned an error: $($fsData.error)"
     } else {
-        Write-Fail "fs_list returned unexpected response: success=$($fsResp.result.success)"
+        Write-Fail "fs_list returned unexpected response: success=$($fsData.success)"
     }
 } catch {
     Write-Fail "fs_list failed: $_"
@@ -167,7 +184,7 @@ try {
     if ($null -eq $listHelpersResult) {
         $listHelpersResult = Invoke-McpTool -ToolName "listHelpers" -Id 7
     }
-    $helpers = $listHelpersResult.result.helpers
+    $helpers = (Get-McpResult $listHelpersResult).helpers
     $nativeWin = $helpers | Where-Object { $_.name -like "*NativeWin*" -or $_.virtual -eq $true }
     if ($nativeWin) {
         Write-Pass "Session 0 detection: NativeWin/virtual helper is present (Session-0-safe tools available)"
@@ -182,6 +199,31 @@ try {
     }
 } catch {
     Write-Fail "Session 0 detection check failed: $_"
+}
+
+# -- Check 9: KeyWin LISTWINDOWS via WinSvcBridge -> real user-session windows --
+# Since QA-6 / WinSvcBridge bInherit=true fix, LISTWINDOWS from Session 0 now correctly
+# returns windows from the active user session (via WinSvcBridge + KeyWin in Session 1+).
+# PASS = windows.Count > 0  (bridge active, user-session windows visible)
+# FAIL = windows=[]          (bridge broken or not deployed)
+Write-Host "Check 9: KeyWin LISTWINDOWS (Session 0 isolation)"
+try {
+    $lwResp = Invoke-McpTool -ToolName "AutomateUI" -Arguments @{
+        helper = "KeyWin"
+        action = "LISTWINDOWS"
+    } -Id 9
+    $lwResult = Get-McpResult $lwResp
+    $windows  = $lwResult.windows
+
+    $windowsEmpty = ($null -eq $windows) -or ($windows.Count -eq 0)
+
+    if (-not $windowsEmpty) {
+        Write-Pass "LISTWINDOWS: returned $($windows.Count) user-session windows via WinSvcBridge -- bridge active and working"
+    } else {
+        Write-Fail "LISTWINDOWS: returned empty windows[] -- WinSvcBridge may not be deployed or user session is inactive"
+    }
+} catch {
+    Write-Fail "KeyWin LISTWINDOWS check failed: $_"
 }
 
 # -- Check 8: Service port assertion (must be 4457, not dev port 3457) ---------

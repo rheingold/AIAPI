@@ -35,12 +35,14 @@ They are technology-level primitives, not application scenarios.
 | `SCREENSHOT` | BrowserWin, KeyWin | Capture the current page / window as a base64 PNG. Returns `{"success":true,"command":"SCREENSHOT","data":"<base64>"}`. KeyWin uses `PrintWindow` + GDI+; BrowserWin uses CDP `Page.captureScreenshot`. |
 | `COOKIES`    | BrowserWin | Return the cookie jar for the current page as a JSON array. No arguments needed. |
 | `DIALOG`     | BrowserWin | Detect or inject a browser dialog. `path="inject:JS:timeoutMs"` to trigger an alert; bare `path="accept"` / `path="dismiss"` to interact with a pending dialog. |
-| `EXEC_CMD`   | NativeWin          | Run a shell command on the server. **`proc=`** executable name/path; **`value=`** arguments string. `bind=` captures stdout. High-risk. |
+| `EXEC_CMD`   | NativeWin          | Run a shell command on the server. **`proc=`** executable name/path; **`value=`** arguments string. `bind=` captures stdout. High-risk. Optional: **`background="true"`** to skip WinSvcBridge in Session 0 (for headless/console commands). |
 | `FS_READ`    | NativeWin          | Read a file's text content. **`path=`** file path (absolute or relative). `bind=` captures text. Max 1 MB by default. |
 | `FS_WRITE`   | NativeWin          | Write text to a file. **`path=`** file path; **`value=`** text content. Creates parent directories. High-risk. |
 | `FS_LIST`    | NativeWin          | List directory entries. **`path=`** directory path. `bind=` captures JSON array of `{name, type, size, modified}`. |
 
 > **NativeWin** is a virtual helper — no executable, implemented natively in the server TypeScript/Node.js runtime. It groups `exec_cmd`, `fs_read`, `fs_write`, `fs_list`, and `fetch_webpage`. It appears in `listHelpers` (with `virtual: true`) and `getHelperSchema` but has no subprocess. Tool IDs remain unchanged.
+>
+> **Session 0 behavior:** When running as a Windows Service (Session 0), `EXEC_CMD` routes through `WinSvcBridge.exe` by default so commands run in the active user session with user identity and desktop access. Set `background="true"` to skip the bridge and run directly in Session 0 (for headless operations like file processing, web scraping, or console utilities that don't need UI).
 
 ### 1.1b QUERYTREE path syntax — cross-stack root addressing
 

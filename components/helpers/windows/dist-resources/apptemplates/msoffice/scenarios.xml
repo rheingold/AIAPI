@@ -1,0 +1,322 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  apptemplates/msoffice/scenarios.xml
+  Reusable scenario fragments for Microsoft Office (Word / Excel / PowerPoint).
+
+  Primary helper:   MSOfficeWin.exe — COM document automation (Word, Excel, PowerPoint)
+  Keystroke helper: KeyWin.exe      — Win32 window interaction (LISTWINDOWS, SENDKEYS,
+                                      SCREENSHOT, FOCUS, QUERYTREE)
+
+  ── COM vs UI architecture ──────────────────────────────────────────────────
+  MSOfficeWin communicates with Office via COM late-binding (Documents.Add(),
+  Application.Visible, etc.), bypassing the visible UI.  Most document-content
+  operations (READ, WRITE, FORMAT, QUERYTREE) work even when the window is
+  minimised or hidden.
+
+  However, a small set of OS-level modal dialogs block the COM thread entirely:
+    • Protected View bar / macro security dialog  (yellow info bar)
+    • "Account / Sign-in" dialog
+    • "Recover Unsaved Documents" dialog
+    • COM server busy / retry dialog (when Office is initialising)
+
+  These dialogs must be identified and dismissed via KeyWin.exe, because:
+    1. They are Win32-level modals, not document content.
+    2. While a blocking dialog is open, MSOfficeWin commands time-out or return
+       RETRYLATER.
+    3. KeyWin can address any HANDLE:<hwnd> regardless of application.
+  ─────────────────────────────────────────────────────────────────────────────
+
+  Placeholders ({{...}} substituted at runtime):
+    {{apptype}}   — "word" | "excel" | "powerpoint"
+    {{hwnd}}      — HANDLE:<number> of the Office window (from KeyWin LISTWINDOWS)
+    {{filepath}}  — Full save path for save-as operations
+    {{docname}}   — Partial document name for DOCNAME: target matching
+
+  Processes:
+    Word:        WINWORD.EXE
+    Excel:       EXCEL.EXE
+    PowerPoint:  POWERPNT.EXE
+-->
+<Scenarios app="msoffice" helper="MSOfficeWin.exe" keystroke_helper="KeyWin.exe"
+           process="WINWORD.EXE EXCEL.EXE POWERPNT.EXE">
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       intro — check what Office documents are currently open
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="intro" effect="idempotent">
+    <Description lang="en">
+      Check which Office applications are running and list open documents.
+      Sets context for subsequent scenarios.
+    </Description>
+    <Description lang="ai">
+      1. Call MSOfficeWin LISTDOCS to enumerate all open Word/Excel/PowerPoint documents.
+         LISTDOCS returns an array with: name, path, appType (word/excel/powerpoint),
+         saved (bool), sheets (Excel only), slides (PowerPoint only).
+         If LISTDOCS returns RETRYLATER, Office is still initialising — wait 2 s and retry.
+      2. Call KeyWin LISTWINDOWS to discover window handles.
+         Office windows have titles like:
+           Word:        "Document1 - Word"  or  "filename.docx - Word"
+           Excel:       "Book1 - Excel"     or  "filename.xlsx - Excel"
+           PowerPoint:  "Presentation1 - PowerPoint"
+         Match by title substring to find HANDLE:&lt;hwnd&gt;.
+      3. If no Office process is running, use scenario id="newdoc-word" /
+         "newdoc-excel" / "newdoc-powerpoint" to start one.
+      4. If a blocking dialog is detected (see scenario id="dismiss-office-dialog"),
+         dismiss it before proceeding.
+    </Description>
+    <Steps>
+      <Step action="LISTDOCS" target="word" parameter=""
+            note="enumerate all open Word/Excel/PowerPoint documents"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       newdoc-word — open a blank Word document
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="newdoc-word" effect="creates-document">
+    <Description lang="en">Open a blank Microsoft Word document.</Description>
+    <Description lang="ai">
+      1. Call MSOfficeWin NEWDOC target=word.
+         ─ If Word is already running: adds a new document to the existing instance.
+         ─ If Word is not running: starts WINWORD.EXE and creates Document1.
+         ─ RETRYLATER means COM is busy (Office initialising) — wait 3 s and retry once.
+
+      2. After success, call MSOfficeWin LISTDOCS to verify the document appears.
+         The new document is typically named "DocumentN" (where N is a counter,
+         locale-dependent: "Dokument1" in Czech, "Document1" in English).
+
+      3. Call MSOfficeWin FOCUS target=word to bring the window to front (required
+         for cooperative/showcase mode so the user can see the document).
+
+      4. Call KeyWin LISTWINDOWS to discover HANDLE:&lt;hwnd&gt; of the Word window.
+         Look for a window whose title ends in "- Word" and is not a dialog.
+
+      5. (Optional) Call screenshotWindow targetId=HANDLE:&lt;hwnd&gt; to visually verify
+         the document state before writing content.
+
+      KNOWN SIDE-EFFECTS:
+        • First launch: Word may show an "Account / Sign-in" modal. Detect via
+          KeyWin LISTWINDOWS (title "Sign in to set up Office" or "Activate Office").
+          Dismiss with: KeyWin SENDKEYS {ESC} or CLICKNAME "Close".
+        • Protected View: if a previously recovered file opened in Protected View,
+          a yellow bar shows "Enable Editing". For new blank documents this does not occur.
+        • "Document Recovery" task pane: appears after a crash. Ignore for new docs
+          unless it blocks — in that case use scenario id="dismiss-office-dialog".
+    </Description>
+    <Steps>
+      <Step action="NEWDOC" target="word" parameter=""
+            note="create blank Word document; starts WINWORD.EXE if not running"/>
+      <Step action="FOCUS" target="word" parameter=""
+            note="bring Word window to foreground"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       newdoc-excel — open a blank Excel workbook
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="newdoc-excel" effect="creates-document">
+    <Description lang="en">Open a blank Microsoft Excel workbook.</Description>
+    <Description lang="ai">
+      1. Call MSOfficeWin NEWDOC target=excel.
+         ─ RETRYLATER: COM busy — wait 3 s and retry once.
+         ─ On success, Excel adds a new workbook named "BookN" (locale-dependent:
+           "Sešit1" in Czech, "Book1" in English).
+
+      2. Call MSOfficeWin LISTDOCS to confirm the workbook appears with appType="excel".
+         Note: LISTDOCS for Excel also returns sheets[] — verify at least one sheet exists.
+
+      3. Call MSOfficeWin FOCUS target=excel.
+
+      4. Call KeyWin LISTWINDOWS → find window with title ending in "- Excel".
+         Record HANDLE:&lt;hwnd&gt;.
+
+      KNOWN SIDE-EFFECTS:
+        • Excel may show "Protected View" for files downloaded from the internet.
+          For brand-new workbooks this should not occur.
+        • COM sometimes triggers "Excel is waiting for another application to complete
+          an OLE action" dialog. This blocks all COM calls. KeyWin LISTWINDOWS will
+          show a window titled "Microsoft Excel" with short description. Dismiss with
+          KeyWin SENDKEYS {ENTER} on HANDLE:&lt;hwnd&gt; of that dialog.
+    </Description>
+    <Steps>
+      <Step action="NEWDOC" target="excel" parameter=""
+            note="create blank Excel workbook; starts EXCEL.EXE if not running"/>
+      <Step action="FOCUS" target="excel" parameter=""
+            note="bring Excel window to foreground"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       newdoc-powerpoint — open a blank PowerPoint presentation
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="newdoc-powerpoint" effect="creates-document">
+    <Description lang="en">Open a blank Microsoft PowerPoint presentation.</Description>
+    <Description lang="ai">
+      1. Call MSOfficeWin NEWDOC target=powerpoint.
+         ─ RETRYLATER: COM busy (PowerPoint initialising or busy with animation) —
+           wait 3 s and retry up to 3 times.
+         ─ PowerPoint has slower COM start-up than Word/Excel; first launch may take 5–10 s.
+         ─ On success, a new presentation named "PresentationN" is created with 1 blank slide.
+
+      2. Call MSOfficeWin LISTDOCS to confirm appType="powerpoint" and slides[0] exists.
+
+      3. Call MSOfficeWin FOCUS target=powerpoint.
+
+      4. Call KeyWin LISTWINDOWS → find window with title ending in "- PowerPoint".
+         Record HANDLE:&lt;hwnd&gt;.
+
+      KNOWN SIDE-EFFECTS:
+        • PowerPoint may show a "New Presentation" / template chooser dialog on first run.
+          If KeyWin LISTWINDOWS shows a window with class "#32770" (dialog) whose title
+          does NOT contain "PowerPoint", that is the template chooser.
+          Dismiss: KeyWin SENDKEYS {ESC} on HANDLE:&lt;hwnd&gt; of that dialog.
+        • The presentation window title may briefly read "Presentation1" before a slide
+          is loaded. Call LISTDOCS and verify slides count &gt; 0 before interacting.
+    </Description>
+    <Steps>
+      <Step action="NEWDOC" target="powerpoint" parameter=""
+            note="create blank PowerPoint presentation; starts POWERPNT.EXE if not running"/>
+      <Step action="FOCUS" target="powerpoint" parameter=""
+            note="bring PowerPoint window to foreground"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       screenshot-window — take a screenshot of the Office window
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="screenshot-window" effect="idempotent">
+    <Description lang="en">
+      Capture a screenshot of the Office application window for visual verification.
+    </Description>
+    <Description lang="ai">
+      Prerequisite: {{hwnd}} must be set (call KeyWin LISTWINDOWS first).
+
+      Use the MCP screenshotWindow tool with targetId=HANDLE:{{hwnd}}.
+      The tool returns an inline PNG image so you can visually:
+        • Verify the document content (text, cells, slides)
+        • Detect dialog bars (Protected View, macro security, sign-in)
+        • Confirm the correct window is active
+        • Check for UI state after NEWDOC (blank doc vs template chooser)
+
+      Alternative — full screen: call screenshotWindow targetId="SYSTEM"
+      (useful when hwnd is unknown or you want to see the entire desktop).
+
+      Use this screenshot step before and after significant document changes to
+      provide visual evidence of the current state.
+    </Description>
+    <Steps>
+      <Step action="SENDKEYS" target="HANDLE:{{hwnd}}" parameter="{SCREENSHOT}"
+            helper="KeyWin.exe"
+            note="capture window as base64 PNG; prefer the screenshotWindow MCP tool instead"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       dismiss-office-dialog — close an unexpected Office modal dialog
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="dismiss-office-dialog" effect="closes-dialog">
+    <Description lang="en">
+      Close an unexpected modal dialog that is blocking Office interaction.
+    </Description>
+    <Description lang="ai">
+      Use this scenario when MSOfficeWin commands return RETRYLATER repeatedly
+      and KeyWin LISTWINDOWS reveals a blocking dialog.
+
+      Identification — look for windows where:
+        • process = WINWORD.EXE / EXCEL.EXE / POWERPNT.EXE
+        • title does NOT match the normal document title pattern ("- Word", "- Excel", etc.)
+        • OR title contains: "Sign in", "Activate", "Microsoft Office", "Security",
+          "Protected", "Recover", "Update", "Compatibility", "Keep in Current Format"
+
+      Common dialogs and dismissal strategies:
+        ┌─────────────────────────────────┬──────────────────────────────────┐
+        │ Dialog                          │ Dismissal                        │
+        ├─────────────────────────────────┼──────────────────────────────────┤
+        │ Sign in / Activate Office       │ {ESC} or CLICKNAME "Close"       │
+        │ Protected View (Enable Editing) │ {ALT+F} then {E} (Enable)        │
+        │ Macro security blocked          │ {ENTER} to close                 │
+        │ OLE busy ("waiting for app")    │ {ENTER}                          │
+        │ Keep in Current Format?         │ {ENTER} (keep) or {ALT+D} (discard) │
+        │ Unsaved changes on close        │ {ALT+N} (don't save) or {ESC}    │
+        │ Document Recovery task pane     │ KeyWin CLICKNAME "Close" on pane │
+        └─────────────────────────────────┴──────────────────────────────────┘
+
+      After dismissal:
+        1. Call KeyWin LISTWINDOWS again to verify no more dialogs remain.
+        2. Retry the original MSOfficeWin command.
+    </Description>
+    <Steps>
+      <Step action="SENDKEYS" target="HANDLE:{{hwnd}}" parameter="{ESC}"
+            note="ESC dismisses most cancellable Office dialogs" helper="KeyWin.exe"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       save-document — save the active Office document
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="save-document" effect="persists-document">
+    <Description lang="ai">
+      Call MSOfficeWin SAVE target={{apptype}} (word / excel / powerpoint).
+
+      ─ If the document has never been saved (name is "DocumentN" / "BookN" / etc.):
+        SAVE triggers a "Save As" dialog (\#32770 class, title "Save As").
+        Use scenario id="save-as-dialog" to handle it.
+      ─ If the document was previously saved, SAVE overwrites silently.
+      ─ For Excel: if workbook contains macros (xlsm) and you save as xlsx,
+        a compatibility dialog appears. Dismiss: KeyWin SENDKEYS {ENTER} (keep without macros)
+        or {ESC} (cancel save).
+
+      After SAVE, verify via LISTDOCS that saved=true on the document entry.
+    </Description>
+    <Steps>
+      <Step action="SAVE" target="{{apptype}}" parameter=""
+            note="save document in native format (.docx/.xlsx/.pptx)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       save-as-dialog — handle the Save As dialog
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="save-as-dialog" effect="persists-document">
+    <Description lang="ai">
+      When a "Save As" dialog appears (Win32 #32770, title "Save As"):
+        1. KeyWin LISTWINDOWS → find \#32770 dialog with title containing "Save" → record HANDLE:{{hwnd}}.
+        2. Type the target file path: KeyWin SENDKEYS "{{filepath}}" on HANDLE:{{hwnd}}.
+           Clear any existing text first: KeyWin SENDKEYS {CTRL+A} then type path.
+        3. Confirm: KeyWin SENDKEYS {ENTER} on HANDLE:{{hwnd}}.
+      The dialog closes and the document is saved at {{filepath}}.
+      After closing, call LISTDOCS to verify saved=true and the path matches.
+    </Description>
+    <Steps>
+      <Step action="SENDKEYS" target="HANDLE:{{hwnd}}" parameter="{CTRL+A}"
+            note="select all text in filename box" helper="KeyWin.exe"/>
+      <Step action="SENDKEYS" target="HANDLE:{{hwnd}}" parameter="{{filepath}}"
+            note="type save path" helper="KeyWin.exe"/>
+      <Step action="SENDKEYS" target="HANDLE:{{hwnd}}" parameter="{ENTER}"
+            note="confirm save" helper="KeyWin.exe"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       close-document — close an Office document
+       ═══════════════════════════════════════════════════════════════════ -->
+  <Scenario id="close-document" effect="closes-window">
+    <Description lang="ai">
+      To close an Office document:
+        1. Prefer saving first (scenario id="save-document") to avoid the "Save changes?" dialog.
+        2. Send {ALT+F4} via KeyWin to the target window HANDLE:{{hwnd}}.
+        3. If a "Save changes?" dialog appears:
+             ─ {ALT+N}  = Don't Save (discard changes, close immediately)
+             ─ {ENTER}  = Save (save, then close)
+             ─ {ESC}    = Cancel (abort close)
+        4. Verify via KeyWin LISTWINDOWS that the window is gone.
+        5. If this was the last document, Office may remain open (Application stays alive
+           in COM). Call MSOfficeWin LISTDOCS to verify — if empty, Office is idle.
+    </Description>
+    <Steps>
+      <Step action="SENDKEYS" target="HANDLE:{{hwnd}}" parameter="{ALT+F4}"
+            note="send close request to Office window" helper="KeyWin.exe"/>
+    </Steps>
+  </Scenario>
+
+</Scenarios>

@@ -12,7 +12,7 @@ const { labelFrom } = require('./_make-suite');
 const { ScenarioRunner } = require('./_scenario-runner');
 
 const BROWSER  = process.env.BROWSER || 'chrome';
-const DASH_URL = `http://localhost:${DASH_PORT}`;
+const DASH_URL = `http://127.0.0.1:${DASH_PORT}`;
 
 async function run() {
   return runSuite(labelFrom(__filename), async () => {

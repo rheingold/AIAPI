@@ -1,29 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  D9 Helper Schema & Discovery � test/e2e/d9/scenarios.xml
+  D9 Helper Schema & Discovery - test/e2e/d9/scenarios.xml
   app     : d9
   helper  : BrowserWin.exe
   process : chrome.exe
-  Layer   : L3 (test � never shipped)
+  Layer   : L3 (test - never shipped)
 
-  �� Scenarios ����������������������������������������������������������������
-  hs1-list-helpers-rest      GET /api/listHelpers � object, ?1 helper, KeyWin+BrowserWin present
-  hs2-keywin-schema-rest     GET /api/getHelperSchema?name=KeyWin.exe � all expected commands
-  hs3-browserwin-schema-rest GET /api/getHelperSchema?name=BrowserWin.exe � expected commands
-  hs4-mcp-tools-list         POST JSON-RPC tools/list � KeyWin/BrowserWin/listHelpers/executeScenario
-  hs5-mcp-list-helpers       POST JSON-RPC tools/call listHelpers � helpers in result
-  hs6-mcp-get-schema         POST JSON-RPC tools/call getHelperSchema � commands in result
-  hs7-helpers-reload         POST /api/helpers/reload � no error, helpers still up after reload
+  Scenarios
+  hs1-list-helpers-rest      GET /api/listHelpers - object, >=1 helper, KeyWin+BrowserWin present
+  hs2-keywin-schema-rest     GET /api/getHelperSchema?name=KeyWin.exe - all expected commands
+  hs3-browserwin-schema-rest GET /api/getHelperSchema?name=BrowserWin.exe - expected commands
+  hs4-mcp-tools-list         POST JSON-RPC tools/list - KeyWin/BrowserWin/listHelpers/executeScenario
+  hs5-mcp-list-helpers       POST JSON-RPC tools/call listHelpers - helpers in result
+  hs6-mcp-get-schema         POST JSON-RPC tools/call getHelperSchema - commands in result
+  hs7-helpers-reload         POST /api/helpers/reload - no error, helpers still up after reload
   hs8-helper-toggle          POST /api/helpers/toggle KeyWin OFF, assert disabled, toggle ON
-  d9-suite                   chain hs1�hs8
-  �����������������������������������������������������������������������������
+  hs9-tool-hierarchy         POST tools/list - count range, AutomateUI, NativeWin, [DEPRECATED] (QA-2)
+  d9-suite                   chain hs1-hs9
 -->
 <Scenarios app="d9" helper="BrowserWin.exe" process="chrome.exe"
            xmlns="eu:plachy:sw:aiapi:builtin:.tests:e2e::d9">
 
   <!-- == HS1: GET /api/listHelpers ========================================== -->
   <Scenario id="hs1-list-helpers-rest" effect="read-only">
-    <Description lang="en">GET /api/listHelpers � assert object with helpers array; KeyWin and BrowserWin present.</Description>
+    <Description lang="en">GET /api/listHelpers - assert object with helpers array; KeyWin and BrowserWin present.</Description>
     <Parameters>
       <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
     </Parameters>
@@ -50,7 +50,7 @@
 
   <!-- == HS2: GET /api/getHelperSchema?name=KeyWin.exe ==================== -->
   <Scenario id="hs2-keywin-schema-rest" effect="read-only">
-    <Description lang="en">GET /api/getHelperSchema?name=KeyWin.exe � assert object with all expected KeyWin commands.</Description>
+    <Description lang="en">GET /api/getHelperSchema?name=KeyWin.exe - assert object with all expected KeyWin commands.</Description>
     <Parameters>
       <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
     </Parameters>
@@ -74,7 +74,7 @@
 
   <!-- == HS3: GET /api/getHelperSchema?name=BrowserWin.exe ================ -->
   <Scenario id="hs3-browserwin-schema-rest" effect="read-only">
-    <Description lang="en">GET /api/getHelperSchema?name=BrowserWin.exe � assert object with all expected BrowserWin commands.</Description>
+    <Description lang="en">GET /api/getHelperSchema?name=BrowserWin.exe - assert object with all expected BrowserWin commands.</Description>
     <Parameters>
       <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
     </Parameters>
@@ -98,7 +98,7 @@
 
   <!-- == HS4: MCP tools/list (JSON-RPC POST) ============================ -->
   <Scenario id="hs4-mcp-tools-list" effect="read-only">
-    <Description lang="en">POST JSON-RPC tools/list to MCP server � assert KeyWin, BrowserWin, listHelpers, getHelperSchema, executeScenario tools exposed.</Description>
+    <Description lang="en">POST JSON-RPC tools/list to MCP server - assert KeyWin, BrowserWin, listHelpers, getHelperSchema, executeScenario tools exposed.</Description>
     <Parameters>
       <Param name="mcpUrl" type="string" required="false" example="http://localhost:3457" note="MCP server URL"/>
     </Parameters>
@@ -115,9 +115,9 @@
     </Steps>
   </Scenario>
 
-  <!-- == HS5: MCP tools/call � listHelpers ================================ -->
+  <!-- == HS5: MCP tools/call - listHelpers ================================ -->
   <Scenario id="hs5-mcp-list-helpers" effect="read-only">
-    <Description lang="en">POST JSON-RPC tools/call listHelpers � assert result contains helper entries.</Description>
+    <Description lang="en">POST JSON-RPC tools/call listHelpers - assert result contains helper entries.</Description>
     <Parameters>
       <Param name="mcpUrl" type="string" required="false" example="http://localhost:3457" note="MCP server URL"/>
     </Parameters>
@@ -134,9 +134,9 @@
     </Steps>
   </Scenario>
 
-  <!-- == HS6: MCP tools/call � getHelperSchema ============================ -->
+  <!-- == HS6: MCP tools/call - getHelperSchema ============================ -->
   <Scenario id="hs6-mcp-get-schema" effect="read-only">
-    <Description lang="en">POST JSON-RPC tools/call getHelperSchema(KeyWin.exe) � assert result contains commands.</Description>
+    <Description lang="en">POST JSON-RPC tools/call getHelperSchema(KeyWin.exe) - assert result contains commands.</Description>
     <Parameters>
       <Param name="mcpUrl" type="string" required="false" example="http://localhost:3457" note="MCP server URL"/>
     </Parameters>
@@ -155,7 +155,7 @@
 
   <!-- == HS7: POST /api/helpers/reload ==================================== -->
   <Scenario id="hs7-helpers-reload" effect="read-only">
-    <Description lang="en">POST /api/helpers/reload � assert no error; verify helpers still available after reload.</Description>
+    <Description lang="en">POST /api/helpers/reload - assert no error; verify helpers still available after reload.</Description>
     <Parameters>
       <Param name="dashUrl" type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
     </Parameters>
@@ -177,7 +177,7 @@
 
   <!-- == HS8: POST /api/helpers/toggle (disable + re-enable) ============== -->
   <Scenario id="hs8-helper-toggle" effect="modifies-data">
-    <Description lang="en">Toggle helperName OFF � assert appears in disabled list � toggle ON � assert accepted. Idempotent: always restores.</Description>
+    <Description lang="en">Toggle helperName OFF - assert appears in disabled list - toggle ON - assert accepted. Idempotent: always restores.</Description>
     <Parameters>
       <Param name="dashUrl"    type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
       <Param name="helperName" type="string" required="false" example="KeyWin.exe"           note="helper to toggle"/>
@@ -207,9 +207,48 @@
     </Steps>
   </Scenario>
 
-  <!-- == d9-suite: chain hs1�hs8 ========================================== -->
+  <!-- == HS9: MCP tool hierarchy assertions (QA-2) ======================== -->
+  <Scenario id="hs9-tool-hierarchy" effect="read-only">
+    <Description lang="en">POST JSON-RPC tools/list - assert hierarchical tool set (ADR-017-P2): AutomateUI present; management + NFS tools present; NO [DEPRECATED] root tools (removed in P2); NativeWin in listHelpers; tool count in expected range 9..30.</Description>
+    <Parameters>
+      <Param name="mcpUrl" type="string" required="false" example="http://localhost:3457" note="MCP server URL"/>
+    </Parameters>
+    <Steps>
+      <Step action="HTTP_FETCH" proc="{{mcpUrl}}" path="POST"
+            value="{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:91,&quot;method&quot;:&quot;tools/list&quot;,&quot;params&quot;:{}}"
+            bind="hs9Tools" note="HS9: GET tools/list for hierarchy checks"/>
+      <!-- (a) tool count in expected range 13..30 -->
+      <Step action="EVAL"
+            path="(()=>{ const t=JSON.parse($vars.hs9Tools)?.result?.tools??[]; return t.length; })()"
+            bind="hs9Count" note="HS9: extract tool count"/>
+      <Step action="ASSERTPATHEVAL"
+            path="Number('{{hs9Count}}') >= 9 &amp;&amp; Number('{{hs9Count}}') &lt;= 30"
+            note="HS9: assert tool count in range 9..30 (ADR-017-P2: legacy 8 removed)"/>
+      <!-- (b) AutomateUI present (ADR-017 routing tool) -->
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const t=JSON.parse($vars.hs9Tools)?.result?.tools??[]; return t.some(x=>x.name==='AutomateUI'); })()"
+            note="HS9: assert AutomateUI routing tool present (ADR-017)"/>
+      <!-- (c) listHelpers + getHelperSchema + executeScenario present -->
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const t=JSON.parse($vars.hs9Tools)?.result?.tools??[]; const names=t.map(x=>x.name); return ['listHelpers','getHelperSchema','executeScenario'].every(n=>names.includes(n)); })()"
+            note="HS9: assert management tools present"/>
+      <!-- (d) ADR-017-P2: NO [DEPRECATED] root tools remain in tools/list -->
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const t=JSON.parse($vars.hs9Tools)?.result?.tools??[]; return !t.some(x=>(x.description||'').includes('[DEPRECATED')); })()"
+            note="HS9: assert NO [DEPRECATED] root tools (ADR-017-P2 complete)"/>
+      <!-- (e) NativeWin present in listHelpers result (DEBT-1 Phase 1) -->
+      <Step action="HTTP_FETCH" proc="{{mcpUrl}}" path="POST"
+            value="{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:92,&quot;method&quot;:&quot;tools/call&quot;,&quot;params&quot;:{&quot;name&quot;:&quot;listHelpers&quot;,&quot;arguments&quot;:{}}}"
+            bind="hs9Helpers" note="HS9: call listHelpers to check NativeWin virtual entry"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse($vars.hs9Helpers); const h=r?.result?.helpers??[]; return h.some(x=>(x.name||'').includes('NativeWin')||x.virtual===true); })()"
+            note="HS9: assert NativeWin virtual helper present (DEBT-1 Phase 1)"/>
+    </Steps>
+  </Scenario>
+
+  <!-- == d9-suite: chain hs1-hs9 ========================================== -->
   <Scenario id="d9-suite" effect="test-suite">
-    <Description lang="en">Full D9 helper discovery suite: hs1�hs8 (REST + MCP, no browser needed).</Description>
+    <Description lang="en">Full D9 helper discovery suite: hs1-hs9 (REST + MCP, no browser needed).</Description>
     <Parameters>
       <Param name="dashUrl"    type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
       <Param name="mcpUrl"     type="string" required="false" example="http://localhost:3457" note="MCP server URL"/>
@@ -224,8 +263,8 @@
       <ScenarioRef ref="hs6-mcp-get-schema"/>
       <ScenarioRef ref="hs7-helpers-reload"/>
       <ScenarioRef ref="hs8-helper-toggle"/>
+      <ScenarioRef ref="hs9-tool-hierarchy"/>
     </Steps>
   </Scenario>
 
 </Scenarios>
-

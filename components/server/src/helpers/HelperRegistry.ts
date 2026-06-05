@@ -336,6 +336,55 @@ export class HelperDaemon {
     private buildEnv: () => NodeJS.ProcessEnv,
   ) {}
 
+  // -- Session 0 bridge resolution -------------------------------------------
+
+  /**
+   * Determine the actual exe + args to spawn.
+   *
+   * When running as a Windows Service (Session 0) the helpers cannot reach
+   * the user desktop.  If WinSvcBridge.exe is present in the same directory
+   * as the helper, we launch the helper through it so it runs in the active
+   * user session (Session 1+) while stdin/stdout remain piped back.
+   *
+   * Detection heuristics (all must be true to trigger bridge):
+   *   1. `SESSIONNAME` env var is absent/empty (never set for services)
+   *   2. `USERPROFILE` contains "systemprofile" OR `USERNAME` is "SYSTEM"
+   *      (services running as LocalSystem have these; interactive sessions don't)
+   *   OR: `AIAPI_FORCE_BRIDGE=true` explicitly set for testing.
+   *
+   * Note: SESSIONNAME is absent in some VS Code terminal sessions too, so
+   * we require the additional system-account indicators to avoid false positives.
+   *
+   * @param exePath - Path to the helper executable
+   * @param backgroundMode - If true, skip bridge even in Session 0 (for non-interactive operations)
+   */
+  static resolveSpawnTarget(exePath: string, backgroundMode: boolean = false): { spawnExe: string; spawnArgs: string[] } {
+    const forceOn = process.env['AIAPI_FORCE_BRIDGE'] === 'true';
+    const sessionName = process.env['SESSIONNAME'] || '';
+    const userProfile = (process.env['USERPROFILE'] || '').toLowerCase();
+    const userName = (process.env['USERNAME'] || '').toUpperCase();
+    // Service/Session-0 indicators: no SESSIONNAME AND (systemprofile path OR SYSTEM account)
+    const isSession0 = forceOn ||
+      (!sessionName && (userProfile.includes('systemprofile') || userName === 'SYSTEM'));
+    
+    // Skip bridge if not Session 0, or if explicitly background mode
+    if (!isSession0 || backgroundMode) {
+      if (isSession0 && backgroundMode) {
+        globalLogger.debug('HelperRegistry',
+          `Session 0 + backgroundMode: spawning ${path.basename(exePath)} directly (no bridge)`);
+      }
+      return { spawnExe: exePath, spawnArgs: [] };
+    }
+    const dir = path.dirname(exePath);
+    const bridgePath = path.join(dir, 'WinSvcBridge.exe');
+    if (!fs.existsSync(bridgePath)) {
+      return { spawnExe: exePath, spawnArgs: [] };
+    }
+    globalLogger.info('HelperRegistry',
+      `Session 0 detected — wrapping ${path.basename(exePath)} via WinSvcBridge.exe`);
+    return { spawnExe: bridgePath, spawnArgs: [exePath] };
+  }
+
   // -- Lifecycle --------------------------------------------------------------
 
   start(): void {
@@ -355,7 +404,14 @@ export class HelperDaemon {
         this.startupReject  = reject;
       });
     }
-    const proc = spawn(this.exePath, ['--listen-stdin', '--persistent'], {
+    // -- Session 0 bridge wrapping -------------------------------------------
+    // When running as a Windows Service (Session 0), UI helpers cannot reach
+    // the user desktop.  If WinSvcBridge.exe is present in the same directory,
+    // launch the helper through it so it runs in the active user session
+    // (Session 1+) while stdin/stdout remain transparently piped back to us.
+    // Background mode (false for persistent daemons - they handle UI automation)
+    const { spawnExe, spawnArgs } = HelperDaemon.resolveSpawnTarget(this.exePath, false);
+    const proc = spawn(spawnExe, [...spawnArgs, '--listen-stdin', '--persistent'], {
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -748,6 +804,8 @@ export class HelperRegistry {
 
       for (const entry of entries) {
         if (!entry.toLowerCase().endsWith('.exe')) continue;
+        // Skip the bridge wrapper — it is not a helper itself
+        if (entry.toLowerCase() === 'winsvcbridge.exe') continue;
         const exePath = path.join(dir, entry);
         try {
           const schema = await this.querySchema(exePath);
@@ -786,6 +844,10 @@ export class HelperRegistry {
       const env = { ...process.env, SKIP_SESSION_AUTH: 'true' };
       // Use --listen-stdin (one-shot) + {"action":"_schema"} — same wire protocol as commands,
       // eliminates the need for a separate --api-schema code path in helpers.
+      // Schema probing is a one-shot stdin/stdout pipe — always spawn the helper
+      // directly (never via WinSvcBridge) because: (a) no desktop interaction is
+      // needed to return a JSON schema, (b) the bridge adds Session-0 overhead and
+      // may confuse the auth-nonce handshake with the schema response payload.
       const proc = spawn(exePath, ['--listen-stdin'], { env, timeout: 5000 });
       let out = '';
       proc.stdout.on('data', (d: Buffer) => (out += d.toString()));

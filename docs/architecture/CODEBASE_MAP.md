@@ -415,6 +415,9 @@ Run: `node node_modules/jest-cli/bin/jest.js --no-coverage` (or `npm test`).
 | ADR-013 *(pending)*                                          | Supervised Scenario Mode: inline `scenario` body + `supervised` flag on existing run endpoint; pause-on-fail with session state + resume (N-6) |
 | ADR-014 *(pending)*                                          | Super-Scenarios: user-authored AI-triggable prompt-scenarios with `<Hint>` elements; stored in `config/user-scenarios/`; builds on existing runner + MCP tools (N-1y) |
 | ADR-015 *(pending)*                                          | Scenario Authoring & Consolidation: MCP authoring tools + REST write endpoints + multi-layer consolidation manifest + Dashboard Authoring sub-panel + "Submit Bundle" download (N-1z) |
+| ADR-016 *(pending)*                                          | *(reserved — number allocated; decision not yet recorded)* |
+| [ADR-017](decisions/ADR-017-mcp-tool-hierarchy.md)          | MCP Tool Hierarchy: AutomateUI routing hub + NativeWin virtual helper + legacy tool deprecation path |
+| [ADR-018](decisions/ADR-018-session0-fix-strategy.md)        | Session 0 Fix Strategy: Option C VSIX (v1.0 shipped) + Option B WinSvcBridge.exe (Phase 3 bridge); QA-3 session warnings injected |
 
 ---
 

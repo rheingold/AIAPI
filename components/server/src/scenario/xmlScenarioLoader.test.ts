@@ -545,3 +545,40 @@ describe('lintLocaleInvariance', () => {
     expect(lintLocaleInvariance([s], new Map([['s1', []]]))).toEqual([]);
   });
 });
+
+// ── XML well-formedness regression suite ──────────────────────────────────────
+// Uses the real jsdom (jest.requireActual bypasses the moduleNameMapper mock)
+// to parse every scenarios.xml found under the shipped apptemplates roots.
+// This prevents future silent XML regressions from being swallowed by the
+// minimal mock parser used by XmlScenarioLoader in unit tests.
+
+describe('scenarios.xml well-formedness (all apptemplates roots)', () => {
+  const ROOTS = [
+    path.resolve(__dirname, '../../../helpers/shared/dist-resources/apptemplates'),
+    path.resolve(__dirname, '../../../helpers/windows/dist-resources/apptemplates'),
+  ];
+
+  // Collect all scenarios.xml paths at describe-time (synchronous)
+  const xmlFiles: string[] = [];
+  for (const root of ROOTS) {
+    if (!fs.existsSync(root)) continue;
+    for (const app of fs.readdirSync(root)) {
+      const xmlPath = path.join(root, app, 'scenarios.xml');
+      if (fs.existsSync(xmlPath)) xmlFiles.push(xmlPath);
+    }
+  }
+
+  if (xmlFiles.length === 0) {
+    it.todo('no scenarios.xml files found under apptemplates roots — check build output');
+  } else {
+    it.each(xmlFiles)('parses without errors: %s', (xmlPath) => {
+      // Use the real jsdom — not the minimal mock — so malformed XML throws.
+      // jest.requireActual bypasses the moduleNameMapper that substitutes jsdom-mock.js.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { JSDOM } = jest.requireActual<typeof import('jsdom')>('jsdom');
+      const src = fs.readFileSync(xmlPath, 'utf-8');
+      // JSDOM throws a SyntaxError on any XML parse error when contentType is 'text/xml'
+      expect(() => new JSDOM(src, { contentType: 'text/xml' })).not.toThrow();
+    });
+  }
+});

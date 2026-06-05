@@ -99,7 +99,7 @@
 
         This dialog handling MUST use KeyWin.exe (not LibreOfficeWin.exe), because:
           1. It is a OS-level window, not a document element accessible via UNO.
-          2. KeyWin.exe can address any HANDLE:<hwnd> regardless of application.
+          2. KeyWin.exe can address any HANDLE:&lt;hwnd&gt; regardless of application.
           3. LibreOfficeWin.exe has no command to interact with dialogs it did not create.
 
       After the dialog is dismissed, the Impress document window (SALFRAME + WS_MAXIMIZEBOX,

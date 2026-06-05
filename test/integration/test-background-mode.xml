@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Scenarios>
+  <Scenario name="test-background-mode" app="test">
+    <Description>Test Session 0 background mode flag for EXEC_CMD</Description>
+    
+    <!-- Test 1: Normal EXEC_CMD (should use bridge in Session 0, if running as service) -->
+    <Step action="EXEC_CMD" 
+          proc="cmd.exe" 
+          value="/c echo INTERACTIVE_TEST" 
+          bind="result1"
+          note="Default interactive mode - uses WinSvcBridge if Session 0" />
+    
+    <Step action="ASSERT" 
+          path="$vars.result1" 
+          op="contains" 
+          value="INTERACTIVE_TEST"
+          note="Verify interactive command output" />
+    
+    <!-- Test 2: Background EXEC_CMD (should skip bridge even in Session 0) -->
+    <Step action="EXEC_CMD" 
+          proc="powershell" 
+          value="-NoProfile -Command &quot;Write-Output BACKGROUND_TEST&quot;" 
+          background="true"
+          bind="result2"
+          note="Background mode - runs directly in Session 0" />
+    
+    <Step action="ASSERT" 
+          path="$vars.result2" 
+          op="contains" 
+          value="BACKGROUND_TEST"
+          note="Verify background command output" />
+    
+    <!-- Test 3: Background file operation -->
+    <Step action="EXEC_CMD" 
+          proc="powershell" 
+          value="-NoProfile -Command &quot;Get-Date -Format 'yyyy-MM-dd HH:mm:ss'&quot;" 
+          background="true"
+          bind="timestamp"
+          note="Background timestamp generation" />
+    
+    <Step action="ASSERT" 
+          path="$vars.timestamp" 
+          op="matches" 
+          value="^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}"
+          note="Verify timestamp format" />
+    
+    <!-- Test 4: Verify Session 0 detection (when running as service) -->
+    <Step action="EXEC_CMD" 
+          proc="powershell" 
+          value="-NoProfile -Command &quot;(Get-Process -Id $PID).SessionId&quot;" 
+          background="true"
+          bind="sessionId"
+          note="Check which session we're in" />
+    
+  </Scenario>
+</Scenarios>

@@ -17,6 +17,7 @@
  *     hs6-mcp-get-schema         — JSON-RPC tools/call getHelperSchema(KeyWin.exe)
  *     hs7-helpers-reload         — POST /api/helpers/reload + verify helpers still up
  *     hs8-helper-toggle          — disable KeyWin, assert disabled, re-enable
+ *     hs9-tool-hierarchy         — tool count range, AutomateUI, NativeWin, [DEPRECATED] (QA-2)
  *
  * Run:   node test/e2e/d9-helper-schema.js
  * Env:   DASH_PORT (default 3458)  MCP_PORT (default 3457)
@@ -27,8 +28,8 @@ const { labelFrom }      = require('./_make-suite');
 const { ScenarioRunner } = require('./_scenario-runner');
 
 const MCP_PORT = parseInt(process.env.MCP_PORT || '3457', 10);
-const DASH_URL = `http://localhost:${DASH_PORT}`;
-const MCP_URL  = `http://localhost:${MCP_PORT}`;
+const DASH_URL = `http://127.0.0.1:${DASH_PORT}`;
+const MCP_URL  = `http://127.0.0.1:${MCP_PORT}`;
 
 async function run() {
   return runSuite(labelFrom(__filename), async () => {
@@ -45,6 +46,7 @@ async function run() {
     await runner.runOk('d9', 'hs6-mcp-get-schema',         vars);
     await runner.runOk('d9', 'hs7-helpers-reload',         vars);
     await runner.runOk('d9', 'hs8-helper-toggle',          { ...vars, testTag: TEST_TAG });
+    await runner.runOk('d9', 'hs9-tool-hierarchy',         vars);
   });
 }
 

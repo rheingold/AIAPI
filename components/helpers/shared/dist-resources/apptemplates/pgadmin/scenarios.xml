@@ -42,7 +42,7 @@
     OPERATIONAL NOTES (verified via live session):
 
     A. CDP-enabled browser required:
-       BrowserWin EXEC/FILL require --remote-debugging-port=9222 on Brave/Chrome.
+       BrowserWin EXEC/FILL require - -remote-debugging-port=9222 on Brave/Chrome.
        Only one Brave instance should be running. If two exist, EXEC targets the first
        found which may be a blocked/unsupported instance. Kill stale processes first.
 
@@ -85,8 +85,8 @@
       Do not run if a CDP-enabled browser is already open.
     </Description>
     <Description lang="ai">
-      Command (PowerShell): Start-Process brave -ArgumentList "--remote-debugging-port=9222","--user-data-dir=$env:TEMP\aiapi-9222","{{pgadmin_url}}login"
-      Only the instance started with --remote-debugging-port=9222 accepts CDP commands.
+      Command (PowerShell): Start-Process brave -ArgumentList "- -remote-debugging-port=9222","- -user-data-dir=$env:TEMP\aiapi-9222","{{pgadmin_url}}login"
+      Only the instance started with - -remote-debugging-port=9222 accepts CDP commands.
       If two Brave instances exist (one CDP, one normal), proc:'brave.exe' may hit either.
       Kill all stale Brave processes before launching: Stop-Process -Name brave -ErrorAction SilentlyContinue
       Wait ~3 s after launch before sending EXEC.
@@ -253,7 +253,7 @@
     </Description>
     <Steps>
       <Step action="EXEC" target="{{browser}}"
-            parameter="(function(){var c=pgAdmin.csrf_token;var x=new XMLHttpRequest();x.open('GET','/browser/table/nodes/{{sgid}}/{{sid}}/{{dbid}}/{{schid}}/',false);x.setRequestHeader('X-pgA-CSRFToken',c);x.setRequestHeader('Accept','application/json');x.send();var d=JSON.parse(x.responseText);var tbls=(d.data||d).map(function(t){return t.label});var want=['aiapi_users','aiapi_roles','aiapi_user_roles','aiapi_apikeys','aiapi_settings'];var missing=want.filter(function(n){return tbls.indexOf(n)<0});return JSON.stringify({tables:tbls,missing:missing,ok:missing.length===0})})()"
+            parameter="(function(){var c=pgAdmin.csrf_token;var x=new XMLHttpRequest();x.open('GET','/browser/table/nodes/{{sgid}}/{{sid}}/{{dbid}}/{{schid}}/',false);x.setRequestHeader('X-pgA-CSRFToken',c);x.setRequestHeader('Accept','application/json');x.send();var d=JSON.parse(x.responseText);var tbls=(d.data||d).map(function(t){return t.label});var want=['aiapi_users','aiapi_roles','aiapi_user_roles','aiapi_apikeys','aiapi_settings'];var missing=want.filter(function(n){return tbls.indexOf(n)&lt;0});return JSON.stringify({tables:tbls,missing:missing,ok:missing.length===0})})()"
             note="assert ok:true; any missing table is a test failure"/>
     </Steps>
   </Scenario>

@@ -34,7 +34,9 @@ class ScenarioRunner {
   constructor(defaults = {}) {
     this.defaults = {
       browser: 'chrome',
-      dashUrl: `http://localhost:${process.env.DASH_PORT || 3458}`,
+      // Use 127.0.0.1 explicitly — Node 18+ resolves 'localhost' to ::1 (IPv6)
+      // but the server only binds 127.0.0.1 (IPv4), causing ECONNREFUSED on ::1.
+      dashUrl: `http://127.0.0.1:${process.env.DASH_PORT || 3458}`,
       ...defaults,
     };
   }

@@ -297,6 +297,29 @@ export async function handleInternalDeleteUser(
   }
 }
 
+/** GET /api/_internal/users/:id/apikeys  (also used via /api/auth/users/:id/apikeys)
+ *  Returns API key metadata — NEVER the raw key values. */
+export async function handleInternalListUserApiKeys(
+  req: AuthedRequest,
+  res: http.ServerResponse,
+  authService: AuthService,
+  userId: string,
+): Promise<void> {
+  const ctx = req[AUTH_CONTEXT_KEY];
+  if (!AuthMiddleware.hasInternalPermission(ctx, 'access')) {
+    forbidden(res, 'access'); return;
+  }
+  const user = (await authService.listUsers()).find(u => u.id === userId || u.username === userId);
+  if (!user) { notFound(res, userId); return; }
+  // Return metadata only — never the hashed key value
+  const keys = (user.apiKeys ?? []).map(k => ({
+    id: k.id,
+    label: k.label ?? '',
+    createdAt: k.createdAt ?? '',
+  }));
+  json(res, 200, { keys });
+}
+
 /** POST /api/_internal/users/:id/apikeys */
 export async function handleInternalCreateApiKey(
   req: AuthedRequest,
@@ -322,7 +345,8 @@ export async function handleInternalCreateApiKey(
   json(res, 201, { id: record.id, label: record.label, rawKey: raw, createdAt: record.createdAt });
 }
 
-/** DELETE /api/_internal/users/:id/apikeys/:keyId */
+/** DELETE /api/_internal/users/:id/apikeys/:keyId  (also used via /api/auth/users/:id/apikeys/:keyId)
+ *  Returns 204 on success, 404 if user or key not found. */
 export async function handleInternalRevokeApiKey(
   req: AuthedRequest,
   res: http.ServerResponse,
@@ -334,13 +358,14 @@ export async function handleInternalRevokeApiKey(
   if (!AuthMiddleware.hasInternalPermission(ctx, 'settings_change')) {
     forbidden(res, 'settings_change'); return;
   }
-  const user = (await authService.listUsers()).find(u => u.id === userId);
+  const user = (await authService.listUsers()).find(u => u.id === userId || u.username === userId);
   if (!user) { notFound(res, userId); return; }
   const before = user.apiKeys.length;
   user.apiKeys = user.apiKeys.filter(k => k.id !== keyId);
   if (user.apiKeys.length === before) { notFound(res, keyId); return; }
   await authService.updateUser(user.id, { apiKeys: user.apiKeys });
-  json(res, 200, { ok: true });
+  res.writeHead(204);
+  res.end();
 }
 
 // ─── Role management (/api/_internal/roles) ────────────────────────────────────

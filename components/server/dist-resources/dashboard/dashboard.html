@@ -520,6 +520,12 @@
                 <input type="number" id="auth-jwt-expiry" value="60" min="1" max="10080" style="width:6rem;">
                 <small style="margin-left:0.5rem;">e.g. 60 = 1 h · 480 = 8 h · 10080 = 1 week</small>
               </label>
+              <label>
+                Issuer:
+                <input type="text" id="auth-jwt-issuer" placeholder="aiapi" style="width:16rem;">
+                <small style="margin-left:0.5rem;">Identifies who issued the JWT
+                  (default: <code>aiapi</code>). Must match clients that validate the <code>iss</code> claim.</small>
+              </label>
             </div>
 
             <!-- Password mode settings -->
@@ -611,14 +617,22 @@
                 <input type="text" id="auth-saml-issuer" placeholder="https://your-aiapi-server.com" style="width:100%;box-sizing:border-box;">
               </label>
               <label>IdP Certificate (PEM or <code>file://path</code>):
-                <textarea id="auth-saml-cert" rows="4"
-                          placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
-                          style="width:100%;box-sizing:border-box;font-family:monospace;font-size:0.8rem;resize:vertical;"></textarea>
+                <div style="display:flex;gap:0.5rem;align-items:flex-start;">
+                  <textarea id="auth-saml-cert" rows="4"
+                            placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+                            style="flex:1;font-family:monospace;font-size:0.8rem;resize:vertical;"></textarea>
+                  <button class="btn-browse" data-target-textarea="auth-saml-cert"
+                          data-filter="Certificate Files (*.pem;*.crt;*.cer)|*.pem;*.crt;*.cer|All files (*.*)|*.*">📂</button>
+                </div>
               </label>
               <label>SP Private Key <small>(PEM, optional — for signed AuthN requests)</small>:
-                <textarea id="auth-saml-private-key" rows="3"
-                          placeholder="-----BEGIN PRIVATE KEY-----&#10;(optional)"
-                          style="width:100%;box-sizing:border-box;font-family:monospace;font-size:0.8rem;resize:vertical;"></textarea>
+                <div style="display:flex;gap:0.5rem;align-items:flex-start;">
+                  <textarea id="auth-saml-private-key" rows="3"
+                            placeholder="-----BEGIN PRIVATE KEY-----&#10;(optional)"
+                            style="flex:1;font-family:monospace;font-size:0.8rem;resize:vertical;"></textarea>
+                  <button class="btn-browse" data-target-textarea="auth-saml-private-key"
+                          data-filter="Key Files (*.pem;*.key)|*.pem;*.key|All files (*.*)|*.*">📂</button>
+                </div>
               </label>
               <label>Callback URL:
                 <input type="text" id="auth-saml-callback-url" placeholder="http://localhost:3458/api/auth/saml/callback" style="width:100%;box-sizing:border-box;">
@@ -759,12 +773,13 @@
                   <tr style="background:var(--bg-secondary);">
                     <th style="padding:6px 8px;text-align:left;">Role Name</th>
                     <th style="padding:6px 8px;text-align:left;">Description</th>
+                    <th style="padding:6px 8px;text-align:left;">Permissions</th>
                     <th style="padding:6px 8px;text-align:center;width:80px;">Members</th>
-                    <th style="padding:6px 8px;text-align:center;width:120px;">Actions</th>
+                    <th style="padding:6px 8px;text-align:center;width:140px;">Actions</th>
                   </tr>
                 </thead>
                 <tbody id="auth-roles-tbody">
-                  <tr><td colspan="4" style="text-align:center;padding:1rem;opacity:0.6;">Loading…</td></tr>
+                  <tr><td colspan="5" style="text-align:center;padding:1rem;opacity:0.6;">Loading…</td></tr>
                 </tbody>
               </table>
             </div>
@@ -825,10 +840,52 @@
           <label for="new-role-description">Description:</label>
           <input type="text" id="new-role-description" placeholder="Full administrative access" style="width:100%;box-sizing:border-box;">
         </div>
+        <div class="form-group">
+          <label>Permissions:</label>
+          <div id="new-role-permissions"
+               style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;
+                      padding:0.5rem;border:1px solid var(--border);border-radius:4px;
+                      max-height:200px;overflow-y:auto;">
+            <!-- rendered by openAddRoleModal() -->
+          </div>
+          <small>Optional: grant permissions to this role (can be changed later).</small>
+        </div>
       </div>
       <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:0.75rem;padding:1rem 1.5rem;border-top:1px solid var(--border);">
         <button class="btn-secondary" onclick="closeAddRoleModal()">Cancel</button>
         <button class="btn-primary" onclick="saveNewRole()">💾 Save Role</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Role Modal (with permissions matrix) -->
+  <div id="edit-role-modal" class="modal">
+    <div class="modal-content" style="max-width:520px;">
+      <div class="modal-header">
+        <h3>✏️ Edit Role — <span id="edit-role-name"></span></h3>
+        <button class="modal-close" onclick="closeEditRoleModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="edit-role-description">Description:</label>
+          <input type="text" id="edit-role-description"
+                 style="width:100%;box-sizing:border-box;" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label>Permissions:</label>
+          <div id="edit-role-permissions"
+               style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;
+                      padding:0.5rem;border:1px solid var(--border);border-radius:4px;
+                      max-height:240px;overflow-y:auto;">
+            <!-- rendered by openEditRoleModal() -->
+          </div>
+          <small>Toggle permissions granted to this role.</small>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:0.75rem;
+           padding:1rem 1.5rem;border-top:1px solid var(--border);">
+        <button class="btn-secondary" onclick="closeEditRoleModal()">Cancel</button>
+        <button class="btn-primary" onclick="saveEditedRole()">💾 Save</button>
       </div>
     </div>
   </div>

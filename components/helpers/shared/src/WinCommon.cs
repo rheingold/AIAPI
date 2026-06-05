@@ -1163,17 +1163,24 @@ public static class WinUtils
 
     // ── Mouse input ───────────────────────────────────────────────────────────
 
-    /// <summary>Move the cursor and synthesise a left click using SendInput.</summary>
-    public static void SendMouseClick(int x, int y)
+    /// <summary>
+    /// Move the cursor and synthesise a left click using SendInput.
+    /// Returns true when all input events were injected; false when SendInput
+    /// returned 0 (UIPI block, UAC-elevated target, accessibility permission denied).
+    /// </summary>
+    public static bool SendMouseClick(int x, int y)
     {
         SetCursorPos(x, y);
         INPUT[] inputs = new INPUT[2];
-        inputs[0].type     = INPUT_MOUSE;
+        inputs[0].type       = INPUT_MOUSE;
         inputs[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
-        inputs[1].type     = INPUT_MOUSE;
+        inputs[1].type       = INPUT_MOUSE;
         inputs[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
-        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
-        Console.Error.WriteLine("DEBUG[WinUtils]: SendMouseClick at " + x + "," + y);
+        uint injected = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+        Console.Error.WriteLine("DEBUG[WinUtils]: SendMouseClick at " + x + "," + y
+            + " -> injected=" + injected + "/" + inputs.Length
+            + (injected == 0 ? " WIN32ERR=" + Marshal.GetLastWin32Error() : ""));
+        return injected == (uint)inputs.Length;
     }
 
     /// <summary>
@@ -1181,16 +1188,27 @@ public static class WinUtils
     /// using window-relative client coordinates converted from screen coordinates.
     /// Use when SendInput is unreliable (e.g. the window is partially off-screen).
     /// </summary>
-    public static void DirectMouseClick(IntPtr hwnd, int screenX, int screenY)
+    /// <summary>
+    /// Post WM_LBUTTONDOWN/UP messages directly to <paramref name="hwnd"/>
+    /// using window-relative client coordinates converted from screen coordinates.
+    /// Use when SendInput is unreliable (e.g. the window is partially off-screen).
+    /// Returns true when both PostMessage calls succeeded (non-zero return).
+    /// </summary>
+    public static bool DirectMouseClick(IntPtr hwnd, int screenX, int screenY)
     {
         POINT pt = new POINT { X = screenX, Y = screenY };
         if (!ScreenToClient(hwnd, ref pt)) { pt.X = screenX; pt.Y = screenY; }
         Console.Error.WriteLine("DEBUG[WinUtils]: DirectMouseClick hwnd=" + hwnd
             + " screen(" + screenX + "," + screenY + ") -> client(" + pt.X + "," + pt.Y + ")");
         int lParam = (pt.Y << 16) | (pt.X & 0xFFFF);
-        PostMessage(hwnd, WM_LBUTTONDOWN, (IntPtr)MK_LBUTTON, (IntPtr)lParam);
+        bool downOk = PostMessage(hwnd, WM_LBUTTONDOWN, (IntPtr)MK_LBUTTON, (IntPtr)lParam);
         Thread.Sleep(50);
-        PostMessage(hwnd, WM_LBUTTONUP, IntPtr.Zero, (IntPtr)lParam);
+        bool upOk   = PostMessage(hwnd, WM_LBUTTONUP, IntPtr.Zero, (IntPtr)lParam);
+        if (!downOk || !upOk)
+            Console.Error.WriteLine("DEBUG[WinUtils]: DirectMouseClick PostMessage failed"
+                + " downOk=" + downOk + " upOk=" + upOk
+                + " WIN32ERR=" + Marshal.GetLastWin32Error());
+        return downOk && upOk;
     }
 
     // ── Key injection ─────────────────────────────────────────────────────────
@@ -1545,12 +1563,19 @@ public static class WinUtils
         inp[0].ki.dwFlags      = flags;
         inp[0].ki.time         = 0;
         inp[0].ki.dwExtraInfo  = IntPtr.Zero;
-        SendInput(1, inp, Marshal.SizeOf(typeof(INPUT)));
-        return true;
+        uint injected = SendInput(1, inp, Marshal.SizeOf(typeof(INPUT)));
+        if (injected == 0)
+            Console.Error.WriteLine("DEBUG[WinUtils]: SendRawKey '" + keyName
+                + "' blocked by UIPI/UAC — SendInput returned 0, WIN32ERR="
+                + Marshal.GetLastWin32Error());
+        return injected == 1;
     }
 
-    /// <summary>Right-click at optional screen coordinate (or current cursor position).</summary>
-    public static void SendMouseRightClick(int? x, int? y)
+    /// <summary>
+    /// Right-click at optional screen coordinate (or current cursor position).
+    /// Returns true when all events were injected; false on UIPI/UAC block.
+    /// </summary>
+    public static bool SendMouseRightClick(int? x, int? y)
     {
         if (x.HasValue && y.HasValue) SetCursorPos(x.Value, y.Value);
         INPUT[] inputs = new INPUT[2];
@@ -1558,11 +1583,18 @@ public static class WinUtils
         inputs[0].mi.dwFlags  = MOUSEEVENTF_RIGHTDOWN;
         inputs[1].type        = INPUT_MOUSE;
         inputs[1].mi.dwFlags  = MOUSEEVENTF_RIGHTUP;
-        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+        uint injected = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+        if (injected == 0)
+            Console.Error.WriteLine("DEBUG[WinUtils]: SendMouseRightClick blocked by UIPI/UAC"
+                + " WIN32ERR=" + Marshal.GetLastWin32Error());
+        return injected == (uint)inputs.Length;
     }
 
-    /// <summary>Double-left-click at optional screen coordinate.</summary>
-    public static void SendMouseDblClick(int? x, int? y)
+    /// <summary>
+    /// Double-left-click at optional screen coordinate.
+    /// Returns true when all events were injected; false on UIPI/UAC block.
+    /// </summary>
+    public static bool SendMouseDblClick(int? x, int? y)
     {
         if (x.HasValue && y.HasValue) SetCursorPos(x.Value, y.Value);
         INPUT[] inputs = new INPUT[4];
@@ -1574,7 +1606,11 @@ public static class WinUtils
         inputs[2].mi.dwFlags  = MOUSEEVENTF_LEFTDOWN;
         inputs[3].type        = INPUT_MOUSE;
         inputs[3].mi.dwFlags  = MOUSEEVENTF_LEFTUP;
-        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+        uint injected = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+        if (injected == 0)
+            Console.Error.WriteLine("DEBUG[WinUtils]: SendMouseDblClick blocked by UIPI/UAC"
+                + " WIN32ERR=" + Marshal.GetLastWin32Error());
+        return injected == (uint)inputs.Length;
     }
 
     /// <summary>Move cursor to screen coordinate without clicking.</summary>

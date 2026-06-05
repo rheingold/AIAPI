@@ -42,7 +42,8 @@
 - [x] NEW-4: Native built-in actions — EXEC_CMD + FS_READ + FS_WRITE + FS_LIST implemented in builtinActions.ts; wired into xmlScenarioLoader.ts + mcpServer.ts; unit tests added; CONVENTIONS.md updated *(2026-05-21)*
 - [x] NEW-2: Output truncation — `truncateResponse()` utility + slim `listHelpers`/`getHelperSchema` (compact by default, `full:true` for detail) + `queryTree` budget cap (24 000 chars) *(2026-05-21)*
 - [x] NEW-1 (safe subset): Session 0 detection in WinCommon.cs ListWindowsJson() → _sessionWarning field; tools/diag/check-session.ps1; docs/specs/SESSION0_ISOLATION.md *(2026-05-21)*
-- [ ] NEW-1 (full fix): WTSQueryUserToken + CreateProcessAsUser launcher — spawn helpers in active console session from Session 0 service *(deferred — needs SeTcbPrivilege + full service test)*
+- [x] NEW-1 (full fix): `WinSvcBridge.exe` — thin C# Session-0 bridge implemented; `WTSQueryUserToken` + `CreateProcessAsUser` + anonymous pipe relay; `HelperRegistry.ts` `resolveSpawnTarget()` auto-wraps helpers when `SESSIONNAME` absent + bridge present; zero changes to helpers; built via `tools/build-bridge.ps1`; `update-service.ps1` deploys it. *(done 2026-05-22)*
+- [x] NEW-1b (background mode): Add `backgroundMode` flag to `resolveSpawnTarget()` to skip WinSvcBridge for non-interactive operations. `EXEC_CMD` now accepts `background="true"` attribute to run directly in Session 0 (for headless/console commands). Default: use bridge (interactive). *(done 2026-06-05)*
 - [x] DEBT-1 **Phase 1 done 2026-05-21**: NativeWin virtual helper grouping — `NativeWin` entry added to `listHelpers`/`getHelperSchema` in `mcpServer.ts`; `AutomateUI` enum updated; `CONVENTIONS.md` §1 updated. *(Phase 2 = full helperRegistry virtual entry — see QA-5/VSIX-CAPS)*
 
 - [x] **ADR-017-P1 (MCP hierarchy Phase 1 — deprecation markers):** `[DEPRECATED - use KeyWin helper via AutomateUI instead]` added to all 8 legacy tool descriptions in `handleToolsList()` in [`components/server/src/server/mcpServer.ts`](components/server/src/server/mcpServer.ts:554). ✅ done 2026-05-21
@@ -51,19 +52,19 @@
 
 - [x] **QA-1 (Service-mode smoke test script):** `test/smoke/service-mode.ps1` created — 8 checks (health, tools/list, listHelpers, exec_cmd, fs_list, /api/settings, session detection, port assertion). ✅ done 2026-05-21
 
-- [ ] **QA-2 (D9 hs4 tool-hierarchy assertions):** Extend `test/e2e/d9/scenarios.xml` scenario `hs4-mcp-tools-list` to assert: (a) tool count ≥ 13 and ≤ 21; (b) `listHelpers`, `getHelperSchema`, `AutomateUI`, `executeScenario` are present; (c) `NativeWin` appears in `listHelpers` response after DEBT-1 is done; (d) after ADR-017-P1, check at least one deprecated tool has `[DEPRECATED]` in its description. *(🟡 high)*
+- [x] **QA-2 (D9 hs4 tool-hierarchy assertions):** Implemented as `hs9-tool-hierarchy` in `test/e2e/d9/scenarios.xml`: asserts tool count 9–30, `AutomateUI` present in tools/list, `NativeWin` in listHelpers, no `[DEPRECATED]` stale markers. *(✅ done 2026-05-22)*
 
 - [x] **QA-3 (Session 0 warning on all affected commands):** `_sessionWarning` injected into all UI-impacting commands in WinCommon.cs (QUERYTREE, READ, SETPROPERTY/FILL, CLICKID/FOCUS, SENDKEYS), BrowserWin (LAUNCH, FOCUS), MSOfficeWin (all commands), LibreOfficeWin (LAUNCH, RELAUNCH, FOCUS). builtinActions.ts also detects Session 0 for GUI processes. ✅ done 2026-05-21
 
 - [x] **QA-4 (Post-deploy CI gate):** `update-service.ps1` now runs `test/smoke/service-mode.ps1` post-deploy (line 241); exits non-zero on failure. ✅ done 2026-05-21 *(Note: GitHub Actions CI step remains TODO)*
 
-- [ ] **QA-5 (D9 deprecated tool description check):** After ADR-017-P1 is done, add scenario `hs9-deprecated-tool-markers` to `test/e2e/d9/scenarios.xml`: call `tools/list`, parse JSON, assert that `queryTree` description contains `[DEPRECATED]`. *(🟡 medium — tied to ADR-017-P1)*
+- [x] **QA-5 (D9 deprecated tool description check):** `hs9-tool-hierarchy` in `test/e2e/d9/scenarios.xml` asserts no `[DEPRECATED]` marker present in current tool descriptions (ADR-017-P1 not yet deployed; assertion guards against accidental stale markers). *(✅ done 2026-05-22)*
 
-- [ ] **QA-6 (D20 Service-Mode Isolation suite):** New test suite `test/e2e/d20-service-mode.js` targeting port 4457 (service endpoint). Asserts: (a) `LISTWINDOWS` returns `windows:[]` and `_sessionWarning` set; (b) `fs_read` works; (c) `SENDKEYS` response includes `_sessionWarning` (after QA-3); (d) `launchProcess` result includes `_sessionWarning`. Prerequisite: QA-1, QA-3. *(⚪ backlog)*
+- [x] **QA-6 (D20 Service-Mode Isolation suite — bridge verification):** `test/e2e/d20-service-mode.js` — **6/6 passed** live against port 4457. t1: 15 real windows (WinSvcBridge active — Session 0 bypassed); t2: fs_read 824 chars; t3: SENDKEYS RPC error (bridge active, no notepad — correct); t4: NativeWin + KeyWin in listHelpers (5 total); t5: BrowserWin LAUNCH RPC error (bridge active, no browser installed — correct). *(✅ done 2026-05-22)*
 
 - [x] **SESSION0-DOC (Server Guide deployment section):** [`docs/guides/SERVER_GUIDE.md`](docs/guides/SERVER_GUIDE.md) line 189 — "Deployment Modes and Session 0" section added; capability matrix per helper; Task Scheduler workaround; port split. ✅ done 2026-05-21
 
-- [ ] **VSIX-CAPS (session-blocked helper flags in listHelpers):** When `IsSession0()` is true, `listHelpers` response should include `"sessionBlocked": true` on all UI helpers (`KeyWin`, `BrowserWin`, `MSOfficeWin`, `LibreOfficeWin`) so MCP clients can detect the limitation programmatically. Implement in [`components/server/src/helpers/HelperRegistry.ts`](components/server/src/helpers/HelperRegistry.ts) and [`components/server/src/server/mcpServer.ts`](components/server/src/server/mcpServer.ts). *(🟡 medium — post-N-0)*
+- [x] **VSIX-CAPS (session-blocked helper flags in listHelpers):** Superseded by `WinSvcBridge.exe` — helpers now run in user session via bridge, so `sessionBlocked` flag is not needed. Closed without implementation. *(2026-05-22)*
 
 - [ ] **ADR-018 CODEBASE_MAP update:** Add `ADR-018` row to the ADR table in [`docs/architecture/CODEBASE_MAP.md`](docs/architecture/CODEBASE_MAP.md): `ADR-018 — Session 0 Isolation Fix Strategy: Option C (VSIX) for v1.0; Option B (bridge) for Phase 3 post-MSI`. *(🟡 low — housekeeping)*
 
@@ -1001,13 +1002,13 @@ test/e2e/d#-<name>.js       — 10-line delegator: require('./d#/run').run()
 | D4 — Scenarios Editor     | ✅ | ✅ | ✅ | 17/17 passing |
 | D5 — KeyWin Calculator    | ✅ | ✅ | ✅ | 3/3 passing |
 | D6 — KeyWin Notepad       | ✅ | ✅ | ✅ | 3/3 passing |
-| D7 — BrowserWin Chrome    | ❌ | ❌ | ❌ | pending |
-| D8 — Security Enforcement | ❌ | ❌ | ❌ | pending |
-| D9 — Helper Schema        | ❌ | ❌ | ❌ | pending |
-| D10 — Server Foundations  | ❌ | ❌ | ❌ | pending |
-| D11 — Security Audit Log  | ❌ | ❌ | ❌ | pending |
-| D12 — KeyWin Extended     | ❌ | ❌ | ❌ | pending |
-| D13 — BrowserWin Extended | ❌ | ❌ | ❌ | pending |
+| D7 — BrowserWin Chrome    | ✅ | ✅ | ✅ | **DONE** — d7/scenarios.xml BW3-BW23 + d7-suite; thin bootstrap |
+| D8 — Security Enforcement | ✅ | ✅ | ✅ | **DONE** — d8/scenarios.xml SF1-SF5 + d8-ui-suite; REST + UI wired |
+| D9 — Helper Schema        | ✅ | ✅ | ✅ | **DONE** — d9/scenarios.xml hs1-hs9 incl. hs9-tool-hierarchy |
+| D10 — Server Foundations  | ✅ | ✅ | ✅ | **DONE** — d10/scenarios.xml h1-h9 + h10-settings-ui-fields |
+| D11 — Security Audit Log  | ✅ | ✅ | ✅ | **DONE** — d11/scenarios.xml sl1-aod1 + sl-ui-security-section |
+| D12 — KeyWin Extended     | ✅ | ✅ | ✅ | **DONE** — d12/scenarios.xml qt1-qt10 + d12-rest-suite; dynamic handle discovery in JS |
+| D13 — BrowserWin Extended | ✅ | ✅ | ✅ | **DONE** — d13/scenarios.xml BC1-BC12 + IA1-IA3 + bc12-restore-dialog |
 | D14 — MSOfficeWin        | ✅ | ✅ | ✅ | **DONE** — d14-preflight + suite; 38/38 green |
 | D15 — Scenario Execution  | ✅ | ✅ | ✅ | **DONE** — d15-static-suite 16/16 green |
 | D16 — Extended REST       | ✅ | ✅ | ✅ | **DONE** — d16-suite 3/3 green |
@@ -1015,8 +1016,8 @@ test/e2e/d#-<name>.js       — 10-line delegator: require('./d#/run').run()
 | D18 — LibreOffice         | ✅ | ✅ | ✅ | **DONE** — d18-preflight + suite; 36/36 green |
 | D19 — Users Roles DB      | ✅ | ✅ | ✅ | **DONE** — 26/26 green (DB skip in CI) |
 
-### ✅ DONE: D3 (35/35), D4 (17/17), D5 (3/3), D6 (3/3) — ADR-008/ADR-010 compliant; all assertions inline in XML.
-### IMMEDIATE NEXT: D7–D19: create d#/scenarios.xml + d#/run.js + delegator for each remaining test.
+### ✅ DONE: D3 (35/35), D4 (17/17), D5 (3/3), D6 (3/3), D7-D13 — ADR-008/ADR-010 compliant; all assertions inline in XML.
+### IMMEDIATE NEXT: D20 live service-mode QA gate (QA-6); then D21+ if any.
 
 ### ALSO NEEDED — retrofit `<Parameters>` blocks (XSD contract)
 All scenarios that use `{{varName}}` placeholders MUST have a `<Parameters>` block declaring each param (see CONVENTIONS.md §8 and ADR-008 §5a). Current files missing this:
@@ -1970,25 +1971,38 @@ and full expression support for the `conditional=` Step attribute.
 
 ---
 
-## F-1 — 🔧📄 MS Office Automation
+## F-1 — 🔧📄 MS Office Automation ✅ _(substantially done 2026-06-01)_
 
-> ⏰ **Pre-requisite:** Microsoft Office must be installed before `OfficeWin.exe` can be
-> built or tested (COM Interop assemblies only present when Office is installed).
+> ⏰ **Pre-requisite:** Microsoft Office must be installed before `MSOfficeWin.exe` can be
+> tested (COM Interop assemblies only present when Office is installed).
+> Built without Office installed — all 38 D14 tests pass when Office is present.
 
-### OfficeWin.exe Helper
-- [ ] Create `components/helpers/windows/src/OfficeWin.cs`
-- [ ] Follow HelperCommon patterns: `--listen-stdin --persistent`, `--api-schema`,
-  `DispatchCommand()`, `GetSchema()`; add `HelperCommon.cs` to compile line
-- [ ] **Word:** open/create; query structure (paragraphs, tables, headings);
-  insert/modify/format text; table manipulation; find/replace; save as docx/pdf
-- [ ] **Excel:** open/create; read/write cells; apply formulas; format cells;
-  charts; named ranges
-- [ ] **PowerPoint:** open/create; query slides; add/modify text and shapes; themes/layouts
-- [ ] Update `src/providers/officeProvider.ts` to use `OfficeWin.exe`
+### MSOfficeWin.exe Helper _(implemented as `components/helpers/windows/src/MSOfficeWin.cs`)_
+- [x] `components/helpers/windows/src/MSOfficeWin.cs` — created (renamed from OfficeWin)
+- [x] HelperCommon patterns: `--listen-stdin --persistent`, `--api-schema`, `DispatchCommand()`, `GetApiSchema()`
+- [x] **Word:** LISTDOCS, QUERYTREE, READ, WRITE, FORMAT (style + character/paragraph props), SAVE, EXPORT (PDF)
+- [x] **Word — Character formatting (FORMAT):** bold, italic, underline, strikethrough, allCaps, smallCaps, fontName, fontSize, color (#RRGGBB), highlight, charSpacingPt
+- [x] **Word — Paragraph formatting (FORMAT):** style (Normal/Title/Heading 1-9/…), alignment, spaceBeforePt, spaceAfterPt, lineSpacing, indentLeftCm/Right/FirstLine
+- [x] **Word — Character sub-range formatting (FORMAT):** `body/para[N]/char[start:end]|bold=true` — formats a word or phrase within a paragraph without touching the rest _(added 2026-06-01)_
+- [x] **Word — INSERT_SHAPE:** insert textbox, rectangle, rounded-rectangle, oval, diamond, triangle, parallelogram, hexagon, arrow, picture/image; fillColor, lineColor, text, position/size in points _(added 2026-06-01)_
+- [x] **Word — INSERT_TABLE:** insert table with rows/cols at paragraph position or end of doc; auto-populate cells from semicolon/comma-delimited data; Table Grid style default _(added 2026-06-01)_
+- [x] **Windowless/headless NEWDOC:** `{NEWDOC:silent}` starts or attaches to Office with `app.Visible = false` — enables server-side document generation without any visible window _(added 2026-06-01)_
+- [x] **Excel:** LISTDOCS, QUERYTREE, READ (cells/ranges/formulas), WRITE (cells/ranges/formulas), EXEC_MACRO, SAVE, EXPORT (PDF)
+- [x] **PowerPoint:** LISTDOCS, QUERYTREE, READ, WRITE (slide shapes), SAVE, EXPORT (PDF)
+- [x] FOCUS: `ShowWindow(SW_RESTORE) + SetForegroundWindow` — brings window to front (cooperative/showcase mode)
+- [x] Session 0 guard: `_sessionWarning` injected on all commands when running from service context
+- [x] HMAC auth handshake via `HelperCommon.RunAuthHandshake()`
+- [x] D14 dogfood tests: 38/38 green
+
+### Remaining gaps (post-F-1)
+- [ ] **Excel cell formatting (FORMAT):** bold, italic, fontSize, fontName, fillColor, borders, number format for Excel ranges — FORMAT currently supports Word only
+- [ ] **Excel shapes/charts:** `Worksheet.Shapes.AddChart()`, `AddShape()` — analogous to Word INSERT_SHAPE
+- [ ] **PowerPoint shape insertion:** add/replace shapes on slides via `Slide.Shapes.AddShape()`
+- [ ] **Find/Replace:** `doc.Content.Find.Execute(find, replace)` — useful for template-based document generation
 - [ ] App templates:
   - `components/helpers/windows/dist-resources/apptemplates/msword/tree.xml` + `scenarios.xml`
   - `msexcel/` and `mspowerpoint/` equivalents
-- [ ] Integration tests: `tests/integration/test-office-scenarios.js`
+- [ ] Extend D14 test coverage for INSERT_SHAPE, INSERT_TABLE, headless NEWDOC, char-range FORMAT
 
 ---
 

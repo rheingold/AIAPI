@@ -1028,3 +1028,15 @@
 {"timestamp":"17:06:45","level":"info","source":"security","message":"Loaded 1028 security audit entries from disk (total on disk: 1028)"}
 {"timestamp":"17:07:51","level":"debug","source":"security","message":"Security policy loaded"}
 {"timestamp":"17:07:51","level":"info","source":"security","message":"Loaded 1030 security audit entries from disk (total on disk: 1030)"}
+{"timestamp":"11:12:42","level":"debug","source":"security","message":"Security policy loaded"}
+{"timestamp":"11:12:42","level":"info","source":"security","message":"Loaded 1032 security audit entries from disk (total on disk: 1032)"}
+{"timestamp":"11:15:43","level":"debug","source":"security","message":"Security policy loaded"}
+{"timestamp":"11:15:43","level":"info","source":"security","message":"Loaded 1034 security audit entries from disk (total on disk: 1034)"}
+{"timestamp":"11:16:11","level":"info","source":"Security","message":"Loaded 2 advanced filter rule(s) from dashboard-settings.json"}
+{"timestamp":"11:17:59","level":"info","source":"Security","message":"Loaded 2 advanced filter rule(s) from dashboard-settings.json"}
+{"timestamp":"11:19:56","level":"info","source":"Security","message":"Loaded 2 advanced filter rule(s) from dashboard-settings.json"}
+{"timestamp":"12:09:19","level":"debug","source":"security","message":"Security policy loaded"}
+{"timestamp":"12:09:19","level":"info","source":"security","message":"Loaded 1039 security audit entries from disk (total on disk: 1039)"}
+{"timestamp":"12:09:37","level":"info","source":"Security","message":"Loaded 2 advanced filter rule(s) from dashboard-settings.json"}
+{"timestamp":"12:10:27","level":"info","source":"Security","message":"Loaded 2 advanced filter rule(s) from dashboard-settings.json"}
+{"timestamp":"12:10:29","level":"info","source":"Security","message":"Loaded 2 advanced filter rule(s) from dashboard-settings.json"}

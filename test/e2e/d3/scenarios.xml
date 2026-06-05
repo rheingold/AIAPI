@@ -536,4 +536,197 @@
        DIAGNOSTIC — arbitrary CDP_EXECUTE (diag/dev use only)
        ═══════════════════════════════════════════════════════════════ -->
 
+  <!-- ═══════════════════════════════════════════════════════════════
+       A12 — JWT issuer round-trip (REST)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="a12-jwt-issuer" effect="modifies-data">
+    <Description lang="en">GET /api/auth/config → capture jwt.issuer, POST with new issuer, verify GET reflects it, restore original.</Description>
+    <Parameters>
+      <Param name="dashUrl"  type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+      <Param name="testTag"  type="string" required="true"  example="dogfood_1234" note="unique suffix for test issuer value"/>
+    </Parameters>
+    <Steps>
+      <!-- Read original config -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/config" path="GET"
+            bind="origCfg12" note="A12: GET original auth config"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse('{{origCfg12}}'); return r?.jwt?.issuer ?? 'aiapi'; })()"
+            bind="origIssuer" note="A12: extract original jwt.issuer"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse('{{origCfg12}}'); return r?.mode ?? 'none'; })()"
+            bind="origMode12" note="A12: extract original mode"/>
+      <!-- POST with new issuer -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/config" path="POST"
+            value="{&quot;mode&quot;:&quot;{{origMode12}}&quot;,&quot;jwt&quot;:{&quot;issuer&quot;:&quot;d3-test-{{testTag}}&quot;}}"
+            bind="saveResult12" note="A12: POST with new jwt.issuer"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{saveResult12}}'); return r?.success !== false &amp;&amp; !r?.error; })()"
+            note="A12: assert POST returns success"/>
+      <!-- Verify via GET -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/config" path="GET"
+            bind="verifyCfg12" note="A12: GET to verify saved issuer"/>
+      <Step action="ASSERTPATHEVAL"
+            path="JSON.parse('{{verifyCfg12}}')?.jwt?.issuer === 'd3-test-{{testTag}}'"
+            note="A12: assert jwt.issuer persisted"/>
+      <!-- Restore original issuer -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/auth/config" path="POST"
+            value="{&quot;mode&quot;:&quot;{{origMode12}}&quot;,&quot;jwt&quot;:{&quot;issuer&quot;:&quot;{{origIssuer}}&quot;}}"
+            bind="restoreResult12" note="A12: restore original jwt.issuer"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{restoreResult12}}'); return r?.success !== false &amp;&amp; !r?.error; })()"
+            note="A12: assert restore succeeded"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       A13 — Role permissions CRUD (REST)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="a13-role-permissions" effect="modifies-data">
+    <Description lang="en">Create role with permissions[], verify list, PUT to update permissions, verify, DELETE.</Description>
+    <Parameters>
+      <Param name="dashUrl"  type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+      <Param name="testTag"  type="string" required="true"  example="dogfood_1234" note="unique suffix for test role name"/>
+    </Parameters>
+    <Steps>
+      <!-- Create role with permissions -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/roles" path="POST"
+            value="{&quot;name&quot;:&quot;d3-perm-{{testTag}}&quot;,&quot;description&quot;:&quot;d3 perm test&quot;,&quot;permissions&quot;:[&quot;users.read&quot;,&quot;logs.read&quot;]}"
+            bind="createRole13" note="A13: POST create role with permissions"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{createRole13}}'); return !!(r?.success || r?.role || r?.name); })()"
+            note="A13: assert role created"/>
+      <!-- List roles and find ours -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/roles" path="GET"
+            bind="listRoles13" note="A13: GET roles list"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const data=JSON.parse('{{listRoles13}}'); const list=Array.isArray(data)?data:(data?.roles??[]); const role=list.find(r=>r.name==='d3-perm-{{testTag}}'); return !!role &amp;&amp; Array.isArray(role.permissions) &amp;&amp; role.permissions.length===2 &amp;&amp; role.permissions.includes('users.read'); })()"
+            note="A13: assert role has 2 permissions including users.read"/>
+      <!-- PUT to update permissions -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/roles/d3-perm-{{testTag}}" path="PUT"
+            value="{&quot;permissions&quot;:[&quot;admin&quot;]}"
+            bind="updateRole13" note="A13: PUT update permissions to [admin]"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{updateRole13}}'); return !!(r?.success || r?.role); })()"
+            note="A13: assert PUT succeeded"/>
+      <!-- Verify updated permissions -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/roles" path="GET"
+            bind="listRoles13b" note="A13: GET roles list after update"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const data=JSON.parse('{{listRoles13b}}'); const list=Array.isArray(data)?data:(data?.roles??[]); const role=list.find(r=>r.name==='d3-perm-{{testTag}}'); return !!role &amp;&amp; Array.isArray(role.permissions) &amp;&amp; role.permissions.length===1 &amp;&amp; role.permissions[0]==='admin'; })()"
+            note="A13: assert permissions updated to [admin]"/>
+      <!-- DELETE cleanup -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/roles/d3-perm-{{testTag}}" path="DELETE"
+            bind="deleteRole13" note="A13: DELETE test role"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{deleteRole13}}'); return r?.success===true||r?.ok===true; })()"
+            note="A13: assert DELETE succeeded"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       A14 — API key generate + revoke (REST)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="a14-apikey-revoke" effect="modifies-data">
+    <Description lang="en">Create user, generate API key, verify list, revoke, verify gone, delete user.</Description>
+    <Parameters>
+      <Param name="dashUrl"  type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+      <Param name="testTag"  type="string" required="true"  example="dogfood_1234" note="unique suffix for test username"/>
+    </Parameters>
+    <Steps>
+      <!-- Create user -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users" path="POST"
+            value="{&quot;username&quot;:&quot;d3-ktest-{{testTag}}&quot;,&quot;password&quot;:&quot;Temp1!{{testTag}}&quot;}"
+            bind="createUser14" note="A14: POST create test user"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{createUser14}}'); return !!(r?.username||r?.user?.username||r?.id||r?.user?.id); })()"
+            note="A14: assert user created"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse('{{createUser14}}'); return String(r?.id??r?.user?.id??''); })()"
+            bind="userId14" note="A14: extract user id"/>
+      <!-- Generate API key -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users/{{userId14}}/apikeys" path="POST"
+            value="{}"
+            bind="genKey14" note="A14: POST generate API key"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{genKey14}}'); return !!(r?.apiKey||r?.key||r?.id); })()"
+            note="A14: assert API key generated"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse('{{genKey14}}'); return String(r?.keyId??r?.id??''); })()"
+            bind="keyId14" note="A14: extract key id"/>
+      <!-- List API keys — verify present -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users/{{userId14}}/apikeys" path="GET"
+            bind="listKeys14" note="A14: GET user API keys"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{listKeys14}}'); const keys=r?.apiKeys??r?.keys??[]; return Array.isArray(keys)&amp;&amp;keys.length>=1; })()"
+            note="A14: assert at least 1 API key listed"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse('{{listKeys14}}'); const keys=r?.apiKeys??r?.keys??[]; return String(keys[0]?.id??'{{keyId14}}'); })()"
+            bind="keyId14b" note="A14: resolve key id from list (fallback to genKey id)"/>
+      <!-- Revoke the key -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users/{{userId14}}/apikeys/{{keyId14b}}" path="DELETE"
+            bind="revokeResult14" note="A14: DELETE revoke API key"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{revokeResult14}}'); return r?.success===true||r?.ok===true; })()"
+            note="A14: assert revoke returned success"/>
+      <!-- List API keys — verify gone -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users/{{userId14}}/apikeys" path="GET"
+            bind="listKeys14b" note="A14: GET user API keys after revoke"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{listKeys14b}}'); const keys=r?.apiKeys??r?.keys??[]; return !keys.find(k=>String(k.id)==='{{keyId14b}}'); })()"
+            note="A14: assert revoked key no longer in list"/>
+      <!-- Delete user cleanup -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users/{{userId14}}" path="DELETE"
+            bind="deleteUser14" note="A14: DELETE test user cleanup"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{deleteUser14}}'); return r?.success===true||r?.ok===true; })()"
+            note="A14: assert user deleted"/>
+    </Steps>
+  </Scenario>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       A15 — User role edit (REST)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <Scenario id="a15-user-role-edit" effect="modifies-data">
+    <Description lang="en">Create user with initial role, PUT to update roles to [admin,operator], verify, delete user.</Description>
+    <Parameters>
+      <Param name="dashUrl"  type="string" required="false" example="http://localhost:3458" note="dashboard base URL"/>
+      <Param name="testTag"  type="string" required="true"  example="dogfood_1234" note="unique suffix for test username"/>
+    </Parameters>
+    <Steps>
+      <!-- Create user with operator role -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users" path="POST"
+            value="{&quot;username&quot;:&quot;d3-redit-{{testTag}}&quot;,&quot;password&quot;:&quot;Temp1!{{testTag}}&quot;,&quot;roles&quot;:[&quot;operator&quot;]}"
+            bind="createUser15" note="A15: POST create test user with operator role"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{createUser15}}'); return !!(r?.username||r?.user?.username||r?.id||r?.user?.id); })()"
+            note="A15: assert user created"/>
+      <Step action="EVAL"
+            path="(()=>{ const r=JSON.parse('{{createUser15}}'); return String(r?.id??r?.user?.id??''); })()"
+            bind="userId15" note="A15: extract user id"/>
+      <!-- PUT to update roles to [admin, operator] -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users/{{userId15}}" path="PUT"
+            value="{&quot;roles&quot;:[&quot;admin&quot;,&quot;operator&quot;]}"
+            bind="updateUser15" note="A15: PUT update user roles to [admin,operator]"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{updateUser15}}'); return !!(r?.success||r?.user||r?.roles); })()"
+            note="A15: assert PUT succeeded"/>
+      <!-- List users and verify roles -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users" path="GET"
+            bind="listUsers15" note="A15: GET users list"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const data=JSON.parse('{{listUsers15}}'); const list=Array.isArray(data)?data:(data?.users??[]); const u=list.find(x=>String(x.id)==='{{userId15}}'); return !!u&amp;&amp;Array.isArray(u.roles)&amp;&amp;u.roles.length===2&amp;&amp;u.roles.includes('admin'); })()"
+            note="A15: assert user has 2 roles including admin"/>
+      <!-- Delete user cleanup -->
+      <Step action="HTTP_FETCH" proc="{{dashUrl}}/api/_internal/users/{{userId15}}" path="DELETE"
+            bind="deleteUser15" note="A15: DELETE test user cleanup"/>
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const r=JSON.parse('{{deleteUser15}}'); return r?.success===true||r?.ok===true; })()"
+            note="A15: assert user deleted"/>
+    </Steps>
+  </Scenario>
+
 </Scenarios>

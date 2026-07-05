@@ -289,15 +289,48 @@ export class MCPServer {
       return;
     }
 
-    const url = req.url?.split('?')[0] ?? '/';
+    const rawUrl = req.url?.split('?')[0] ?? '/';
+    const url = rawUrl.endsWith('/') && rawUrl.length > 1 ? rawUrl.slice(0, -1) : rawUrl;
 
     // SSE handshake — MCP HTTP+SSE transport.
-    // Accept both dedicated /sse path AND root / with Accept: text/event-stream
-    // (the latter is what zoot/Claude-Desktop send when the config url ends with /).
-    const acceptsEventStream = (req.headers['accept'] ?? '').includes('text/event-stream');
-    if (req.method === 'GET' && (url === '/sse' || acceptsEventStream)) {
+    // The dedicated /sse path is always treated as an SSE handshake regardless of the
+    // client's Accept header — many MCP clients (mcp-remote, various SDKs) do not send
+    // an explicit `Accept: text/event-stream` header on the GET /sse request, which
+    // previously caused the server to fall through to the JSON/404 handler and the
+    // client to report "Invalid content type, expected text/event-stream".
+    if (req.method === 'GET' && url === '/sse') {
       this.handleSseConnect(req, res);
       return;
+    }
+    if (req.method === 'GET' && url === '/') {
+      const acceptHeader = req.headers['accept'];
+      const wantsEventStream = typeof acceptHeader === 'string' &&
+        acceptHeader.includes('text/event-stream');
+
+      // MCP_SSE_NONSTANDARD_CLIENT_WORKAROUND (env var, default enabled — set to
+      // 'false' to disable):
+      // Root '/' is normally content-negotiated purely via the Accept header. Some
+      // MCP clients, however, point their "url" config directly at the server root
+      // for the SSE stream but use a hand-rolled client that never sends
+      // `Accept: text/event-stream` (e.g. Zoo Code sends `Accept: */*`), while still
+      // expecting an SSE response — a spec violation on the client's part that
+      // otherwise surfaces as "SSE error: Invalid content type, expected
+      // text/event-stream" or "Non-200 status code (404)".
+      // Such clients reliably send the SSE cache-busting header pair
+      // `Cache-Control: no-cache` + `Pragma: no-cache`, which plain health-check /
+      // JSON-RPC callers never send — treat that combination as a secondary,
+      // opt-out-able signal that the caller wants an SSE stream.
+      const nonStandardClientWorkaroundEnabled = process.env.MCP_SSE_NONSTANDARD_CLIENT_WORKAROUND !== 'false';
+      const hasSseCacheHeaders = nonStandardClientWorkaroundEnabled &&
+        req.headers['cache-control'] === 'no-cache' &&
+        req.headers['pragma'] === 'no-cache';
+      const isSseRequest = wantsEventStream || hasSseCacheHeaders;
+
+
+      if (isSseRequest) {
+        this.handleSseConnect(req, res);
+        return;
+      }
     }
 
     // SSE message ingress — MCP HTTP+SSE transport
@@ -393,11 +426,13 @@ export class MCPServer {
    */
   private handleSseConnect(req: http.IncomingMessage, res: http.ServerResponse): void {
     const sessionId = crypto.randomUUID();
+    // Set proper headers for SSE connection
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
       'Access-Control-Allow-Origin': '*',
+      'Transfer-Encoding': 'chunked',
     });
     // MCP SSE spec: first event must be "endpoint" announcing where to POST messages
     res.write(`event: endpoint\ndata: /messages?sessionId=${sessionId}\n\n`);
@@ -444,9 +479,13 @@ export class MCPServer {
    * Handle GET requests for health check and documentation
    */
   private handleGetRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
-    const url = req.url || '/';
+    const rawUrl = req.url || '/';
+    const url = rawUrl.split('?')[0];
 
-    // Health check endpoint
+    // Health check endpoint. Root '/' is included here because MCP clients using the
+    // Streamable HTTP transport (e.g. Zoo Code) probe/poll the bare server URL with a
+    // plain GET (no `Accept: text/event-stream`) — without this, that request fell
+    // through to the 404 handler below, surfacing as "SSE error: Non-200 status code (404)".
     if (url === '/' || url === '/health' || url === '/ping') {
       res.setHeader('Content-Type', 'application/json');
       res.writeHead(200);
@@ -549,131 +588,10 @@ export class MCPServer {
       id,
       result: {
         tools: [
-          {
-            name: 'queryTree',
-            description: '[DEPRECATED - use KeyWin helper via AutomateUI instead] Query UI element tree from a provider',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                providerName: {
-                  type: 'string',
-                  description: 'Provider name (e.g., "windowsForms", "webUI", "office")',
-                },
-                targetId: {
-                  type: 'string',
-                  description: 'Target window/document identifier',
-                },
-                options: {
-                  type: 'object',
-                  description: 'Query options',
-                  properties: {
-                    depth: { type: 'number' },
-                    includeHidden: { type: 'boolean' },
-                  },
-                },
-              },
-              required: ['providerName', 'targetId'],
-            },
-          },
-          {
-            name: 'clickElement',
-            description: '[DEPRECATED - use KeyWin helper via AutomateUI instead] Click a UI element',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                providerName: {
-                  type: 'string',
-                  description: 'Provider name',
-                },
-                elementId: {
-                  type: 'string',
-                  description: 'Element identifier to click',
-                },
-              },
-              required: ['providerName', 'elementId'],
-            },
-          },
-          {
-            name: 'setProperty',
-            description: '[DEPRECATED - use KeyWin helper via AutomateUI instead] Set a property on a UI element',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                providerName: { type: 'string' },
-                elementId: { type: 'string' },
-                propertyName: { type: 'string' },
-                value: { description: 'Property value' },
-              },
-              required: ['providerName', 'elementId', 'propertyName', 'value'],
-            },
-          },
-          {
-            name: 'readProperty',
-            description: '[DEPRECATED - use KeyWin helper via AutomateUI instead] Read a property from a UI element',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                providerName: { type: 'string' },
-                elementId: { type: 'string' },
-                propertyName: { type: 'string' },
-              },
-              required: ['providerName', 'elementId', 'propertyName'],
-            },
-          },
-          {
-            name: 'getProviders',
-            description: '[DEPRECATED - use KeyWin helper via AutomateUI instead] Get list of available automation providers',
-            inputSchema: {
-              type: 'object',
-              properties: {},
-            },
-          },
-          {
-            name: 'listWindows',
-            description: '[DEPRECATED - use KeyWin helper via AutomateUI instead] List all visible windows with titles and process information',
-            inputSchema: {
-              type: 'object',
-              properties: {},
-            },
-          },
-          {
-            name: 'launchProcess',
-            description: '[DEPRECATED - use KeyWin helper via AutomateUI instead] Launch an application process',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                executable: {
-                  type: 'string',
-                  description: 'Executable name or path (e.g., "calc.exe", "notepad.exe")',
-                },
-                args: {
-                  type: 'array',
-                  description: 'Optional command-line arguments',
-                  items: { type: 'string' },
-                },
-                background: {
-                  type: 'boolean',
-                  description: 'Launch as background console process (no UI). Default: false (launches interactively for GUI apps)',
-                  default: false,
-                },
-              },
-              required: ['executable'],
-            },
-          },
-          {
-            name: 'terminateProcess',
-            description: '[DEPRECATED - use KeyWin helper via AutomateUI instead] Terminate a running process by name or PID',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                process: {
-                  type: 'string',
-                  description: 'Process name (e.g., "calc", "CalculatorApp") or PID (e.g., "PID:12345")',
-                },
-              },
-              required: ['process'],
-            },
-          },
+          // ── ADR-017-P2: legacy tools (queryTree, clickElement, setProperty, readProperty,
+          //   getProviders, listWindows, launchProcess, terminateProcess) removed from tools/list.
+          //   Calling them via tools/call still returns a migration-hint error (grace period).
+          //   Use AutomateUI with the appropriate action= instead.
           {
             name: 'executeScenario',
             description: 'Execute a scenario from the app template library (XML) or a legacy JSON scenario file.',
@@ -791,88 +709,10 @@ export class MCPServer {
             },
           },
 
-          // ── Web scraping ──────────────────────────────────────────────────
-          {
-            name: 'fetch_webpage',
-            description: 'Fetch content from a webpage with security filtering',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                url: {
-                  type: 'string',
-                  description: 'URL to fetch (HTTP/HTTPS)',
-                },
-                options: {
-                  type: 'object',
-                  description: 'Fetch options',
-                  properties: {
-                    method: { type: 'string', default: 'GET' },
-                    headers: { type: 'object' },
-                    timeout: { type: 'number', default: 30000 },
-                    extractText: { type: 'boolean', default: true },
-                    extractElements: { type: 'string', description: 'CSS selector to extract specific elements' },
-                    maxResponseSize: { type: 'number', default: 10485760 }, // 10MB
-                    allowRedirects: { type: 'boolean', default: true },
-                    userAgent: { type: 'string' },
-                  },
-                },
-              },
-              required: ['url'],
-            },
-          },
-          // ── Built-in server-side actions (no helper .exe required) ──────────
-          {
-            name: 'exec_cmd',
-            description: 'Run a shell command on the server and capture stdout/stderr. High-risk: subject to security policy.',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                executable: { type: 'string', description: 'Executable path or name (e.g. "cmd.exe", "node", "powershell")' },
-                args:       { type: 'string', description: 'Arguments as a single string (space-separated; double-quote tokens with spaces)', default: '' },
-                cwd:        { type: 'string', description: 'Working directory. Default: server cwd.' },
-                timeoutMs:  { type: 'number', description: 'Max execution time ms. Default: 30000.' },
-              },
-              required: ['executable'],
-            },
-          },
-          {
-            name: 'fs_read',
-            description: 'Read a file\'s text content from the server filesystem. Returns up to 1 MB.',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                path:     { type: 'string', description: 'Absolute or relative path to the file.' },
-                maxBytes: { type: 'number', description: 'Max bytes to read. Default: 1048576 (1 MB).' },
-              },
-              required: ['path'],
-            },
-          },
-          {
-            name: 'fs_write',
-            description: 'Write text to a file on the server filesystem. Creates parent directories as needed. High-risk.',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                path:    { type: 'string', description: 'Absolute or relative path to the file.' },
-                content: { type: 'string', description: 'Text content to write.' },
-                append:  { type: 'boolean', description: 'Append instead of overwrite. Default: false.' },
-              },
-              required: ['path', 'content'],
-            },
-          },
-          {
-            name: 'fs_list',
-            description: 'List entries in a directory on the server filesystem.',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                path:       { type: 'string', description: 'Absolute or relative path to the directory.' },
-                filter:     { type: 'string', enum: ['all', 'files', 'directories'], description: 'Filter entry type. Default: "all".' },
-                maxEntries: { type: 'number', description: 'Max entries to return. Default: 500.' },
-              },
-              required: ['path'],
-            },
-          },
+          //   root tools/list. They are now exclusively accessible via:
+          //     AutomateUI { helper: "NativeWin", action: "EXEC_CMD"|"FS_READ"|"FS_WRITE"|"FS_LIST"|"FETCH_WEBPAGE", ... }
+          //   or via getHelperSchema("NativeWin") for the full schema.
+          //   Calling them by their old flat names still returns a migration-hint error (grace period).
         ],
       },
     };
@@ -888,65 +728,63 @@ export class MCPServer {
       let result: any;
 
       switch (name) {
+        // ── ADR-017-P2 grace-period stubs: legacy tools removed from tools/list but
+        //   still dispatched here with a migration-hint error so callers get a clear
+        //   message instead of "Unknown tool".
         case 'queryTree':
-          result = await this.automationEngine.queryTree(
-            args.providerName,
-            args.targetId,
-            args.options
-          );
-          if (result) {
-            const { data, truncated, originalChars } = truncateResponse(result as object, {
-              hint: 'UI tree truncated. Use a more specific scope path or reduce depth value.',
-            });
-            if (truncated) {
-              result = { ...data, _originalChars: originalChars };
-            }
-          }
-          break;
+          return this.createErrorResponse(id, -32601,
+            'queryTree is removed (ADR-017-P2). Use: AutomateUI { helper:"KeyWin", action:"QUERYTREE", proc:"<target>", value:"<depth>" }');
 
         case 'clickElement':
-          result = await this.automationEngine.clickElement(
-            args.providerName,
-            args.elementId
-          );
-          break;
+          return this.createErrorResponse(id, -32601,
+            'clickElement is removed (ADR-017-P2). Use: AutomateUI { helper:"KeyWin", action:"CLICKID", proc:"<target>", path:"<automationId>" }');
 
         case 'setProperty':
-          result = await this.automationEngine.setProperty(
-            args.providerName,
-            args.elementId,
-            args.propertyName ?? args.property,
-            args.value
-          );
-          break;
+          return this.createErrorResponse(id, -32601,
+            'setProperty is removed (ADR-017-P2). Use: AutomateUI { helper:"KeyWin", action:"SENDKEYS", proc:"<target>", value:"<keys>" }');
 
         case 'readProperty':
-          result = await this.automationEngine.readProperty(
-            args.providerName,
-            args.elementId,
-            args.propertyName ?? args.property
-          );
-          break;
+          return this.createErrorResponse(id, -32601,
+            'readProperty is removed (ADR-017-P2). Use: AutomateUI { helper:"KeyWin", action:"READ", proc:"<target>", path:"<automationId>" }');
 
         case 'getProviders':
-          result = await this.automationEngine.getAvailableProviders();
-          break;
+          return this.createErrorResponse(id, -32601,
+            'getProviders is removed (ADR-017-P2). Use: listHelpers to discover available helpers.');
 
         case 'listWindows':
-          result = await this.automationEngine.listWindows();
-          break;
+          return this.createErrorResponse(id, -32601,
+            'listWindows is removed (ADR-017-P2). Use: AutomateUI { helper:"KeyWin", action:"LISTWINDOWS", proc:"SYSTEM" }');
 
         case 'launchProcess':
-          result = await this.automationEngine.launchProcess(
-            args.executable, 
-            args.args,
-            { background: args.background === true }
-          );
-          break;
+          return this.createErrorResponse(id, -32601,
+            'launchProcess is removed (ADR-017-P2). Use: AutomateUI { helper:"KeyWin", action:"LAUNCH", proc:"<executable>" }');
 
         case 'terminateProcess':
-          result = await this.terminateProcess(args.process || args.processName);
-          break;
+          return this.createErrorResponse(id, -32601,
+            'terminateProcess is removed (ADR-017-P2). Use: AutomateUI { helper:"KeyWin", action:"KILL", proc:"<target>" }');
+
+        // ── ADR-017-P2 grace-period stubs: NativeWin flat tools removed from tools/list.
+        //   Use: AutomateUI { helper:"NativeWin", action:"EXEC_CMD"|"FS_READ"|"FS_WRITE"|"FS_LIST"|"FETCH_WEBPAGE", ... }
+        //   Calling them by their old flat names still returns a migration-hint error (grace period).
+        case 'fetch_webpage':
+          return this.createErrorResponse(id, -32601,
+            'fetch_webpage is removed from root tools (ADR-017-P2). Use: AutomateUI { helper:"NativeWin", action:"FETCH_WEBPAGE", proc:"<url>", value:"<optionsJson>" }');
+
+        case 'exec_cmd':
+          return this.createErrorResponse(id, -32601,
+            'exec_cmd is removed from root tools (ADR-017-P2). Use: AutomateUI { helper:"NativeWin", action:"EXEC_CMD", proc:"<executable>", value:"<args>" }');
+
+        case 'fs_read':
+          return this.createErrorResponse(id, -32601,
+            'fs_read is removed from root tools (ADR-017-P2). Use: AutomateUI { helper:"NativeWin", action:"FS_READ", path:"<filePath>" }');
+
+        case 'fs_write':
+          return this.createErrorResponse(id, -32601,
+            'fs_write is removed from root tools (ADR-017-P2). Use: AutomateUI { helper:"NativeWin", action:"FS_WRITE", path:"<filePath>", value:"<content>" }');
+
+        case 'fs_list':
+          return this.createErrorResponse(id, -32601,
+            'fs_list is removed from root tools (ADR-017-P2). Use: AutomateUI { helper:"NativeWin", action:"FS_LIST", path:"<dirPath>" }');
 
         case 'executeScenario':
           result = await this.executeScenario(args, isLocal);
@@ -955,6 +793,54 @@ export class MCPServer {
         case 'AutomateUI': {
           // Resolve helper by short name (without .exe suffix)
           const helperArg: string = (args.helper || '').replace(/\.exe$/i, '');
+
+          // ── NativeWin virtual helper — dispatch to built-in server-side actions ──
+          if (helperArg === 'NativeWin') {
+            const action: string = (args.action || '').toUpperCase();
+            switch (action) {
+              case 'FETCH_WEBPAGE':
+                // proc= carries the URL; value= carries optional JSON options
+                result = await this.automationEngine.fetchWebpage(
+                  args.proc ?? args.path ?? '',
+                  args.value ? (() => { try { return JSON.parse(args.value); } catch { return {}; } })() : args.options,
+                );
+                break;
+              case 'EXEC_CMD':
+                // proc= carries executable; value= carries args string
+                result = await execCmd(
+                  args.proc ?? args.executable ?? '',
+                  args.value ?? args.args ?? '',
+                  { cwd: args.path, timeoutMs: args.timeoutMs },
+                );
+                break;
+              case 'FS_READ':
+                result = await fsRead(args.path ?? '', { maxBytes: args.maxBytes });
+                break;
+              case 'FS_WRITE':
+                result = await fsWrite(
+                  args.path ?? '',
+                  args.value ?? args.content ?? '',
+                  { append: args.append },
+                );
+                break;
+              case 'FS_LIST':
+                result = await fsList(args.path ?? '', { filter: args.filter, maxEntries: args.maxEntries });
+                break;
+              default:
+                return this.createErrorResponse(id, -32602,
+                  `NativeWin: unknown action "${args.action}". ` +
+                  `Supported: EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE`);
+            }
+            if (!result || result.success === false) {
+              const rawMsg = result?.error ?? result?.message ?? JSON.stringify(result ?? null);
+              const prefix = `${action} failed: `;
+              const msg = typeof rawMsg === 'string' && rawMsg.startsWith(prefix) ? rawMsg : `${prefix}${rawMsg}`;
+              return this.createErrorResponse(id, -32603, msg);
+            }
+            break;
+          }
+
+          // ── Real helper subprocess dispatch ──────────────────────────────
           const allHelpers = this.helperRegistry.getAll();
           const schema = allHelpers.find(
             s => s.toolName === helperArg ||
@@ -964,7 +850,7 @@ export class MCPServer {
           if (!schema) {
             throw new Error(
               `AutomateUI: unknown helper "${helperArg}". ` +
-              `Available: ${allHelpers.map(s => s.toolName).join(', ')}`
+              `Available: NativeWin, ${allHelpers.map(s => s.toolName).join(', ')}`
             );
           }
           result = await this.helperRegistry.callCommand(
@@ -982,30 +868,6 @@ export class MCPServer {
           }
           break;
         }
-
-        case 'fetch_webpage':
-          result = await this.automationEngine.fetchWebpage(args.url, args.options);
-          break;
-
-        case 'exec_cmd':
-          result = await execCmd(
-            args.executable,
-            args.args ?? '',
-            { cwd: args.cwd, timeoutMs: args.timeoutMs },
-          );
-          break;
-
-        case 'fs_read':
-          result = await fsRead(args.path, { maxBytes: args.maxBytes });
-          break;
-
-        case 'fs_write':
-          result = await fsWrite(args.path, args.content, { append: args.append });
-          break;
-
-        case 'fs_list':
-          result = await fsList(args.path, { filter: args.filter, maxEntries: args.maxEntries });
-          break;
 
         case 'listHelpers': {
           const full = args.full === true || args.full === 'true' || args.full === 1;

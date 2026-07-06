@@ -541,19 +541,40 @@ describe('D2 — MCP schema round-trip (getHelperSchema → tool discovery → d
     expect(typeof schema.description).toBe('string');
   });
 
-  it('tools/list includes KeyWin tool when schema is registered', async () => {
+  it('tools/list includes direct helper tools (BrowserWin, KeyWin, etc.)', async () => {
     const res = await rpc(port, 'tools/list');
     expect(res.error).toBeUndefined();
     const names = (res.result?.tools ?? []).map((t: any) => t.name);
+    // Direct helper tools should be present in root tools/list
     expect(names).toContain('KeyWin');
+    expect(names).toContain('BrowserWin');
+    expect(names).toContain('MSOfficeWin');
+    expect(names).toContain('LibreOfficeWin');
+    // AutomateUI router should also be available
+    expect(names).toContain('AutomateUI');
   });
 
-  it('calling KeyWin tool reaches dispatch (not blocked by security filter with no rules)', async () => {
-    // No DENY rules → security filter ALLOW → proceeds to helper execution
-    // Helper binary is fake so it fails at execution, not at filter level
+  it('calling KeyWin tool via AutomateUI (preferred method)', async () => {
+    // Direct helper calls are deprecated; use AutomateUI instead
+    const res = await rpc(port, 'tools/call', {
+      name: 'AutomateUI',
+      arguments: { 
+        helper: 'KeyWin', 
+        action: 'LISTWINDOWS',
+        proc: 'SYSTEM'
+      },
+    });
+    // Should NOT be a security-filter error; may be an execution error for missing binary
+    if (res.error) {
+      expect(res.error.message.toLowerCase()).not.toContain('security filter');
+    }
+  });
+
+  it('calling KeyWin tool directly works (direct helper tool access)', async () => {
+    // Direct tool calls to helpers are supported
     const res = await rpc(port, 'tools/call', {
       name: 'KeyWin',
-      arguments: { proc: 'notepad.exe', action: 'LISTWINDOWS' },
+      arguments: { proc: 'SYSTEM', action: 'LISTWINDOWS' },
     });
     // Should NOT be a security-filter error; may be an execution error for missing binary
     if (res.error) {

@@ -12,6 +12,7 @@ import { HelperRegistry, resolveCallArgs } from '../helpers/HelperRegistry';
 import * as crypto from 'crypto';
 import { truncateResponse, slimHelperSummary } from '../utils/truncateResponse';
 import { execCmd, fsRead, fsWrite, fsList } from '../engine/builtinActions';
+import { renderWebpage } from '../engine/browserRenderClient';
 
 /**
  * MCP (Model Context Protocol) compliant JSON-RPC 2.0 server
@@ -642,6 +643,10 @@ export class MCPServer {
               'Cross-helper: BrowserWin for CDP/web; KeyWin for Win32/UIA + OS dialogs; ' +
               'use KeyWin proc="HANDLE:<hwnd>" for any dialog the primary helper cannot reach. ' +
               'Direct debug: use the named helper tools (BrowserWin/KeyWin/…) above. ' +
+              'Session 0 (Windows Service): all helpers default to the interactive user ' +
+              'session via WinSvcBridge. Pass background:true to bypass this and spawn ' +
+              'directly in Session 0 (headless/background use only — no user desktop, ' +
+              'so dialogs/captchas cannot be resolved). ' +
               'Per-command docs: getHelperSchema.',
             inputSchema: {
               type: 'object',
@@ -663,16 +668,16 @@ export class MCPServer {
                 },
                 path: { type: 'string', description: 'XPath/CSS element address.' },
                 value: { type: 'string', description: 'Payload to write/send.' },
+                background: {
+                  type: 'boolean',
+                  description:
+                    'Session 0 only: bypass WinSvcBridge and spawn directly (no interactive ' +
+                    'desktop). Default false (interactive-by-default). Has no effect outside Session 0.',
+                },
               },
               required: ['helper', 'action'],
             },
           },
-
-          // ── Dynamically discovered helper tools (direct access, respects disabled list) ──
-          ...this.helperRegistry.toMcpTools().filter(t => {
-            const s = this.helperRegistry.getByToolName(t.name);
-            return !s || !this.disabledHelpers.includes(s.helper);
-          }),
 
           // ── Helper management tools ───────────────────────────────────────
           {
@@ -709,10 +714,15 @@ export class MCPServer {
             },
           },
 
-          //   root tools/list. They are now exclusively accessible via:
-          //     AutomateUI { helper: "NativeWin", action: "EXEC_CMD"|"FS_READ"|"FS_WRITE"|"FS_LIST"|"FETCH_WEBPAGE", ... }
+          // ── Direct helper tools (BrowserWin, KeyWin, MSOfficeWin, LibreOfficeWin) ─────
+          //   These provide direct access to each helper without going through AutomateUI.
+          //   Prefer AutomateUI for routing and cross-helper workflows.
+          ...this.helperRegistry.toMcpTools(),
+
+          //   NativeWin actions (EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER)
+          //   are not exposed as separate root-level tools. They are exclusively accessible via:
+          //     AutomateUI { helper: "NativeWin", action: "...", ... }
           //   or via getHelperSchema("NativeWin") for the full schema.
-          //   Calling them by their old flat names still returns a migration-hint error (grace period).
         ],
       },
     };
@@ -764,7 +774,7 @@ export class MCPServer {
             'terminateProcess is removed (ADR-017-P2). Use: AutomateUI { helper:"KeyWin", action:"KILL", proc:"<target>" }');
 
         // ── ADR-017-P2 grace-period stubs: NativeWin flat tools removed from tools/list.
-        //   Use: AutomateUI { helper:"NativeWin", action:"EXEC_CMD"|"FS_READ"|"FS_WRITE"|"FS_LIST"|"FETCH_WEBPAGE", ... }
+        //   Use: AutomateUI { helper:"NativeWin", action:"EXEC_CMD"|"FS_READ"|"FS_WRITE"|"FS_LIST"|"FETCH_WEBPAGE"|"FETCH_WEBPAGE_RENDER", ... }
         //   Calling them by their old flat names still returns a migration-hint error (grace period).
         case 'fetch_webpage':
           return this.createErrorResponse(id, -32601,
@@ -798,11 +808,61 @@ export class MCPServer {
           if (helperArg === 'NativeWin') {
             const action: string = (args.action || '').toUpperCase();
             switch (action) {
-              case 'FETCH_WEBPAGE':
+              case 'FETCH_WEBPAGE': {
                 // proc= carries the URL; value= carries optional JSON options
-                result = await this.automationEngine.fetchWebpage(
+                const url = args.proc ?? args.path ?? '';
+                const fetchOptions = args.value ? (() => { try { return JSON.parse(args.value); } catch { return {}; } })() : (args.options ?? {});
+                
+                result = await this.automationEngine.fetchWebpage(url, fetchOptions);
+                
+                // Auto-escalate to interactive browser mode when login/captcha detected
+                // (unless caller explicitly disabled with autoEscalate:false)
+                if (result?.success && result.loginForm && fetchOptions?.autoEscalate !== false) {
+                  globalLogger.info('mcpServer',
+                    `Login form detected on ${url}, auto-escalating to fetch_webpage_render (interactive browser mode)...`);
+                  
+                  // Render in visible/interactive browser, wait for user to complete login
+                  const renderResult = await renderWebpage(
+                    this.helperRegistry,
+                    url,
+                    {
+                      browser: fetchOptions.browser ?? 'chrome',
+                      headless: false,  // visible for user interaction
+                      background: false,  // use WinSvcBridge in Session 0
+                      detectObstacles: true,  // detect and wait for captcha/login
+                      timeoutMs: fetchOptions.timeoutMs ?? 20000,
+                      waitMs: fetchOptions.waitMs ?? 1500,
+                      selector: fetchOptions.selector,
+                    }
+                  );
+                  
+                  if (renderResult.success) {
+                    // Merge the rendered HTML back into the original result
+                    result = {
+                      ...result,
+                      content: renderResult.html,
+                      text: renderResult.html,  // Full HTML as text
+                      _escalated: true,
+                      _escalationReason: `Login form detected (action: ${result.loginForm.action}, confidence: ${result.loginForm.confidence})`,
+                      obstacle: renderResult.obstacle,
+                    };
+                    globalLogger.info('mcpServer',
+                      `Auto-escalation successful, returned ${renderResult.length} chars of rendered HTML`);
+                  } else {
+                    // Escalation failed, keep original result but add note
+                    result._escalationFailed = renderResult.error;
+                    globalLogger.warn('mcpServer',
+                      `Auto-escalation failed: ${renderResult.error}`);
+                  }
+                }
+                break;
+              }
+              case 'FETCH_WEBPAGE_RENDER':
+                // proc= carries the URL; value= carries optional JSON options ({browser, headless, timeoutMs, waitMs, selector})
+                result = await renderWebpage(
+                  this.helperRegistry,
                   args.proc ?? args.path ?? '',
-                  args.value ? (() => { try { return JSON.parse(args.value); } catch { return {}; } })() : args.options,
+                  args.value ? (() => { try { return JSON.parse(args.value); } catch { return {}; } })() : (args.options ?? {}),
                 );
                 break;
               case 'EXEC_CMD':
@@ -829,7 +889,7 @@ export class MCPServer {
               default:
                 return this.createErrorResponse(id, -32602,
                   `NativeWin: unknown action "${args.action}". ` +
-                  `Supported: EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE`);
+                  `Supported: EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER`);
             }
             if (!result || result.success === false) {
               const rawMsg = result?.error ?? result?.message ?? JSON.stringify(result ?? null);
@@ -859,6 +919,8 @@ export class MCPServer {
             args.action,
             args.path  ?? '',
             args.value ?? '',
+            20000, '', '', false,
+            args.background === true || args.background === 'true',
           );
           if (!result || result.success === false) {
             const rawMsg = result?.error ?? result?.message ?? JSON.stringify(result ?? null);
@@ -875,19 +937,20 @@ export class MCPServer {
           const nativeWinEntry = {
             name: 'NativeWin',
             virtual: true,
-            description: 'Server-side built-in actions (no helper .exe required): exec_cmd, fs_read, fs_write, fs_list, fetch_webpage',
+            description: 'Server-side built-in actions (no helper .exe required): exec_cmd, fs_read, fs_write, fs_list, fetch_webpage, fetch_webpage_render',
             ...(full ? {
-              commandCount: 5,
+              commandCount: 6,
               commands: [
                 { name: 'exec_cmd',      description: 'Run a shell command on the server and capture stdout/stderr. High-risk: subject to security policy.' },
                 { name: 'fs_read',       description: "Read a file's text content from the server filesystem. Returns up to 1 MB." },
                 { name: 'fs_write',      description: 'Write text to a file on the server filesystem. Creates parent directories as needed. High-risk.' },
                 { name: 'fs_list',       description: 'List entries in a directory on the server filesystem.' },
                 { name: 'fetch_webpage', description: 'Fetch content from a webpage with security filtering.' },
+                { name: 'fetch_webpage_render', description: 'Fetch a webpage by rendering it in a real browser (via BrowserWin) and returning the JS-rendered DOM. For dynamic/SPA pages where plain HTTP fetch only sees the pre-render shell. Detects captcha/login/consent obstacles (config/browser-obstacles.json) and pauses in the visible window for the user to resolve them before continuing.' },
               ],
             } : {
-              commandCount: 5,
-              commands: ['exec_cmd', 'fs_read', 'fs_write', 'fs_list', 'fetch_webpage'],
+              commandCount: 6,
+              commands: ['exec_cmd', 'fs_read', 'fs_write', 'fs_list', 'fetch_webpage', 'fetch_webpage_render'],
             }),
           };
           const helpers = full
@@ -931,8 +994,8 @@ export class MCPServer {
             const nativeWinSchema = {
               name: 'NativeWin',
               virtual: true,
-              description: 'Server-side built-in actions (no helper .exe required): exec_cmd, fs_read, fs_write, fs_list, fetch_webpage',
-              commandCount: 5,
+              description: 'Server-side built-in actions (no helper .exe required): exec_cmd, fs_read, fs_write, fs_list, fetch_webpage, fetch_webpage_render',
+              commandCount: 6,
               commands: [
                 {
                   name: 'exec_cmd',
@@ -1011,6 +1074,29 @@ export class MCPServer {
                     required: ['url'],
                   },
                 },
+                {
+                  name: 'fetch_webpage_render',
+                  description: 'Fetch a webpage by actually rendering it in a real, CDP-enabled browser (via BrowserWin) and returning the fully JS-rendered DOM (document.documentElement.outerHTML). Use for JavaScript-heavy / dynamically-rendered (SPA) pages where fetch_webpage only sees the pre-render HTML shell. By default launches the browser VISIBLE/interactive (per the interactive-by-default policy); pass headless:true to opt out. When running as a Windows Service in Session 0, pass background:true to bypass the interactive-user-session bridge entirely for headless scraping that must not depend on a logged-in desktop (captcha/login obstacles cannot be resolved in this mode).',
+                  inputSchema: {
+                    type: 'object',
+                    properties: {
+                      url: { type: 'string', description: 'URL to render (HTTP/HTTPS)' },
+                      options: {
+                        type: 'object',
+                        description: 'Render options',
+                        properties: {
+                          browser:   { type: 'string', description: "Browser to use: 'chrome' | 'msedge' | 'brave' | 'firefox' | 'opera'. Default: 'chrome'." },
+                          headless:  { type: 'boolean', description: 'Render headless (invisible) instead of the default visible/interactive window. Default: false.' },
+                          timeoutMs: { type: 'number', description: 'Max time (ms) to wait for LAUNCH/NAVIGATE/EXEC calls. Default: 20000.' },
+                          waitMs:    { type: 'number', description: 'Extra settle time (ms) after navigation before extracting the DOM, to let async JS finish rendering. Default: 1500.' },
+                          selector:  { type: 'string', description: "Optional CSS selector — if given, returns that element's outerHTML instead of the whole document." },
+                          background: { type: 'boolean', description: 'Session 0 only: bypass WinSvcBridge/interactive routing entirely (spawn BrowserWin directly, no user desktop). Default false. Obstacle detection cannot pause for user input when true.' },
+                        },
+                      },
+                    },
+                    required: ['url'],
+                  },
+                },
               ],
             };
             const schemaOut = full ? nativeWinSchema : {
@@ -1044,8 +1130,14 @@ export class MCPServer {
 
         default: {
           // Dynamic dispatch — tool name is the bare binary stem (e.g. "MSOfficeWin")
+          // DEPRECATED: Direct helper tool calls are removed from tools/list (ADR-017-P2).
+          // Use AutomateUI instead. This handler remains for grace-period compatibility.
           const helperSchema = this.helperRegistry.getByToolName(name);
           if (helperSchema) {
+            // Log deprecation warning
+            globalLogger.warn('mcpServer', 
+              `Direct helper tool call deprecated: ${name}. Use AutomateUI { helper:"${helperSchema.toolName}", action:"..." } instead.`);
+            
             // Check if helper is disabled
             if (this.disabledHelpers.includes(helperSchema.helper)) {
               return this.createErrorResponse(id, -32603,
@@ -1074,7 +1166,9 @@ export class MCPServer {
               resolved.target,
               resolved.command,
               resolved.path,
-              resolved.value
+              resolved.value,
+              20000, '', '', false,
+              args.background === true || args.background === 'true',
             );
             // Propagate helper-level failures as JSON-RPC errors so AI clients get
             // an unambiguous error signal rather than a "successful" result with

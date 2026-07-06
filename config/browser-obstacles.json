@@ -1,0 +1,38 @@
+{
+  "//": "Rule-engine profiles for FETCH_WEBPAGE_RENDER obstacle detection (captcha / login walls / consent gates). Data-driven — add or edit profiles here, no code changes needed. Each profile's htmlRegex is matched against the rendered document HTML after each render/poll.",
+  "profiles": [
+    {
+      "id": "google-recaptcha",
+      "description": "Google reCAPTCHA / 'unusual traffic' interstitial",
+      "htmlRegex": "id=\"recaptcha|g-recaptcha|Our systems have detected unusual traffic|/sorry/index|www\\.google\\.com/sorry/",
+      "requiresVisible": true,
+      "waitForUserMaxMs": 300000,
+      "pollIntervalMs": 2000
+    },
+    {
+      "id": "hcaptcha",
+      "description": "hCaptcha challenge widget",
+      "htmlRegex": "h-captcha|hcaptcha\\.com/captcha",
+      "requiresVisible": true,
+      "waitForUserMaxMs": 300000,
+      "pollIntervalMs": 2000
+    },
+    {
+      "id": "cloudflare-challenge",
+      "description": "Cloudflare 'checking your browser' / Turnstile challenge",
+      "htmlRegex": "Checking your browser before accessing|cf-turnstile|cf_chl_opt|Just a moment\\.\\.\\.",
+      "requiresVisible": true,
+      "waitForUserMaxMs": 300000,
+      "pollIntervalMs": 2000
+    },
+    {
+      "id": "generic-login-wall",
+      "description": "Generic login/sign-in form gating content (broad match — disabled by default, high false-positive rate; enable per-site by editing this file)",
+      "htmlRegex": "type=\"password\"",
+      "requiresVisible": true,
+      "waitForUserMaxMs": 300000,
+      "pollIntervalMs": 2000,
+      "enabled": false
+    }
+  ]
+}

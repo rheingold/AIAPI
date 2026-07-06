@@ -39,10 +39,14 @@ They are technology-level primitives, not application scenarios.
 | `FS_READ`    | NativeWin          | Read a file's text content. **`path=`** file path (absolute or relative). `bind=` captures text. Max 1 MB by default. |
 | `FS_WRITE`   | NativeWin          | Write text to a file. **`path=`** file path; **`value=`** text content. Creates parent directories. High-risk. |
 | `FS_LIST`    | NativeWin          | List directory entries. **`path=`** directory path. `bind=` captures JSON array of `{name, type, size, modified}`. |
+| `FETCH_WEBPAGE` | NativeWin       | Fetch a webpage via plain HTTP(S). **`proc=`** URL; **`value=`** JSON options. Detects login forms and auto-escalates to interactive browser mode (see §5.8). Returns `{success, url, content, text, loginForm?, _escalated?, obstacle?}`. |
+| `FETCH_WEBPAGE_RENDER` | NativeWin | Render a webpage in a real browser (via BrowserWin) and return the JS-rendered DOM. **`proc=`** URL; **`value=`** JSON options `{browser, headless, detectObstacles, timeoutMs, waitMs, selector, background}`. Interactive-by-default: visible window unless `headless:true`. Obstacle detection pauses for user to solve captcha/login (§5.7). Session 0 routing via WinSvcBridge unless `background:true`. |
 
-> **NativeWin** is a virtual helper — no executable, implemented natively in the server TypeScript/Node.js runtime. It groups `exec_cmd`, `fs_read`, `fs_write`, `fs_list`, and `fetch_webpage`. It appears in `listHelpers` (with `virtual: true`) and `getHelperSchema` but has no subprocess. Tool IDs remain unchanged.
+> **NativeWin** is a virtual helper — no executable, implemented natively in the server TypeScript/Node.js runtime. It groups `exec_cmd`, `fs_read`, `fs_write`, `fs_list`, `fetch_webpage`, and `fetch_webpage_render`. It appears in `listHelpers` (with `virtual: true`) and `getHelperSchema` but has no subprocess. Tool IDs remain unchanged.
 >
 > **Session 0 behavior:** When running as a Windows Service (Session 0), `EXEC_CMD` routes through `WinSvcBridge.exe` by default so commands run in the active user session with user identity and desktop access. Set `background="true"` to skip the bridge and run directly in Session 0 (for headless operations like file processing, web scraping, or console utilities that don't need UI).
+>
+> **Session 0 behavior — all helpers (`background` param, generalized):** ALL helper daemons (BrowserWin, KeyWin, LibreOfficeWin, MSOfficeWin) default to interactive-user-session routing in Session 0 — same as `EXEC_CMD` above. This is the primary persistent daemon and is never bypassed implicitly. Any `AutomateUI` call (or a direct named-helper tool call) may pass `background:true` to route that specific call through a second, lazily-created, non-bridged daemon instance for that helper — spawned directly in Session 0, no interactive desktop. Use only for headless/background operations (e.g. `fetch_webpage_render` scraping) that must not depend on a logged-in user session; dialogs/captchas/logins cannot be resolved in this mode. Implemented via `HelperRegistry.callCommand(..., background)` → `getOrCreateBackgroundDaemon()` in [components/server/src/helpers/HelperRegistry.ts](components/server/src/helpers/HelperRegistry.ts). Has no effect outside Session 0.
 
 ### 1.1b QUERYTREE path syntax — cross-stack root addressing
 
@@ -818,6 +822,10 @@ components/server/src/settings/types.ts                       ← ISettingsAdapt
 components/server/src/settings/adapters/JsonSettingsAdapter.ts ← ISettingsAdapter on signed config/dashboard-settings.json
 components/server/src/settings/adapters/DbSettingsAdapter.ts   ← ISettingsAdapter on remote DB
 components/server/src/settings/SettingsManager.ts              ← factory: reads settingsSource, hydrates correct adapter
+
+components/server/src/engine/browserRenderClient.ts             ← FETCH_WEBPAGE_RENDER: LAUNCH/NAVIGATE/EXEC via BrowserWin, obstacle-aware
+components/server/src/engine/browserObstacleProfiles.ts         ← data-driven rule engine: loads config/browser-obstacles.json profiles, detectObstacle(html)
+config/browser-obstacles.json                                   ← captcha/login-wall/consent-gate detection profiles (see §5.7) — data only, no hardcoded site logic
 ```
 
 ---
@@ -910,6 +918,78 @@ Documented keys — do NOT add new ones without updating this list:
 | `auth.saml.usernamePath` | string | `"nameID"` | Attribute name in SAML assertion to use as username |
 | `auth.saml.groupsPath` | string | — | Attribute name in SAML assertion for group membership array |
 | `auth.saml.signatureAlgorithm` | string | `"sha256"` | Signature algorithm for AuthnRequest |
+
+### 5.7 Browser obstacle detection (`config/browser-obstacles.json`)
+
+Used by `FETCH_WEBPAGE_RENDER` (via `browserObstacleProfiles.ts`) to detect captcha /
+bot-check / login-wall / consent-gate pages during rendering, WITHOUT hardcoding any
+site-specific logic in source — profiles are pure data, user-editable, hot-reloaded
+(cache keyed on file mtime).
+
+File shape: `{ "profiles": ObstacleProfile[] }`. Each profile:
+
+| Field | Type | Default | Purpose |
+|-------|------|---------|---------|
+| `id` | string | — | Stable identifier, returned in `RenderWebpageResult.obstacle.id` |
+| `description` | string | — | Human-readable label surfaced to the caller |
+| `htmlRegex` | string | — | Regex (case-insensitive) tested against the rendered `document.documentElement.outerHTML` |
+| `requiresVisible` | boolean | `true` | Reserved for future use — currently all obstacle handling requires a visible window |
+| `waitForUserMaxMs` | number | `300000` | Max time to poll for the user to clear the obstacle before giving up |
+| `pollIntervalMs` | number | `2000` | Poll interval while waiting |
+| `enabled` | boolean | `true` | Set `false` to disable a profile without deleting it |
+
+**Behavior in `renderWebpage()`:** after the initial DOM extraction, enabled profiles are
+tested against the HTML. On match: if the browser is `headless`, the call fails fast
+(telling the caller to retry with `headless:false` — visible-by-default already satisfies
+the Session 0 interactive-by-default requirement in the common case). If visible, the
+renderer polls the page (re-running the same extraction script) until the profile no
+longer matches (user solved the captcha / logged in / dismissed the gate) or
+`waitForUserMaxMs` elapses, then returns the post-resolution HTML plus an `obstacle`
+metadata block (`{id, description, waitedMs, cleared}`).
+
+**Rule:** do NOT add per-site conditionals (e.g. `if (url.includes('google.com'))`) to
+`browserRenderClient.ts` or `browserObstacleProfiles.ts` — new detection patterns are
+added as profiles in `config/browser-obstacles.json` only.
+
+### 5.8 Auto-escalation from FETCH_WEBPAGE to interactive browser mode
+
+`FETCH_WEBPAGE` (plain HTTP client) automatically escalates to `FETCH_WEBPAGE_RENDER`
+(interactive browser with obstacle detection) when a login form is detected in the
+HTTP response. This enables transparent handling of sites that require authentication
+without the caller needing to explicitly choose the right fetch method.
+
+**Behavior:**
+1. `FETCH_WEBPAGE` performs a plain HTTP GET request
+2. The response HTML is scanned for login forms (via `webScrapingClient.detectLoginForm`)
+3. If a login form is detected (confidence ≥ threshold), and the caller has not set
+   `autoEscalate: false` in the fetch options, the MCP server automatically:
+   - Launches a visible browser (via `renderWebpage` with `headless:false`, `background:false`)
+   - Navigates to the URL with full obstacle detection enabled (`detectObstacles:true`)
+   - Waits for the user to complete the login/captcha in the interactive window
+   - Returns the post-login rendered HTML in the response
+4. The result includes metadata: `_escalated: true`, `_escalationReason: "..."`,
+   and optionally `obstacle: {...}` if an obstacle profile matched during rendering
+
+**Session 0 routing:** When the MCP server runs as a Windows Service (Session 0), the
+escalated browser launch uses `WinSvcBridge` by default (`background:false`) to route
+to the active user's interactive session, ensuring the login window appears on their
+desktop for manual completion.
+
+**Disabling auto-escalation:** Pass `autoEscalate: false` in the FETCH_WEBPAGE options
+to suppress this behavior and receive the raw login page HTML instead.
+
+**Example result with escalation:**
+```json
+{
+  "success": true,
+  "url": "https://example.com/protected",
+  "content": "<html>...post-login page HTML...</html>",
+  "loginForm": { "action": "https://example.com/login", "confidence": 0.95 },
+  "_escalated": true,
+  "_escalationReason": "Login form detected (action: https://example.com/login, confidence: 0.95)",
+  "obstacle": { "id": "google-recaptcha", "description": "Google reCAPTCHA", "waitedMs": 12500, "cleared": true }
+}
+```
 
 ---
 

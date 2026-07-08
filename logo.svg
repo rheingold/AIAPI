@@ -1,0 +1,13 @@
+<svg width="200" height="200" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Circle -->
+  <circle cx="50" cy="50" r="48" fill="#f8f9fa" stroke="#e9ecef" stroke-width="1"/>
+  
+  <!-- Cursor Shape -->
+  <path d="M30 20 L45 35 L35 35 L40 55 L25 45 L30 20 Z" fill="#007acc" />
+  
+  <!-- The Spark (AI Element) -->
+  <path d="M45 35 L48 42 L55 45 L48 48 L45 55 L42 48 L35 45 L42 42 Z" fill="#ffcc00" />
+  <path d="M45 35 L43 32 L40 35 L43 38 Z" fill="#ffcc00" />
+  <path d="M55 45 L58 42 L61 45 L58 48 Z" fill="#ffcc00" />
+  <path d="M45 55 L48 58 L51 55 L48 52 Z" fill="#ffcc00" />
+</svg>

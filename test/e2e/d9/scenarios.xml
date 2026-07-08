@@ -128,9 +128,10 @@
       <Step action="ASSERTPATHEVAL"
             path="(()=>{ const r=JSON.parse($vars.hs5Result); return !r?.error &amp;&amp; r?.result !== undefined; })()"
             note="HS5: assert no JSON-RPC error"/>
+      <!-- MCP tools/call wraps result in content[0].text as a JSON string -->
       <Step action="ASSERTPATHEVAL"
-            path="(()=>{ const r=JSON.parse($vars.hs5Result); const h=r?.result?.helpers??(Array.isArray(r?.result)?r.result:[]); return h.length>0; })()"
-            note="HS5: assert listHelpers result contains helper entries"/>
+            path="(()=>{ const r=JSON.parse($vars.hs5Result); const txt=(r?.result?.content??[])[0]?.text??'{}'; const inner=JSON.parse(txt); const h=inner?.helpers??(Array.isArray(inner)?inner:[]); return h.length>0; })()"
+            note="HS5: assert listHelpers result contains helper entries (unwrap MCP content envelope)"/>
     </Steps>
   </Scenario>
 
@@ -147,9 +148,10 @@
       <Step action="ASSERTPATHEVAL"
             path="(()=>{ const r=JSON.parse($vars.hs6Result); return !r?.error &amp;&amp; r?.result !== undefined; })()"
             note="HS6: assert no JSON-RPC error"/>
+      <!-- MCP tools/call wraps result in content[0].text as a JSON string -->
       <Step action="ASSERTPATHEVAL"
-            path="(()=>{ const r=JSON.parse($vars.hs6Result); const c=r?.result?.schema?.commands??r?.result?.commands??[]; return (Array.isArray(c)?c.length:Object.keys(c).length)>0; })()"
-            note="HS6: assert getHelperSchema result contains commands"/>
+            path="(()=>{ const r=JSON.parse($vars.hs6Result); const txt=(r?.result?.content??[])[0]?.text??'{}'; const inner=JSON.parse(txt); const c=inner?.schema?.commands??inner?.commands??[]; return (Array.isArray(c)?c.length:Object.keys(c).length)>0; })()"
+            note="HS6: assert getHelperSchema result contains commands (unwrap MCP content envelope)"/>
     </Steps>
   </Scenario>
 
@@ -207,9 +209,9 @@
     </Steps>
   </Scenario>
 
-  <!-- == HS9: MCP tool hierarchy assertions (QA-2) ======================== -->
+  <!-- == HS9: MCP tool hierarchy assertions (QA-2, ADR-017-P2 complete) === -->
   <Scenario id="hs9-tool-hierarchy" effect="read-only">
-    <Description lang="en">POST JSON-RPC tools/list - assert hierarchical tool set (ADR-017-P2): AutomateUI present; management + NFS tools present; NO [DEPRECATED] root tools (removed in P2); NativeWin in listHelpers; tool count in expected range 9..30.</Description>
+    <Description lang="en">POST JSON-RPC tools/list - assert hierarchical tool set (ADR-017-P2 complete): AutomateUI present; management tools present; NO [DEPRECATED] root tools; NO NativeWin flat tools (exec_cmd/fs_*/fetch_webpage) at root; NativeWin in listHelpers; tool count in expected range 4..15.</Description>
     <Parameters>
       <Param name="mcpUrl" type="string" required="false" example="http://localhost:3457" note="MCP server URL"/>
     </Parameters>
@@ -217,13 +219,13 @@
       <Step action="HTTP_FETCH" proc="{{mcpUrl}}" path="POST"
             value="{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:91,&quot;method&quot;:&quot;tools/list&quot;,&quot;params&quot;:{}}"
             bind="hs9Tools" note="HS9: GET tools/list for hierarchy checks"/>
-      <!-- (a) tool count in expected range 13..30 -->
+      <!-- (a) tool count in expected range 4..15 (ADR-017-P2: 8 legacy + 5 NativeWin flat tools removed) -->
       <Step action="EVAL"
             path="(()=>{ const t=JSON.parse($vars.hs9Tools)?.result?.tools??[]; return t.length; })()"
             bind="hs9Count" note="HS9: extract tool count"/>
       <Step action="ASSERTPATHEVAL"
-            path="Number('{{hs9Count}}') >= 9 &amp;&amp; Number('{{hs9Count}}') &lt;= 30"
-            note="HS9: assert tool count in range 9..30 (ADR-017-P2: legacy 8 removed)"/>
+            path="Number('{{hs9Count}}') >= 4 &amp;&amp; Number('{{hs9Count}}') &lt;= 15"
+            note="HS9: assert tool count in range 4..15 (ADR-017-P2: legacy 8 + NativeWin 5 removed from root)"/>
       <!-- (b) AutomateUI present (ADR-017 routing tool) -->
       <Step action="ASSERTPATHEVAL"
             path="(()=>{ const t=JSON.parse($vars.hs9Tools)?.result?.tools??[]; return t.some(x=>x.name==='AutomateUI'); })()"
@@ -236,12 +238,17 @@
       <Step action="ASSERTPATHEVAL"
             path="(()=>{ const t=JSON.parse($vars.hs9Tools)?.result?.tools??[]; return !t.some(x=>(x.description||'').includes('[DEPRECATED')); })()"
             note="HS9: assert NO [DEPRECATED] root tools (ADR-017-P2 complete)"/>
-      <!-- (e) NativeWin present in listHelpers result (DEBT-1 Phase 1) -->
+      <!-- (e) ADR-017-P2: NativeWin flat tools NOT at root (exec_cmd, fs_read, fs_write, fs_list, fetch_webpage) -->
+      <Step action="ASSERTPATHEVAL"
+            path="(()=>{ const t=JSON.parse($vars.hs9Tools)?.result?.tools??[]; const names=t.map(x=>x.name); return !['exec_cmd','fs_read','fs_write','fs_list','fetch_webpage'].some(n=>names.includes(n)); })()"
+            note="HS9: assert NativeWin flat tools absent from root (ADR-017-P2: use AutomateUI helper=NativeWin)"/>
+      <!-- (f) NativeWin present in listHelpers result (DEBT-1 Phase 1) -->
+      <!-- MCP tools/call wraps result in content[0].text as a JSON string -->
       <Step action="HTTP_FETCH" proc="{{mcpUrl}}" path="POST"
             value="{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:92,&quot;method&quot;:&quot;tools/call&quot;,&quot;params&quot;:{&quot;name&quot;:&quot;listHelpers&quot;,&quot;arguments&quot;:{}}}"
             bind="hs9Helpers" note="HS9: call listHelpers to check NativeWin virtual entry"/>
       <Step action="ASSERTPATHEVAL"
-            path="(()=>{ const r=JSON.parse($vars.hs9Helpers); const h=r?.result?.helpers??[]; return h.some(x=>(x.name||'').includes('NativeWin')||x.virtual===true); })()"
+            path="(()=>{ const r=JSON.parse($vars.hs9Helpers); const txt=(r?.result?.content??[])[0]?.text??'{}'; const inner=JSON.parse(txt); const h=inner?.helpers??[]; return h.some(x=>(x.name||'').includes('NativeWin')||x.virtual===true); })()"
             note="HS9: assert NativeWin virtual helper present (DEBT-1 Phase 1)"/>
     </Steps>
   </Scenario>

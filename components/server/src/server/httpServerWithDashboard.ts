@@ -714,6 +714,21 @@ export class HttpServerWithDashboard {
       if (pathname === '/api/appTemplates' && req.method === 'GET') {
         return this.handleListAppTemplates(req, res);
       }
+      if (pathname === '/api/appTemplates' && req.method === 'POST') {
+        return this.handleCreateAppTemplate(req, res);
+      }
+      // DELETE /api/appTemplates/{app} — delete a user-created app template (system apps rejected)
+      if (/^\/api\/appTemplates\/[^/]+$/.test(pathname) && req.method === 'DELETE') {
+        return this.handleDeleteAppTemplate(req, res, pathname);
+      }
+      // POST /api/appTemplates/{app}/scenarios — create a new scenario (always written to the user root)
+      if (/^\/api\/appTemplates\/[^/]+\/scenarios$/.test(pathname) && req.method === 'POST') {
+        return this.handleCreateScenario(req, res, pathname);
+      }
+      // DELETE /api/appTemplates/{app}/scenarios/{id} — delete a scenario (system apps rejected)
+      if (/^\/api\/appTemplates\/[^/]+\/scenarios\/[^/]+$/.test(pathname) && req.method === 'DELETE') {
+        return this.handleDeleteScenario(req, res, pathname);
+      }
       // GET /api/appTemplates/{app}/scenarios/list — JSON list of {id, label}
       if (pathname.startsWith('/api/appTemplates/') && pathname.endsWith('/scenarios/list') && req.method === 'GET') {
         return this.handleListTemplateScenarios(req, res, pathname);
@@ -1311,30 +1326,45 @@ export class HttpServerWithDashboard {
    * GET /api/scenarios
    */
   /** Returns the ordered list of resolved app template root directories.
-   *  Priority: `appTemplateRoots[]` setting > legacy `appTemplatesDir` string > built-in defaults.
+   *  Priority: user root (config.scenariosPath, always first) >
+   *            `appTemplateRoots[]` setting > legacy `appTemplatesDir` string > built-in defaults.
    */
   private resolveAppTemplateRoots(): string[] {
+    const userRoot = this.resolveUserScenarioRoot();
     const raw = (this.config as any).appTemplateRoots;
     if (Array.isArray(raw) && raw.length > 0) {
-      return raw.map((r: string) => path.isAbsolute(r) ? r : path.resolve(this.extensionRoot, r));
+      const systemRoots = raw.map((r: string) => path.isAbsolute(r) ? r : path.resolve(this.extensionRoot, r));
+      return [userRoot, ...systemRoots.filter((r: string) => r !== userRoot)];
     }
     const single = (this.config as any).appTemplatesDir;
     if (typeof single === 'string' && single) {
-      return [path.resolve(this.extensionRoot, single)];
+      const abs = path.resolve(this.extensionRoot, single);
+      return abs === userRoot ? [userRoot] : [userRoot, abs];
     }
     const defaults = [
       path.resolve(this.extensionRoot, 'components/helpers/shared/dist-resources/apptemplates'),
       path.resolve(this.extensionRoot, 'components/helpers/windows/dist-resources/apptemplates'),
       path.resolve(this.extensionRoot, 'test/e2e'),
     ];
-    // Wire the user-configured scenarios folder into the app-template roots so
-    // that app subdirs stored there (each with a scenarios.xml) are discoverable.
-    const sp = this.config.scenariosPath;
-    if (sp && typeof sp === 'string') {
-      const abs = path.isAbsolute(sp) ? sp : path.resolve(this.extensionRoot, sp);
-      if (!defaults.includes(abs)) defaults.unshift(abs);
-    }
-    return defaults;
+    return [userRoot, ...defaults.filter(d => d !== userRoot)];
+  }
+
+  /**
+   * Directory where user-created (non-system) app templates / scenarios live.
+   * Always the first (highest-priority) entry from resolveAppTemplateRoots(),
+   * derived from `config.scenariosPath` (default "./scenarios"). Distinct from
+   * the shipped components/helpers/{shared,windows}/dist-resources/apptemplates
+   * system roots so the dashboard can tell "default/system" apart from "user-created" scenarios.
+   */
+  private resolveUserScenarioRoot(): string {
+    const sp = this.config.scenariosPath && typeof this.config.scenariosPath === 'string'
+      ? this.config.scenariosPath : './scenarios';
+    return path.isAbsolute(sp) ? sp : path.resolve(this.extensionRoot, sp);
+  }
+
+  /** True when `root` is the user-created scenarios root (vs. a shipped system root). */
+  private isUserRoot(root: string): boolean {
+    return root === this.resolveUserScenarioRoot();
   }
 
   /** Returns the first root containing a subdirectory named `appName`, or null. */
@@ -1352,9 +1382,10 @@ export class HttpServerWithDashboard {
   private handleListAppTemplates(_req: http.IncomingMessage, res: http.ServerResponse): void {
     try {
       const roots = this.resolveAppTemplateRoots();
-      const appsMap = new Map<string, { name: string; hasTree: boolean; hasScenarios: boolean; scenarioCount: number | null }>();
+      const appsMap = new Map<string, { name: string; hasTree: boolean; hasScenarios: boolean; scenarioCount: number | null; origin: 'user' | 'system' }>();
       for (const templatesDir of roots) {
         if (!fs.existsSync(templatesDir)) continue;
+        const origin: 'user' | 'system' = this.isUserRoot(templatesDir) ? 'user' : 'system';
         for (const e of fs.readdirSync(templatesDir, { withFileTypes: true }).filter(e => e.isDirectory())) {
           if (appsMap.has(e.name)) continue; // first root wins
           const hasTree      = fs.existsSync(path.join(templatesDir, e.name, 'tree.xml'));
@@ -1366,7 +1397,7 @@ export class HttpServerWithDashboard {
               scenarioCount = (xml.match(/<Scenario\s/g) ?? []).length;
             } catch { /* ignore */ }
           }
-          appsMap.set(e.name, { name: e.name, hasTree, hasScenarios, scenarioCount });
+          appsMap.set(e.name, { name: e.name, hasTree, hasScenarios, scenarioCount, origin });
         }
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1375,6 +1406,162 @@ export class HttpServerWithDashboard {
       this.log('error', 'appTemplates', `Failed to list app templates: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: false, error: 'Internal server error' }));
+    }
+  }
+
+  /**
+   * POST /api/appTemplates
+   * Body: { app: string, helper?: string, process?: string }
+   * Creates a brand-new user-owned app template (scenarios.xml skeleton) in
+   * the user scenarios root. Never touches the shipped system roots.
+   */
+  private async handleCreateAppTemplate(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const body = await this.readBody(req);
+    let payload: { app?: string; helper?: string; process?: string };
+    try {
+      payload = JSON.parse(body);
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Invalid JSON body' }));
+      return;
+    }
+    const app = payload.app ?? '';
+    if (!app || app.includes('..') || app.includes('/') || app.includes('\\')) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Invalid app name' }));
+      return;
+    }
+    const userRoot = this.resolveUserScenarioRoot();
+    const loader = new XmlScenarioLoader(userRoot, this.resolveAppTemplateRoots());
+    try {
+      loader.createApp(app, { helper: payload.helper, process: payload.process });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, app, origin: 'user' }));
+    } catch (err) {
+      this.log('error', 'appTemplates', `createApp ${app}: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err instanceof Error ? err.message : String(err) }));
+    }
+  }
+
+  /**
+   * POST /api/appTemplates/{app}/scenarios
+   * Body: { id: string, label?: string, steps?: RawXmlStep[], meta?: {...} }
+   * Creates a new scenario. Always written to the user scenarios root — if the
+   * app only exists in a system root, a user-owned scenarios.xml shadow is
+   * created first (system files are never modified by this endpoint).
+   */
+  private async handleCreateScenario(req: http.IncomingMessage, res: http.ServerResponse, pathname: string): Promise<void> {
+    const m = pathname.match(/^\/api\/appTemplates\/([^/]+)\/scenarios$/);
+    if (!m) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Expected: /api/appTemplates/{app}/scenarios' }));
+      return;
+    }
+    const [, appName] = m;
+    const body = await this.readBody(req);
+    let payload: { id?: string; label?: string; steps?: RawXmlStep[]; meta?: any };
+    try {
+      payload = JSON.parse(body);
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Invalid JSON body' }));
+      return;
+    }
+    const scenarioId = payload.id ?? '';
+    if (!scenarioId) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Body must include an "id"' }));
+      return;
+    }
+
+    const userRoot = this.resolveUserScenarioRoot();
+    const userAppDir = path.join(userRoot, appName);
+    if (!fs.existsSync(userAppDir)) {
+      // Seed a user-owned scenarios.xml, copying helper/process from an existing
+      // system app of the same name if present, so scenarios stay consistent.
+      const existingRoot = this.findAppRoot(appName);
+      let helper: string | undefined;
+      let processAttr: string | undefined;
+      if (existingRoot) {
+        try {
+          const existingLoader = new XmlScenarioLoader(existingRoot, this.resolveAppTemplateRoots());
+          const info = existingLoader.listScenarios(appName);
+          helper = info.helper;
+          processAttr = info.process;
+        } catch { /* fall back to defaults */ }
+      }
+      const seedLoader = new XmlScenarioLoader(userRoot, this.resolveAppTemplateRoots());
+      seedLoader.createApp(appName, { helper, process: processAttr });
+    }
+
+    const loader = new XmlScenarioLoader(userRoot, this.resolveAppTemplateRoots());
+    try {
+      loader.save(appName, scenarioId, payload.label ?? scenarioId, payload.steps ?? [], payload.meta);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, app: appName, scenarioId, origin: 'user' }));
+    } catch (err) {
+      this.log('error', 'appTemplates', `createScenario ${appName}/${scenarioId}: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err instanceof Error ? err.message : String(err) }));
+    }
+  }
+
+  private handleDeleteAppTemplate(_req: http.IncomingMessage, res: http.ServerResponse, pathname: string): void {
+    const m = pathname.match(/^\/api\/appTemplates\/([^/]+)$/);
+    if (!m) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Expected: /api/appTemplates/{app}' }));
+      return;
+    }
+    const [, appName] = m;
+    const root = this.findAppRoot(appName);
+    if (!root || !this.isUserRoot(root)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: `App "${appName}" is a system app template and cannot be deleted.` }));
+      return;
+    }
+    const loader = new XmlScenarioLoader(root, this.resolveAppTemplateRoots());
+    try {
+      loader.deleteApp(appName);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, app: appName }));
+    } catch (err) {
+      this.log('error', 'appTemplates', `deleteApp ${appName}: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Internal server error' }));
+    }
+  }
+
+  /**
+   * DELETE /api/appTemplates/{app}/scenarios/{id}
+   * Deletes a single scenario. Only permitted when the app resolves to the
+   * user scenarios root — shipped system scenarios cannot be deleted.
+   */
+  private handleDeleteScenario(_req: http.IncomingMessage, res: http.ServerResponse, pathname: string): void {
+    const m = pathname.match(/^\/api\/appTemplates\/([^/]+)\/scenarios\/([^/]+)$/);
+    if (!m) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Expected: /api/appTemplates/{app}/scenarios/{id}' }));
+      return;
+    }
+    const [, appName, scenarioId] = m;
+    const root = this.findAppRoot(appName);
+    if (!root || !this.isUserRoot(root)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: `App "${appName}" is a system app template — its scenarios cannot be deleted.` }));
+      return;
+    }
+    const loader = new XmlScenarioLoader(root, this.resolveAppTemplateRoots());
+    try {
+      loader.deleteScenario(appName, scenarioId);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, app: appName, scenarioId }));
+    } catch (err) {
+      this.log('error', 'appTemplates', `deleteScenario ${appName}/${scenarioId}: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+      const isNotFound = err instanceof Error && err.message.includes('not found');
+      res.writeHead(isNotFound ? 404 : 500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: isNotFound ? err.message : 'Internal server error' }));
     }
   }
 
@@ -1445,8 +1632,9 @@ export class HttpServerWithDashboard {
     const loader = new XmlScenarioLoader(templatesDir, this.resolveAppTemplateRoots());
     try {
       const info = loader.listScenarios(appName);
+      const origin: 'user' | 'system' = this.isUserRoot(templatesDir) ? 'user' : 'system';
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ success: true, app: appName, scenarios: info.scenarios }));
+      res.end(JSON.stringify({ success: true, app: appName, origin, scenarios: info.scenarios }));
     } catch (err) {
       this.log('error', 'appTemplates', `listScenarios ${appName}: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
       res.writeHead(500, { 'Content-Type': 'application/json' });

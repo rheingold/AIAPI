@@ -844,8 +844,10 @@ namespace BrowserWin
             if (hwnd == IntPtr.Zero)
                 return OutputError("focus_no_window: Cannot find a " + browser + " window."
                     + " Either the browser is not running, or specify the correct browser name.");
-            WinUtils.ShowWindow(hwnd, 9);        // SW_RESTORE — unminimise before bringing to front
-            WinUtils.SetForegroundWindow(hwnd);
+            // ForceForegroundWindow uses the AttachThreadInput trick so the call is
+            // never silently ignored by Windows' focus-steal prevention (which would
+            // otherwise leave the window open but hidden behind other apps).
+            WinUtils.ForceForegroundWindow(hwnd);
             Console.WriteLine("{\"success\":true,\"action\":\"focus\",\"browser\":\""
                 + JsonEscape(browser) + "\"}");
             return 0;
@@ -854,6 +856,37 @@ namespace BrowserWin
         // ──────────────────────────────────────────────────────────────────────
         //  Command implementations
         // ──────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Patches "<paramref name="profileDir"/>/Default/Preferences" (Chrome's
+        /// per-profile JSON prefs file) so its "exit_type"/"exited_cleanly"
+        /// fields say the previous session shut down normally. Without this,
+        /// re-launching into the same deterministic profileDir after a
+        /// force-killed (or crashed) prior session makes Chrome show a native
+        /// "Restore pages?" dialog/infobar on startup — which blocks
+        /// navigation and JS evaluation (NAVIGATE/EXEC then silently return
+        /// null) until a human dismisses it. No-op if the file doesn't exist
+        /// yet (first launch into a fresh profile — nothing to restore).
+        /// Best-effort: any failure here must never abort the launch itself.
+        /// </summary>
+        static void SuppressCrashRestoreDialog(string profileDir)
+        {
+            try
+            {
+                string prefsPath = System.IO.Path.Combine(profileDir, "Default", "Preferences");
+                if (!System.IO.File.Exists(prefsPath)) return;
+
+                string json = System.IO.File.ReadAllText(prefsPath, Encoding.UTF8);
+                string patched = Regex.Replace(json, "\"exit_type\"\\s*:\\s*\"[^\"]*\"", "\"exit_type\":\"Normal\"");
+                patched = Regex.Replace(patched, "\"exited_cleanly\"\\s*:\\s*(true|false)", "\"exited_cleanly\":true");
+                if (patched != json)
+                    System.IO.File.WriteAllText(prefsPath, patched, Encoding.UTF8);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("DEBUG: SuppressCrashRestoreDialog failed (non-fatal): " + ex.Message);
+            }
+        }
 
         // ──────────────────────────────────────────────────────────────────────
         //  LAUNCH — start a browser with --remote-debugging-port or reuse existing
@@ -892,6 +925,22 @@ namespace BrowserWin
                     }
                     catch { matchingProc = true; }
 
+                    // Interactive-by-default guard: a headless zombie instance left over
+                    // from a prior background/headless call must NEVER be silently reused
+                    // to satisfy a visible request — the caller would get a "success"
+                    // response with no window the user can actually see or solve a
+                    // captcha in. Require a real visible top-level window in that case.
+                    if (matchingProc && !headless)
+                    {
+                        IntPtr existingHwnd = WinUtils.FindWindowByProcessName(procName);
+                        if (existingHwnd == IntPtr.Zero)
+                        {
+                            Console.Error.WriteLine("DEBUG: LAUNCH reuse candidate on port " + p
+                                + " has no visible window (likely a headless/background instance) — skipping reuse.");
+                            matchingProc = false;
+                        }
+                    }
+
                     if (matchingProc)
                     {
                         Console.WriteLine("{\"success\":true,\"command\":\"LAUNCH\""
@@ -926,9 +975,20 @@ namespace BrowserWin
             // ── 4. Build launch args ──────────────────────────────────────────
             string profileDir = System.IO.Path.Combine(
                 System.IO.Path.GetTempPath(), "aiapi-" + browser.ToLower() + "-" + launchPort);
+            bool isFirefox = browser.IndexOf("firefox", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            // The profile dir is deterministic per browser+port, so a previous
+            // session that was force-killed (crashed, from Chrome's point of
+            // view) leaves "exit_type":"Crashed" in its Preferences file. On
+            // the next launch Chrome shows a native "Restore pages?" dialog/
+            // infobar that blocks navigation and JS evaluation (NAVIGATE/EXEC
+            // silently return null/no-op while it's up) — the --disable-
+            // session-crashed-bubble flag alone does not suppress it. Patch
+            // the profile's exit_type to "Normal" before every launch so
+            // Chrome never thinks it crashed.
+            if (!isFirefox) SuppressCrashRestoreDialog(profileDir);
 
             string args;
-            bool isFirefox = browser.IndexOf("firefox", StringComparison.OrdinalIgnoreCase) >= 0;
             if (isFirefox)
             {
                 // Firefox uses --start-debugger-server <port> (no user-data-dir analogue;
@@ -2652,27 +2712,55 @@ namespace BrowserWin
                     byte[] wsFrame  = BuildWsFrame(payload);
                     stream.Write(wsFrame, 0, wsFrame.Length);
 
-                    // Read response frame (5s timeout; large buffer for QUERYTREE/READ)
+                    // Read response frame (5s timeout; buffer grows to fit large
+                    // pages — e.g. a full Google/idos results page's outerHTML can
+                    // exceed 512 KB, which uses the 64-bit-length WS frame header
+                    // (payLen byte == 127). The old completion check only handled
+                    // payLen < 126 and payLen == 126, so 127-length frames never
+                    // matched "complete" and the read loop just filled the fixed
+                    // buffer without ever finishing — EXEC then silently returned
+                    // null for any sufficiently large page.
                     tcp.ReceiveTimeout = 5000;
-                    byte[] respBuf = new byte[524288]; // 512 KB
+                    byte[] respBuf = new byte[65536];
                     int respRead = 0;
+                    long neededTotal = -1; // header + payload size, once known
                     try
                     {
-                        while (respRead < respBuf.Length)
+                        while (neededTotal < 0 || respRead < neededTotal)
                         {
+                            if (respRead >= respBuf.Length)
+                            {
+                                long grown = (long)respBuf.Length * 2;
+                                if (neededTotal > 0 && grown < neededTotal) grown = neededTotal;
+                                if (grown > 32 * 1024 * 1024) grown = 32 * 1024 * 1024; // 32 MB cap
+                                Array.Resize(ref respBuf, (int)grown);
+                            }
                             int n = stream.Read(respBuf, respRead, respBuf.Length - respRead);
                             if (n == 0) break;
                             respRead += n;
-                            // Check if we have a complete WS text frame
-                            if (respRead >= 2)
+
+                            if (neededTotal < 0 && respRead >= 2)
                             {
-                    int payLen = respBuf[1] & 0x7F;
-                                if (payLen < 126 && respRead >= 2 + payLen) break;
-                                if (payLen == 126 && respRead >= 4)
+                                int payLen = respBuf[1] & 0x7F;
+                                bool masked = (respBuf[1] & 0x80) != 0; // server frames are unmasked, but be safe
+                                int maskBytes = masked ? 4 : 0;
+                                if (payLen < 126)
+                                {
+                                    neededTotal = 2 + maskBytes + payLen;
+                                }
+                                else if (payLen == 126 && respRead >= 4)
                                 {
                                     int len16 = (respBuf[2] << 8) | respBuf[3];
-                                    if (respRead >= 4 + len16) break;
+                                    neededTotal = 4 + maskBytes + len16;
                                 }
+                                else if (payLen == 127 && respRead >= 10)
+                                {
+                                    long len64 = ((long)respBuf[6] << 24) | ((long)respBuf[7] << 16)
+                                               | ((long)respBuf[8] << 8) | (long)respBuf[9];
+                                    neededTotal = 10 + maskBytes + len64;
+                                }
+                                if (neededTotal > respBuf.Length && neededTotal <= 32 * 1024 * 1024)
+                                    Array.Resize(ref respBuf, (int)neededTotal);
                             }
                         }
                     }

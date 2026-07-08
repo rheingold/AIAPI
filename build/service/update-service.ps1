@@ -86,7 +86,14 @@ if ($NoBuild -or $BuildTarget -eq 'None') {
         # TypeScript compile (tsc only - produces dist/*.js)
         if ($BuildTarget -eq 'All' -or $BuildTarget -eq 'TS') {
             Write-Host "Compiling TypeScript..." -ForegroundColor Cyan
-            & npm run compile
+            # Invoke local tsc directly (node_modules/.bin) — avoids depending on a
+            # working global npm installation, independent of repo location.
+            $tscCmd = Join-Path $projectRoot 'node_modules\.bin\tsc.cmd'
+            if (Test-Path $tscCmd) {
+                & $tscCmd -p (Join-Path $projectRoot 'tsconfig.json')
+            } else {
+                & npm run compile
+            }
             if ($LASTEXITCODE -ne 0) {
                 Write-Host "✗ TypeScript compilation failed" -ForegroundColor Red
                 exit 1
@@ -111,7 +118,19 @@ if ($NoBuild -or $BuildTarget -eq 'None') {
         # whatever is currently in dist/ without recompiling.
         if ($BuildTarget -eq 'All' -or $BuildTarget -eq 'TS' -or $BuildTarget -eq 'Exe') {
             Write-Host "Building standalone executable (pkg)..." -ForegroundColor Cyan
-            & npm run package:exe
+            # Invoke local pkg directly (node_modules/.bin) — avoids depending on a
+            # working global npm installation, independent of repo location.
+            $pkgCmd = Join-Path $projectRoot 'node_modules\.bin\pkg.cmd'
+            if (Test-Path $pkgCmd) {
+                Push-Location $projectRoot
+                try {
+                    & $pkgCmd . --output dist/release/aiapi-server.exe
+                } finally {
+                    Pop-Location
+                }
+            } else {
+                & npm run package:exe
+            }
             if ($LASTEXITCODE -ne 0) {
                 Write-Host "✗ pkg build failed" -ForegroundColor Red
                 exit 1
@@ -169,7 +188,8 @@ $filesToCopy = @(
     @{ Src = "dist\helpers\KeyWin.exe"; Dest = "dist\helpers\KeyWin.exe"; Desc = "KeyWin helper" },
     @{ Src = "dist\helpers\BrowserWin.exe"; Dest = "dist\helpers\BrowserWin.exe"; Desc = "BrowserWin helper" },
     @{ Src = "dist\helpers\SecurityLib.dll"; Dest = "dist\helpers\SecurityLib.dll"; Desc = "Security library" },
-    @{ Src = "dist\helpers\WinSvcBridge.exe"; Dest = "dist\helpers\WinSvcBridge.exe"; Desc = "Session-0 bridge (WinSvcBridge)" }
+    @{ Src = "dist\helpers\WinSvcBridge.exe"; Dest = "dist\helpers\WinSvcBridge.exe"; Desc = "Session-0 bridge (WinSvcBridge)" },
+    @{ Src = "config\browser-obstacles.json"; Dest = "config\browser-obstacles.json"; Desc = "Browser obstacle-detection profiles" }
 )
 
 $dirsToCopy = @(

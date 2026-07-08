@@ -6,7 +6,15 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 # TypeScript compile
 Write-Host "=== Compiling TypeScript ==="
 Set-Location $root
-& npm run compile
+# Invoke the local tsc directly (node_modules/.bin) instead of "npm run compile" —
+# avoids depending on a working global npm installation, which is unrelated to
+# and independent of this repo's own location/drive.
+$tscCmd = Join-Path $root 'node_modules\.bin\tsc.cmd'
+if (Test-Path $tscCmd) {
+    & $tscCmd -p (Join-Path $root 'tsconfig.json')
+} else {
+    & npm run compile
+}
 Write-Host "TypeScript exit: $LASTEXITCODE"
 
 # C# compiler

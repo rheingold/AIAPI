@@ -975,9 +975,18 @@ export class XmlScenarioLoader {
     const content = fs.readFileSync(xmlPath, 'utf-8');
     const dom     = new JSDOM(content, { contentType: 'text/xml' });
     const doc     = dom.window.document;
-    const scenarioEl = Array.from(doc.querySelectorAll('Scenario'))
+    let scenarioEl = Array.from(doc.querySelectorAll('Scenario'))
       .find((s: any) => s.getAttribute('id') === scenarioId) as Element | undefined;
-    if (!scenarioEl) throw new Error(`Scenario "${scenarioId}" not found in ${app}/scenarios.xml`);
+    if (!scenarioEl) {
+      // Upsert: scenario doesn't exist yet — create a new <Scenario> element
+      // (used by the dashboard "New Scenario" action) instead of failing.
+      const library = doc.querySelector('ScenarioLibrary') ?? doc.querySelector('Scenarios') ?? doc.documentElement;
+      scenarioEl = doc.createElement('Scenario');
+      scenarioEl.setAttribute('id', scenarioId);
+      library.appendChild(doc.createTextNode('\n  '));
+      library.appendChild(scenarioEl);
+      library.appendChild(doc.createTextNode('\n'));
+    }
 
     scenarioEl.setAttribute('label', label);
 
@@ -1029,7 +1038,59 @@ export class XmlScenarioLoader {
     fs.writeFileSync(xmlPath, xmlDecl + body + '\n', 'utf-8');
   }
 
-  // â”€â”€ Static helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  /**
+   * Create a brand-new `{app}/scenarios.xml` file (and directory) with an
+   * empty `<ScenarioLibrary>` skeleton. Used by the dashboard "New App" action
+   * to seed a user-created app template. Throws if the app dir already exists
+   * under this loader's root (use a different root / name instead).
+   */
+  createApp(app: string, opts?: { helper?: string; process?: string }): void {
+    const appDir = path.join(this.appTemplatesDir, app);
+    if (fs.existsSync(appDir)) {
+      throw new Error(`App "${app}" already exists at ${appDir}`);
+    }
+    fs.mkdirSync(appDir, { recursive: true });
+    const helper  = opts?.helper  ?? 'KeyWin.exe';
+    const process = opts?.process ?? app;
+    const xml =
+      `<?xml version="1.0" encoding="UTF-8"?>\n` +
+      `<ScenarioLibrary helper="${helper}" process="${process}">\n` +
+      `</ScenarioLibrary>\n`;
+    fs.writeFileSync(path.join(appDir, 'scenarios.xml'), xml, 'utf-8');
+  }
+
+  /**
+   * Delete a single `<Scenario>` from `{app}/scenarios.xml`.
+   * Throws if the scenario or file does not exist.
+   */
+  deleteScenario(app: string, scenarioId: string): void {
+    const xmlPath = path.join(this.appTemplatesDir, app, 'scenarios.xml');
+    if (!fs.existsSync(xmlPath)) throw new Error(`scenarios.xml not found for app: "${app}"`);
+    const content = fs.readFileSync(xmlPath, 'utf-8');
+    const dom = new JSDOM(content, { contentType: 'text/xml' });
+    const doc = dom.window.document;
+    const scenarioEl = Array.from(doc.querySelectorAll('Scenario'))
+      .find((s: any) => s.getAttribute('id') === scenarioId) as Element | undefined;
+    if (!scenarioEl) throw new Error(`Scenario "${scenarioId}" not found in ${app}/scenarios.xml`);
+    scenarioEl.parentNode?.removeChild(scenarioEl);
+    const serializer = new ((dom.window as any).XMLSerializer)();
+    const xmlDecl = content.startsWith('<?xml') ? content.substring(0, content.indexOf('?>') + 2) + '\n' : '';
+    const body = serializer.serializeToString(doc.documentElement);
+    fs.writeFileSync(xmlPath, xmlDecl + body + '\n', 'utf-8');
+  }
+
+  /**
+   * Delete an entire app template directory (scenarios.xml + tree.xml + any
+   * other files). Used by the dashboard "Delete App" action — callers MUST
+   * restrict this to user-created roots (never the shipped system roots).
+   */
+  deleteApp(app: string): void {
+    const appDir = path.join(this.appTemplatesDir, app);
+    if (!fs.existsSync(appDir)) throw new Error(`App "${app}" not found at ${appDir}`);
+    fs.rmSync(appDir, { recursive: true, force: true });
+  }
+
+  // ── Static helpers ────────────────────────────────────────────────────────â”€â”€â”€â”€
 
   /**
    * Substitute {{key}} placeholders in a string with values from `vars`.

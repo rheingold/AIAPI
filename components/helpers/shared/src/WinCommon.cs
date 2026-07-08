@@ -38,6 +38,46 @@ public static class WinUtils
     [DllImport("user32.dll")]
     public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
+    /// <summary>
+    /// Reliably bring `hwnd` to the foreground, working around Windows'
+    /// focus-steal prevention (a plain SetForegroundWindow call is silently
+    /// ignored unless the calling process is already the foreground app or
+    /// attached to its input queue). Restores the window first if minimised.
+    /// Used whenever a background/service-spawned process needs to make a
+    /// window (e.g. an interactive-by-default browser window) actually
+    /// visible to the user rather than opening silently behind other apps.
+    /// </summary>
+    public static bool ForceForegroundWindow(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+        try
+        {
+            ShowWindow(hwnd, 9); // SW_RESTORE — unminimise before bringing to front
+
+            IntPtr fgWnd = GetForegroundWindow();
+            int fgPid;
+            uint fgThread = (uint)GetWindowThreadProcessId(fgWnd, out fgPid);
+            uint myThread = GetCurrentThreadId();
+            bool attached = fgThread != 0 && fgThread != myThread &&
+                            AttachThreadInput(fgThread, myThread, true);
+            try
+            {
+                bool ok = SetForegroundWindow(hwnd);
+                BringWindowToTop(hwnd);
+                return ok;
+            }
+            finally
+            {
+                if (attached) AttachThreadInput(fgThread, myThread, false);
+            }
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();
 

@@ -54,7 +54,12 @@ Push-Location $projectRoot
 
 try {
     Write-Host "Compiling TypeScript..." -ForegroundColor Cyan
-    & npm run compile
+    $tscCmd = Join-Path $projectRoot 'node_modules\.bin\tsc.cmd'
+    if (Test-Path $tscCmd) {
+        & $tscCmd -p (Join-Path $projectRoot 'tsconfig.json')
+    } else {
+        & npm run compile
+    }
     if ($LASTEXITCODE -ne 0) { throw "TypeScript compilation failed" }
     
     Write-Host "✓ TypeScript compiled" -ForegroundColor Green
@@ -66,7 +71,12 @@ try {
     Write-Host "✓ Windows binaries built" -ForegroundColor Green
     
     Write-Host "Building standalone executable..." -ForegroundColor Cyan
-    & npm run package:exe
+    $pkgCmd = Join-Path $projectRoot 'node_modules\.bin\pkg.cmd'
+    if (Test-Path $pkgCmd) {
+        & $pkgCmd . --output dist/release/aiapi-server.exe
+    } else {
+        & npm run package:exe
+    }
     if ($LASTEXITCODE -ne 0) { throw "pkg build failed" }
     
     Write-Host "✓ Standalone executable built" -ForegroundColor Green

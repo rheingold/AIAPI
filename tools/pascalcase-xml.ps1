@@ -1,4 +1,4 @@
-$root = "c:\Users\plachy\Documents\Dev\VSCplugins\AIAPI"
+$root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $files = Get-ChildItem $root -Recurse -Filter "scenarios.xml" | Where-Object { $_.FullName -notmatch "node_modules" }
 $count = 0
 foreach ($f in $files) {

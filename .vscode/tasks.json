@@ -31,12 +31,6 @@
 			"problemMatcher": []
 		},
 		{
-			"label": "build-all",
-			"type": "shell",
-			"command": "npm run compile 2>&1 ; $csc=\"$env:WINDIR\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe\" ; $root=\"c:\\Users\\plachy\\Documents\\Dev\\VSCplugins\\AIAPI\" ; $uiac=(Get-ChildItem \"$env:WINDIR\\Microsoft.NET\" -Recurse -Filter UIAutomationClient.dll -EA SilentlyContinue | Select-Object -First 1).FullName ; $uiat=(Get-ChildItem \"$env:WINDIR\\Microsoft.NET\" -Recurse -Filter UIAutomationTypes.dll -EA SilentlyContinue | Select-Object -First 1).FullName ; $wbase=(Get-ChildItem \"$env:WINDIR\\Microsoft.NET\" -Recurse -Filter WindowsBase.dll -EA SilentlyContinue | Select-Object -First 1).FullName ; & $csc /nologo /target:winexe \"/out:$root\\dist\\win\\KeyWin.exe\" \"/r:$uiac\" \"/r:$uiat\" \"/r:$wbase\" \"$root\\tools\\common\\HelperCommon.cs\" \"$root\\tools\\win\\KeyWin.cs\" ; Write-Host \"KeyWin exit=$LASTEXITCODE\" ; & $csc /nologo /target:exe \"/out:$root\\dist\\browser\\BrowserWin.exe\" \"$root\\tools\\common\\HelperCommon.cs\" \"$root\\tools\\browser\\BrowserWin.cs\" ; Write-Host \"BrowserWin exit=$LASTEXITCODE\"",
-			"isBackground": false
-		},
-		{
 			"label": "build-all-ps1",
 			"type": "shell",
 			"command": "PowerShell -ExecutionPolicy Bypass -File build/windows/build.ps1",

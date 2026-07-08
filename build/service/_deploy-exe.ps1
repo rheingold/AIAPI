@@ -1,6 +1,7 @@
 # One-shot deploy: stop service, copy exe, restart
 $serviceName = "AIAPIService"
-$src = "C:\Users\plachy\Documents\Dev\VSCplugins\AIAPI\dist\release\aiapi-server.exe"
+$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$src = Join-Path $projectRoot "dist\release\aiapi-server.exe"
 $dest = "C:\Program Files\AIAPI\aiapi-server.exe"
 
 Write-Host "Stopping $serviceName..."

@@ -451,7 +451,10 @@
         <section id="section-templates" class="section">
           <div class="section-header">
             <h2>📚 App Templates</h2>
-            <button id="btn-refresh-templates" class="btn-secondary" onclick="loadAppTemplates()">🔄 Refresh</button>
+            <div style="display:flex;gap:0.5rem;">
+              <button id="btn-new-app-template" class="btn-primary" onclick="createAppTemplatePrompt()">➕ New App</button>
+              <button id="btn-refresh-templates" class="btn-secondary" onclick="loadAppTemplates()">🔄 Refresh</button>
+            </div>
           </div>
           <div class="info-banner">
             ℹ️ App templates are in <code>apptemplates/</code>. Each folder contains a
@@ -930,6 +933,13 @@
             <select id="scenario-editor-picker" onchange="scenarioEditorPick(this.value)">
               <option value="">— select —</option>
             </select>
+          </div>
+          <div style="flex:0 0 auto;">
+            <label>&nbsp;</label>
+            <div style="display:flex;gap:0.35rem;">
+              <button class="btn-secondary" style="font-size:0.75rem;padding:0.3rem 0.5rem;" onclick="scenarioEditorNew()" title="Create a new scenario in this app">➕ New</button>
+              <button class="btn-secondary" style="font-size:0.75rem;padding:0.3rem 0.5rem;color:var(--error);" id="scenario-editor-btn-delete" onclick="scenarioEditorDelete()" disabled title="Delete the selected scenario (user apps only)">🗑️</button>
+            </div>
           </div>
           <div style="flex:1;min-width:180px;">
             <label for="scenario-editor-label">Label:</label>

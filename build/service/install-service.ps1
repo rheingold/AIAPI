@@ -150,21 +150,33 @@ if ($UseLocalExe) {
     
     try {
         # Ensure TypeScript is compiled
-        & npm run compile
-        
+        # Invoke local tsc directly (node_modules/.bin) — avoids depending on a
+        # working global npm installation, independent of repo location.
+        $tscCmd = Join-Path $projectRoot 'node_modules\.bin\tsc.cmd'
+        if (Test-Path $tscCmd) {
+            & $tscCmd -p (Join-Path $projectRoot 'tsconfig.json')
+        } else {
+            & npm run compile
+        }
+
         if ($LASTEXITCODE -ne 0) {
             Write-Host "? TypeScript compilation failed" -ForegroundColor Red
             exit 1
         }
-        
+
         # Build with pkg
-        & npm run package:exe
-        
+        $pkgCmd = Join-Path $projectRoot 'node_modules\.bin\pkg.cmd'
+        if (Test-Path $pkgCmd) {
+            & $pkgCmd . --output dist/release/aiapi-server.exe
+        } else {
+            & npm run package:exe
+        }
+
         if ($LASTEXITCODE -ne 0) {
             Write-Host "? pkg build failed" -ForegroundColor Red
             exit 1
         }
-        
+
         Write-Host "? Standalone executable built" -ForegroundColor Green
     }
     finally {

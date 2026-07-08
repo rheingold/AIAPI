@@ -305,6 +305,18 @@ export function resolveCallArgs(args: HelperCallArgs): { target: string; command
 export class HelperDaemon {
   private proc: ChildProcess | null = null;
   private buffer = '';
+  // Incremental JSON-scan state, carried across onData() chunks so large
+  // responses (e.g. a multi-MB rendered-page EXEC result arriving over many
+  // stdout chunks) don't re-scan the whole accumulated buffer from index 0
+  // on every chunk — that naive re-scan is O(n^2) in total bytes and was
+  // observed to make FETCH_WEBPAGE_RENDER responses take minutes instead of
+  // seconds. extractJson() (below) remains as a pure, stateless helper used
+  // by unit tests and is unaffected by this.
+  private scanPos = 0;
+  private scanDepth = 0;
+  private scanInString = false;
+  private scanEscape = false;
+  private scanStart = -1;
   private pendingResolve: ((v: any) => void) | null = null;
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
   /** Promise chain used to serialise concurrent callCommand() calls */
@@ -334,6 +346,8 @@ export class HelperDaemon {
   constructor(
     public readonly exePath: string,
     private buildEnv: () => NodeJS.ProcessEnv,
+    /** If true, this daemon always bypasses WinSvcBridge in Session 0 (background/headless mode). */
+    private readonly backgroundMode: boolean = false,
   ) {}
 
   // -- Session 0 bridge resolution -------------------------------------------
@@ -409,8 +423,11 @@ export class HelperDaemon {
     // the user desktop.  If WinSvcBridge.exe is present in the same directory,
     // launch the helper through it so it runs in the active user session
     // (Session 1+) while stdin/stdout remain transparently piped back to us.
-    // Background mode (false for persistent daemons - they handle UI automation)
-    const { spawnExe, spawnArgs } = HelperDaemon.resolveSpawnTarget(this.exePath, false);
+    // this.backgroundMode is true only for the on-demand background-mode
+    // daemon instance created by HelperRegistry.getOrCreateBackgroundDaemon() —
+    // the default persistent daemon (used by every interactive command) is
+    // always interactive-by-default per the Session 0 requirement.
+    const { spawnExe, spawnArgs } = HelperDaemon.resolveSpawnTarget(this.exePath, this.backgroundMode);
     const proc = spawn(spawnExe, [...spawnArgs, '--listen-stdin', '--persistent'], {
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -479,15 +496,44 @@ export class HelperDaemon {
 
   private onData(chunk: Buffer): void {
     this.buffer += chunk.toString('utf8');
-    // Try to extract a complete JSON object from the accumulated buffer
-    const { json, remaining } = HelperDaemon.extractJson(this.buffer);
-    if (json !== null) {
-      this.buffer = remaining;
-      if (this.startupPhase === 'awaiting_hello' || this.startupPhase === 'awaiting_ok') {
-        this.handleStartupMessage(json);
-      } else {
-        this.dispatchResponse(json);
+    // Incrementally scan only the not-yet-scanned tail of the buffer for a
+    // complete top-level JSON object (string-aware, so `{`/`}` inside JSON
+    // string values — e.g. escaped page HTML — don't affect bracket depth).
+    const buf = this.buffer;
+    let i = this.scanPos;
+    let json: string | null = null;
+    for (; i < buf.length; i++) {
+      const c = buf[i];
+      if (this.scanEscape) { this.scanEscape = false; continue; }
+      if (this.scanInString) {
+        if (c === '\\') { this.scanEscape = true; continue; }
+        if (c === '"') { this.scanInString = false; continue; }
+        continue;
       }
+      if (c === '"') { this.scanInString = true; continue; }
+      if (c === '{') { if (this.scanDepth === 0) this.scanStart = i; this.scanDepth++; }
+      else if (c === '}') {
+        if (this.scanDepth > 0) this.scanDepth--;
+        if (this.scanDepth === 0 && this.scanStart >= 0) {
+          json = buf.slice(this.scanStart, i + 1);
+          this.buffer = buf.slice(i + 1);
+          this.scanPos = 0;
+          this.scanStart = -1;
+          this.scanInString = false;
+          this.scanEscape = false;
+          this.scanDepth = 0;
+          break;
+        }
+      }
+    }
+    if (json === null) {
+      this.scanPos = i; // remember scan position; nothing to re-scan next time
+      return;
+    }
+    if (this.startupPhase === 'awaiting_hello' || this.startupPhase === 'awaiting_ok') {
+      this.handleStartupMessage(json);
+    } else {
+      this.dispatchResponse(json);
     }
   }
 
@@ -761,6 +807,14 @@ interface ActiveSession {
 export class HelperRegistry {
   private schemas: Map<string, HelperSchema> = new Map();
   private daemons: Map<string, HelperDaemon> = new Map();
+  /**
+   * On-demand, lazily-created daemons that always bypass WinSvcBridge in
+   * Session 0 (background/headless mode). Created only when a caller passes
+   * background=true to callCommand() — e.g. FETCH_WEBPAGE_RENDER's headless
+   * scraping that doesn't need/want the interactive user desktop. The default
+   * daemon in `this.daemons` remains interactive-by-default for everything else.
+   */
+  private backgroundDaemons: Map<string, HelperDaemon> = new Map();
   private searchPaths: string[] = [];
   /** Active test-session recording state; null when no session is open. */
   private activeSession: ActiveSession | null = null;
@@ -868,8 +922,12 @@ export class HelperRegistry {
 
   /** Gracefully shut down all daemon processes. Returns when all have exited. */
   async shutdownAll(): Promise<void> {
-    const promises = Array.from(this.daemons.values()).map((d) => d.shutdown());
+    const promises = [
+      ...Array.from(this.daemons.values()).map((d) => d.shutdown()),
+      ...Array.from(this.backgroundDaemons.values()).map((d) => d.shutdown()),
+    ];
     this.daemons.clear();
+    this.backgroundDaemons.clear();
     await Promise.all(promises);
   }
 
@@ -1005,10 +1063,36 @@ export class HelperRegistry {
   }
 
   /**
+   * Lazily create (once) and return the background-mode daemon for `helperName`
+   * — a second daemon instance for the same helper .exe that always spawns
+   * directly (bypassing WinSvcBridge) even when running as a Session 0
+   * service. Used only for calls that explicitly opt into background=true.
+   */
+  private getOrCreateBackgroundDaemon(helperName: string): HelperDaemon {
+    const existing = this.backgroundDaemons.get(helperName);
+    if (existing) return existing;
+    const schema = this.schemas.get(helperName);
+    if (!schema || !schema.filePath) throw new Error(`Helper not found: ${helperName}`);
+    const daemon = new HelperDaemon(schema.filePath, () => this.buildEnv(), true);
+    daemon.pkBytes = this.pkBytes;
+    daemon.securityConfigPath = this.securityConfigPath;
+    daemon.start();
+    this.backgroundDaemons.set(helperName, daemon);
+    globalLogger.info('HelperRegistry',
+      `Started background-mode (non-bridged) daemon for ${helperName}`);
+    return daemon;
+  }
+
+  /**
    * Execute a command via the correct helper's persistent daemon.
    *
    * Wire format (§2.7 target format — separate fields):
    *   { id, proc, action, path?, value? }
+   *
+   * @param background - If true, route through the background-mode daemon
+   *   (bypasses WinSvcBridge / interactive Session 0 routing entirely). Only
+   *   meaningful when running as a Windows Service in Session 0; ignored
+   *   (harmless) otherwise. Default false — interactive-by-default.
    */
   async callCommand(
     helperName: string,
@@ -1020,6 +1104,7 @@ export class HelperRegistry {
     callerUser: string = '',
     callerRoles: string = '',
     scroll: boolean = false,
+    background: boolean = false,
   ): Promise<any> {
     const schema = this.schemas.get(helperName);
     if (!schema) throw new Error(`Helper not found: ${helperName}`);
@@ -1028,7 +1113,7 @@ export class HelperRegistry {
     const parameter = elemPath && value ? `${elemPath}|${value}` : (elemPath || value);
     globalLogger.info('keywin', `>> ${helperName}  proc="${target}"  action=${command}  path=${elemPath}  value=${value}`);
 
-    const daemon = this.daemons.get(helperName);
+    const daemon = background ? this.getOrCreateBackgroundDaemon(helperName) : this.daemons.get(helperName);
     if (!daemon) throw new Error(`No daemon for helper: ${helperName}`);
 
     const t0     = Date.now();

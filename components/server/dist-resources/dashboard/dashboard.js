@@ -404,8 +404,11 @@ async function loadAppTemplates() {
     data.apps.forEach(app => {
       const card = document.createElement('div');
       card.className = 'tool-card';
+      const originBadge = app.origin === 'user'
+        ? '<span style="background:var(--accent);color:#fff;font-size:0.65rem;padding:1px 6px;border-radius:8px;margin-left:0.4rem;">USER</span>'
+        : '<span style="background:var(--bg-secondary);color:var(--text-secondary);font-size:0.65rem;padding:1px 6px;border-radius:8px;margin-left:0.4rem;border:1px solid var(--border);">SYSTEM</span>';
       card.innerHTML = `
-        <div class="tool-name">${app.name}</div>
+        <div class="tool-name">${app.name}${originBadge}</div>
         <div class="tool-description">
           ${app.hasTree ? '✅ tree.xml' : '❌ tree.xml'}
           &nbsp;&nbsp;
@@ -415,7 +418,8 @@ async function loadAppTemplates() {
         <div style="margin-top:0.5rem;">
           <a href="/api/appTemplates/${app.name}/tree" target="_blank" class="btn-secondary" style="font-size:0.75rem;padding:0.2rem 0.5rem;">View tree.xml</a>
           <a href="/api/appTemplates/${app.name}/scenarios" target="_blank" class="btn-secondary" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-left:0.4rem;">View scenarios.xml</a>
-          ${app.hasScenarios ? `<button class="btn-secondary" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-left:0.4rem;" onclick="openScenarioEditor('${app.name}')">✏️ Edit Scenarios</button>` : ''}
+          <button class="btn-secondary" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-left:0.4rem;" onclick="openScenarioEditor('${app.name}')">✏️ Edit Scenarios</button>
+          ${app.origin === 'user' ? `<button class="btn-secondary" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-left:0.4rem;color:var(--error);" onclick="deleteAppTemplate('${app.name}')">🗑️ Delete App</button>` : ''}
         </div>`;
       container.appendChild(card);
     });
@@ -425,6 +429,40 @@ async function loadAppTemplates() {
     addLog('error', 'templates', `Failed to load app templates: ${error.message}`);
   }
 }
+
+async function createAppTemplatePrompt() {
+  const app = prompt('New app name (letters/numbers/dash/underscore, no slashes):');
+  if (!app) return;
+  try {
+    const r = await fetch('/api/appTemplates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ app }),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error || 'Failed to create app');
+    addLog('info', 'templates', `Created app template "${app}"`);
+    loadAppTemplates();
+  } catch (e) {
+    alert(`Failed to create app: ${e.message}`);
+    addLog('error', 'templates', `Failed to create app "${app}": ${e.message}`);
+  }
+}
+
+async function deleteAppTemplate(app) {
+  if (!confirm(`Delete the entire app template "${app}" and all its scenarios? This cannot be undone.`)) return;
+  try {
+    const r = await fetch(`/api/appTemplates/${encodeURIComponent(app)}`, { method: 'DELETE' });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error || 'Failed to delete app');
+    addLog('info', 'templates', `Deleted app template "${app}"`);
+    loadAppTemplates();
+  } catch (e) {
+    alert(`Failed to delete app: ${e.message}`);
+    addLog('error', 'templates', `Failed to delete app "${app}": ${e.message}`);
+  }
+}
+
 
 async function loadScenarios() {
   try {
@@ -2372,6 +2410,7 @@ const scenarioEditor = {
   app: '',
   scenarioId: '',
   steps: [],
+  origin: 'system',
   _expandedFilters: new Set(),
   _history: [],
   _redoStack: []
@@ -2404,6 +2443,7 @@ async function openScenarioEditor(appName) {
   try {
     const r = await fetch(`/api/appTemplates/${encodeURIComponent(appName)}/scenarios/list`);
     const d = await r.json();
+    scenarioEditor.origin = d.origin || 'system';
     picker.innerHTML = '<option value="">— select a scenario —</option>';
     (d.scenarios || []).forEach(s => {
       const opt = document.createElement('option');
@@ -2415,6 +2455,7 @@ async function openScenarioEditor(appName) {
     picker.innerHTML = `<option value="">Error: ${e.message}</option>`;
   }
 
+  document.getElementById('scenario-editor-btn-delete').disabled = true;
   document.getElementById('scenario-editor-modal').classList.add('active');
 }
 
@@ -2435,6 +2476,7 @@ async function scenarioEditorPick(scenarioId) {
     document.getElementById('scenario-editor-btn-add').disabled = true;
     document.getElementById('scenario-editor-btn-addref').disabled = true;
     document.getElementById('scenario-editor-btn-save').disabled = true;
+    document.getElementById('scenario-editor-btn-delete').disabled = true;
     // Clear metadata panel
     ['se-meta-helper','se-meta-process','se-meta-apptitle','se-meta-assistant','se-meta-checksum']
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
@@ -2463,6 +2505,7 @@ async function scenarioEditorPick(scenarioId) {
     document.getElementById('scenario-editor-btn-add').disabled = false;
     document.getElementById('scenario-editor-btn-addref').disabled = false;
     document.getElementById('scenario-editor-btn-save').disabled = false;
+    document.getElementById('scenario-editor-btn-delete').disabled = (scenarioEditor.origin !== 'user');
     _seRenderRows();
     _seRefreshCommandList();
     _seRefreshTargetList();
@@ -2745,6 +2788,64 @@ function scenarioEditorAddRef() {
   _seSnapshot();
   scenarioEditor.steps.push({ type: 'ScenarioRef', ref: '' });
   _seRenderRows();
+}
+
+async function scenarioEditorNew() {
+  const app = scenarioEditor.app;
+  if (!app) return;
+  const scenarioId = prompt('New scenario ID (letters/numbers/dash/underscore):');
+  if (!scenarioId) return;
+  try {
+    const r = await fetch(`/api/appTemplates/${encodeURIComponent(app)}/scenarios`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: scenarioId, label: scenarioId, steps: [] }),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error || 'Failed to create scenario');
+    addLog('info', 'templates', `Created scenario ${app}/${scenarioId}`);
+    // Refresh picker, then select the newly created scenario
+    const picker = document.getElementById('scenario-editor-picker');
+    const listR = await fetch(`/api/appTemplates/${encodeURIComponent(app)}/scenarios/list`);
+    const listD = await listR.json();
+    scenarioEditor.origin = listD.origin || 'system';
+    picker.innerHTML = '<option value="">— select a scenario —</option>';
+    (listD.scenarios || []).forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = `${s.label} (${s.id})`;
+      picker.appendChild(opt);
+    });
+    picker.value = scenarioId;
+    await scenarioEditorPick(scenarioId);
+    loadAppTemplates();
+  } catch (e) {
+    alert(`Failed to create scenario: ${e.message}`);
+    addLog('error', 'templates', `Failed to create scenario ${app}/${scenarioId}: ${e.message}`);
+  }
+}
+
+async function scenarioEditorDelete() {
+  const { app, scenarioId } = scenarioEditor;
+  if (!app || !scenarioId) return;
+  if (!confirm(`Delete scenario "${scenarioId}" from ${app}? This cannot be undone.`)) return;
+  try {
+    const r = await fetch(`/api/appTemplates/${encodeURIComponent(app)}/scenarios/${encodeURIComponent(scenarioId)}`, {
+      method: 'DELETE',
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error || 'Failed to delete scenario');
+    addLog('info', 'templates', `Deleted scenario ${app}/${scenarioId}`);
+    await scenarioEditorPick(''); // clear editor state
+    const picker = document.getElementById('scenario-editor-picker');
+    const opt = [...picker.options].find(o => o.value === scenarioId);
+    if (opt) opt.remove();
+    picker.value = '';
+    loadAppTemplates();
+  } catch (e) {
+    alert(`Failed to delete scenario: ${e.message}`);
+    addLog('error', 'templates', `Failed to delete scenario ${app}/${scenarioId}: ${e.message}`);
+  }
 }
 
 async function scenarioEditorSave() {

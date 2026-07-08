@@ -8,7 +8,12 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $CsOnly) {
     Write-Host "=== Compiling TypeScript ==="
     Set-Location $root
-    & npm run compile
+    $tscCmd = Join-Path $root 'node_modules\.bin\tsc.cmd'
+    if (Test-Path $tscCmd) {
+        & $tscCmd -p (Join-Path $root 'tsconfig.json')
+    } else {
+        & npm run compile
+    }
     Write-Host "TypeScript exit: $LASTEXITCODE"
 }
 

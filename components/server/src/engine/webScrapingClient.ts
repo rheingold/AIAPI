@@ -5,6 +5,41 @@ import { JSDOM } from 'jsdom';
 import { globalLogger } from '../utils/Logger';
 
 /**
+ * Second-level TLDs / compound public suffixes where the registrable
+ * ("base") domain is the last THREE labels instead of the usual last two
+ * (e.g. "example.co.uk", not "co.uk"). Not exhaustive — covers the common
+ * ccTLD compound suffixes likely to be seen in practice. Anything not in
+ * this list falls back to the standard last-two-labels heuristic.
+ */
+const COMPOUND_PUBLIC_SUFFIXES = new Set([
+  'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'me.uk', 'net.uk',
+  'co.jp', 'ne.jp', 'or.jp', 'ac.jp',
+  'com.au', 'net.au', 'org.au', 'gov.au',
+  'co.nz', 'org.nz', 'net.nz',
+  'com.br', 'com.cn', 'com.mx', 'co.in', 'co.za', 'co.kr'
+]);
+
+/**
+ * Extract the registrable ("base") domain from a hostname, e.g.
+ * "www.google.com" -> "google.com", "consent.google.com" -> "google.com",
+ * "news.bbc.co.uk" -> "bbc.co.uk". Used to decide whether a redirect hop
+ * is a same-site host rewrite (always allowed) vs. a genuine cross-domain
+ * redirect (subject to the blockCrossDomainRedirects policy).
+ */
+function getBaseDomain(hostname: string): string {
+  const labels = hostname.toLowerCase().split('.');
+  if (labels.length <= 2) {
+    return hostname.toLowerCase();
+  }
+  const lastTwo = labels.slice(-2).join('.');
+  if (COMPOUND_PUBLIC_SUFFIXES.has(lastTwo)) {
+    return labels.slice(-3).join('.');
+  }
+  return lastTwo;
+}
+
+
+/**
  * TLS/SSL certificate information returned for HTTPS connections.
  * Present in the result even when the certificate is invalid so the AI
  * can inspect it and decide whether to retry with rejectUnauthorized: false.
@@ -626,13 +661,21 @@ export class WebScrapingClient {
             return;
           }
 
-          // Cross-domain redirect security check
+          // Cross-domain redirect security check.
+          // Redirects to a different *hostname* within the same registrable
+          // (base) domain — e.g. google.com → www.google.com → consent.google.com —
+          // are always allowed; they are not a real cross-site hop, just a
+          // same-site host/consent/locale rewrite that legitimate sites (most
+          // notably Google Search) rely on constantly. Only genuinely
+          // cross-domain redirects are subject to blockCrossDomainRedirects.
           const origHost = parsedUrl.hostname;
           const redirHost = new URL(redirectUrl).hostname;
+          const sameBaseDomain = getBaseDomain(origHost) === getBaseDomain(redirHost);
           const redirValidation = this.securityFilter.redirectValidation;
           if (
             redirValidation?.blockCrossDomainRedirects &&
             origHost !== redirHost &&
+            !sameBaseDomain &&
             !redirValidation.allowedRedirectDomains?.some(d => redirHost.endsWith(d))
           ) {
             resolve({

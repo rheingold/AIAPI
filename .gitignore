@@ -38,15 +38,3 @@ yarn-error.log*
 .vscode-test/
 # local-only private credentials (never commit)
 ai_priv/
-
-# Local-only AI operation scripts (debug/test/ad-hoc)
-query
-debug-sse.js
-test-sse-fix.js
-test-google.json
-test-render-retry.ps1
-test-service.ps1
-tools/find-aia.ps1
-tools/find-aia-service.ps1
-tools/FindAIAService.ps1
-components/server/test-request.json

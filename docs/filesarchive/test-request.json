@@ -1,0 +1,13 @@
+﻿{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "AutomateUI",
+    "arguments": {
+      "helper": "NativeWin",
+      "action": "FS_LIST",
+      "path": "d:\\plachy\\Dokumenty\\Dev\\AI\\AIAPI"
+    }
+  }
+}

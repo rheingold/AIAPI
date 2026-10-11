@@ -48,6 +48,7 @@ node dist/start-mcp-server.js
 # Dashboard  → http://127.0.0.1:3458/dashboard
 ```
 
+
 ### First-run setup
 
 Open the dashboard → **Settings** → expand **⚙️ First-Run Setup Wizard** → click **▶ Run Setup**.
@@ -60,13 +61,44 @@ This generates the cryptographic key pair, signs the security config, and create
 
 | Tool | Description |
 |---|---|
-| `automateWindows` | SENDKEYS, CLICKID, CLICKNAME, READ, QUERYTREE, LISTWINDOWS, LAUNCH, KILL, … |
-| `automateBrowser` | CDP_EVALUATE, CDP_CLICK, CDP_FILL, CDP_NAVIGATE, QUERYTREE, … |
+| `_System` | **Built-in system tools** — EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER (no external helper .exe required) |
+| `KeyWin` | SENDKEYS, CLICKID, CLICKNAME, READ, QUERYTREE, LISTWINDOWS, LAUNCH, KILL, … (Win32/UWP/WPF automation) |
+| `BrowserWin` | CDP_EVALUATE, CDP_CLICK, CDP_FILL, CDP_NAVIGATE, QUERYTREE, … (Chrome DevTools Protocol) |
+| `AutomateUI` | Unified router — dispatches any action to any helper by specifying `helper` and `action` parameters |
 | `getHelperSchema` | Introspect available commands and their schemas |
 | `listHelpers` | List registered helper executables |
 | `runScenario` | Execute an XML scenario |
 
 All tool calls pass through the security filter chain before reaching the helper.
+
+---
+
+## Standalone Installation
+
+The `dist/release` folder contains everything needed for standalone installation without compilation:
+
+```
+dist/release/
+├── install-service.bat      # Install AIAPI as Windows Service
+├── uninstall-service.bat    # Uninstall the service
+├── aiapi-service.xml        # WinSW service configuration
+├── README.md               # Release-specific documentation
+└── .gitignore              # Excludes binaries from git
+```
+
+### Quick Install
+
+1. Download or clone the repository
+2. Run `dist/release/install-service.bat` as Administrator
+3. The service will start automatically, listening on:
+   - **MCP API**: `http://127.0.0.1:4457`
+   - **Dashboard**: `http://127.0.0.1:4458/dashboard`
+
+### Uninstall
+
+Run `dist/release/uninstall-service.bat` as Administrator to remove the service.
+
+---
 
 ---
 
@@ -108,6 +140,7 @@ HttpServerWithDashboard (port 3458)
 | [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) | System design |
 | [docs/architecture/SECURITY_ARCHITECTURE.md](docs/architecture/SECURITY_ARCHITECTURE.md) | Security model |
 | [docs/guides/SERVER_GUIDE.md](docs/guides/SERVER_GUIDE.md) | Deployment & configuration |
+| [docs/guides/HYBRID-APP-E2E-TESTING.md](docs/guides/HYBRID-APP-E2E-TESTING.md) | E2E testing for Tauri/Electron hybrid apps |
 | [CHANGELOG.md](CHANGELOG.md) | Version history |
 
 ---

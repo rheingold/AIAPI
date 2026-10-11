@@ -271,7 +271,8 @@ describe('MCP methods', () => {
     const res = await rpc(port, 'tools/list');
     const names: string[] = res.result.tools.map((t: any) => t.name);
     // Only assert tools that are always present regardless of helper discovery
-    for (const expected of ['executeScenario', 'listHelpers', 'fetch_webpage', 'exec_cmd', 'fs_read']) {
+    // _System replaces flat tools (exec_cmd, fs_read, fs_write, fs_list, fetch_webpage, fetch_webpage_render)
+    for (const expected of ['executeScenario', 'listHelpers', '_System', 'AutomateUI', 'getHelperSchema']) {
       expect(names).toContain(expected);
     }
   });

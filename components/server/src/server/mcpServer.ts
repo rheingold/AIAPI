@@ -633,62 +633,72 @@ export class MCPServer {
           {
             name: 'AutomateUI',
             description:
-              'UI automation router — routes any command to any installed helper. ' +
-              'helper: BrowserWin|KeyWin|LibreOfficeWin|MSOfficeWin. ' +
-              'Protocol (CONVENTIONS §9): ' +
-              '(1) QUERYTREE/LISTWINDOWS before acting; ' +
-              '(2) keyboard → click → JS priority; ' +
-              '(3) read-back control value + re-read tree after every action; ' +
-              '(4) handle dialogs via ConditionalRef before continuing. ' +
-              'Cross-helper: BrowserWin for CDP/web; KeyWin for Win32/UIA + OS dialogs; ' +
-              'use KeyWin proc="HANDLE:<hwnd>" for any dialog the primary helper cannot reach. ' +
-              'Direct debug: use the named helper tools (BrowserWin/KeyWin/…) above. ' +
-              'Session 0 (Windows Service): all helpers default to the interactive user ' +
-              'session via WinSvcBridge. Pass background:true to bypass this and spawn ' +
-              'directly in Session 0 (headless/background use only — no user desktop, ' +
-              'so dialogs/captchas cannot be resolved). ' +
-              'Per-command docs: getHelperSchema.',
+              'UI automation router — dispatches any action to any helper. ' +
+              'Required: helper (BrowserWin|KeyWin|_System|…), action (SENDKEYS|QUERYTREE|LAUNCH|…). ' +
+              'Key params: proc=target address (e.g. "calc.exe" or "HANDLE:12345"), value=payload, path=element address. ' +
+              'Session 0: helpers route to interactive user via WinSvcBridge by default; pass background:true for headless. ' +
+              'For full parameter reference, examples, and call flows: use getActionDetail(helper, action).',
             inputSchema: {
               type: 'object',
               properties: {
                 helper: {
                   type: 'string',
-                  enum: ['BrowserWin', 'KeyWin', 'LibreOfficeWin', 'MSOfficeWin', 'NativeWin'],
-                  description: 'Which helper to route to. Matches tool name (without .exe). NativeWin routes to the built-in dispatch path (no subprocess).',
+                  enum: ['BrowserWin', 'KeyWin', 'LibreOfficeWin', 'MSOfficeWin', '_System'],
+                  description: 'Target helper. _System = built-in (no subprocess).',
                 },
                 action: {
                   type: 'string',
-                  description: 'Command verb (e.g. EXEC, SENDKEYS, QUERYTREE). getHelperSchema for full list per helper.',
+                  description: 'Action verb. See getActionDetail(helper, action) for full reference with examples.',
                 },
                 proc: {
                   type: 'string',
                   description:
-                    'Target process/tab. "[pid:N]" "[procname:X]" "[handle:H]". ' +
-                    'Multi-level: "[procname:App]//[docname:Doc]". Omit = foreground.',
+                    'Target address: "procname:calc.exe", "HANDLE:12345", "PAGE:url", or bare process name. Omit for foreground.',
                 },
-                path: { type: 'string', description: 'XPath/CSS element address.' },
-                value: { type: 'string', description: 'Payload to write/send.' },
+                path: { type: 'string', description: 'Element address (XPath, CSS, AutomationId).' },
+                value: { type: 'string', description: 'Payload: keystrokes, text, depth, command args, etc.' },
                 background: {
                   type: 'boolean',
-                  description:
-                    'Session 0 only: bypass WinSvcBridge and spawn directly (no interactive ' +
-                    'desktop). Default false (interactive-by-default). Has no effect outside Session 0.',
+                  description: 'Session 0: bypass bridge for headless mode. Default: false.',
                 },
               },
               required: ['helper', 'action'],
             },
           },
 
+          // ── getActionDetail — detailed per-action reference with examples ──
+          {
+            name: 'getActionDetail',
+            description:
+              'Returns the complete reference for a single action: exact parameter names, types, ' +
+              'target address syntax, key tokens, and ready-to-use JSON-RPC examples. ' +
+              'Call: getActionDetail({ helper: "KeyWin", action: "SENDKEYS" }). ' +
+              'If helper/action omitted, returns an index of all available actions across all helpers.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                helper: {
+                  type: 'string',
+                  description: 'Helper name (e.g. "KeyWin", "_System", "BrowserWin"). Omit for full index.',
+                },
+                action: {
+                  type: 'string',
+                  description: 'Action name (e.g. "SENDKEYS", "EXEC_CMD"). Omit for helper-level summary.',
+                },
+              },
+            },
+          },
+
           // ── Helper management tools ───────────────────────────────────────
           {
             name: 'listHelpers',
-            description: 'List discovered helpers. Returns compact summary by default (name, commandCount, command names). Pass full:true for complete inputSchema detail per command.',
+            description: 'List all helpers with compact summary. Pass full:true for schemas. For per-action detail with examples: use getActionDetail.',
             inputSchema: {
               type: 'object',
               properties: {
                 full: {
                   type: 'boolean',
-                  description: 'Set true to include full command inputSchema detail. Default: false (compact).',
+                  description: 'Include full inputSchema. Default: false.',
                   default: false,
                 },
               },
@@ -696,17 +706,17 @@ export class MCPServer {
           },
           {
             name: 'getHelperSchema',
-            description: 'Get API schema for a specific helper. Returns compact summary by default. Pass full:true for complete inputSchema detail per command.',
+            description: 'Get schema for one helper. For action-level detail with call examples: use getActionDetail(helper, action).',
             inputSchema: {
               type: 'object',
               properties: {
                 helperName: {
                   type: 'string',
-                  description: 'Helper name (e.g. "KeyWin.exe")',
+                  description: 'Helper name (e.g. "KeyWin", "_System").',
                 },
                 full: {
                   type: 'boolean',
-                  description: 'Set true for full inputSchema detail. Default: false.',
+                  description: 'Full inputSchema. Default: false.',
                   default: false,
                 },
               },
@@ -719,10 +729,32 @@ export class MCPServer {
           //   Prefer AutomateUI for routing and cross-helper workflows.
           ...this.helperRegistry.toMcpTools(),
 
-          //   NativeWin actions (EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER)
-          //   are not exposed as separate root-level tools. They are exclusively accessible via:
-          //     AutomateUI { helper: "NativeWin", action: "...", ... }
-          //   or via getHelperSchema("NativeWin") for the full schema.
+          // ── _System — virtual helper (server-side built-ins, no .exe) ─────
+          //   Appears as a single tool like BrowserWin/KeyWin with action enum.
+          //   Implementation is integral to the service (builtinActions.ts).
+          {
+            name: '_System',
+            description: '[_System v1.0.0] Built-in system tools (no external helper .exe). Runs on the MCP host with full access to the local filesystem, command line, and HTTP. Commands: EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER. Call getHelperSchema for per-command docs, or use AutomateUI for routing.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                helper: { type: 'string', description: 'Helper binary — normally omitted. Maps to "_System" (virtual).' },
+                proc: { type: 'string', description: 'Target: executable path, URL, or file path depending on action.' },
+                action: {
+                  type: 'string',
+                  enum: [
+                    'EXEC_CMD', 'FS_READ', 'FS_WRITE', 'FS_LIST',
+                    'FETCH_WEBPAGE', 'FETCH_WEBPAGE_RENDER',
+                  ],
+                  description: 'Command. Call getHelperSchema for details.',
+                },
+                path: { type: 'string', description: 'File/directory path or working directory.' },
+                value: { type: 'string', description: 'Payload: args, content, or JSON options.' },
+                background: { type: 'boolean', description: 'Session 0: bypass bridge for headless mode.', default: false },
+              },
+              required: ['action'],
+            },
+          },
         ],
       },
     };
@@ -773,39 +805,72 @@ export class MCPServer {
           return this.createErrorResponse(id, -32601,
             'terminateProcess is removed (ADR-017-P2). Use: AutomateUI { helper:"KeyWin", action:"KILL", proc:"<target>" }');
 
-        // ── ADR-017-P2 grace-period stubs: NativeWin flat tools removed from tools/list.
-        //   Use: AutomateUI { helper:"NativeWin", action:"EXEC_CMD"|"FS_READ"|"FS_WRITE"|"FS_LIST"|"FETCH_WEBPAGE"|"FETCH_WEBPAGE_RENDER", ... }
-        //   Calling them by their old flat names still returns a migration-hint error (grace period).
-        case 'fetch_webpage':
-          return this.createErrorResponse(id, -32601,
-            'fetch_webpage is removed from root tools (ADR-017-P2). Use: AutomateUI { helper:"NativeWin", action:"FETCH_WEBPAGE", proc:"<url>", value:"<optionsJson>" }');
-
-        case 'exec_cmd':
-          return this.createErrorResponse(id, -32601,
-            'exec_cmd is removed from root tools (ADR-017-P2). Use: AutomateUI { helper:"NativeWin", action:"EXEC_CMD", proc:"<executable>", value:"<args>" }');
-
-        case 'fs_read':
-          return this.createErrorResponse(id, -32601,
-            'fs_read is removed from root tools (ADR-017-P2). Use: AutomateUI { helper:"NativeWin", action:"FS_READ", path:"<filePath>" }');
-
-        case 'fs_write':
-          return this.createErrorResponse(id, -32601,
-            'fs_write is removed from root tools (ADR-017-P2). Use: AutomateUI { helper:"NativeWin", action:"FS_WRITE", path:"<filePath>", value:"<content>" }');
-
-        case 'fs_list':
-          return this.createErrorResponse(id, -32601,
-            'fs_list is removed from root tools (ADR-017-P2). Use: AutomateUI { helper:"NativeWin", action:"FS_LIST", path:"<dirPath>" }');
-
-        case 'executeScenario':
-          result = await this.executeScenario(args, isLocal);
+        case '_System': {
+          // Direct call to _System tool — dispatch to built-in server-side actions
+          const sysAction: string = (args.action || '').toUpperCase();
+          switch (sysAction) {
+            case 'EXEC_CMD':
+              result = await execCmd(
+                args.executable ?? args.proc ?? '',
+                args.args ?? args.value ?? '',
+                { cwd: args.cwd ?? args.path, timeoutMs: args.timeoutMs, backgroundMode: args.background === true },
+              );
+              break;
+            case 'FS_READ':
+              result = await fsRead(args.path ?? '', { maxBytes: args.maxBytes });
+              break;
+            case 'FS_WRITE':
+              result = await fsWrite(
+                args.path ?? '',
+                args.content ?? args.value ?? '',
+                { append: args.append },
+              );
+              break;
+            case 'FS_LIST':
+              result = await fsList(args.path ?? '', { filter: args.filter, maxEntries: args.maxEntries });
+              break;
+            case 'FETCH_WEBPAGE': {
+              const url = args.url ?? args.proc ?? '';
+              const fetchOpts: Record<string, any> = {
+                method: args.method,
+                body: args.body,
+                headers: args.headers,
+                timeoutMs: args.timeoutMs,
+                autoEscalate: args.autoEscalate !== false,
+                extractText: args.extractText,
+              };
+              result = await this.automationEngine.fetchWebpage(url, fetchOpts);
+              break;
+            }
+            case 'FETCH_WEBPAGE_RENDER':
+              result = await renderWebpage(
+                this.helperRegistry,
+                args.url ?? args.proc ?? '',
+                {
+                  browser: args.browser,
+                  headless: args.headless,
+                  background: args.background,
+                  detectObstacles: args.detectObstacles,
+                  timeoutMs: args.timeoutMs,
+                  waitMs: args.waitMs,
+                  selector: args.selector,
+                },
+              );
+              break;
+            default:
+              return this.createErrorResponse(id, -32602,
+                `_System: unknown action "${args.action}". ` +
+                `Supported: EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER`);
+          }
           break;
+        }
 
         case 'AutomateUI': {
           // Resolve helper by short name (without .exe suffix)
           const helperArg: string = (args.helper || '').replace(/\.exe$/i, '');
 
-          // ── NativeWin virtual helper — dispatch to built-in server-side actions ──
-          if (helperArg === 'NativeWin') {
+          // ── _System virtual helper — dispatch to built-in server-side actions ──
+          if (helperArg === '_System') {
             const action: string = (args.action || '').toUpperCase();
             switch (action) {
               case 'FETCH_WEBPAGE': {
@@ -888,7 +953,7 @@ export class MCPServer {
                 break;
               default:
                 return this.createErrorResponse(id, -32602,
-                  `NativeWin: unknown action "${args.action}". ` +
+                  `_System: unknown action "${args.action}". ` +
                   `Supported: EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER`);
             }
             if (!result || result.success === false) {
@@ -910,7 +975,7 @@ export class MCPServer {
           if (!schema) {
             throw new Error(
               `AutomateUI: unknown helper "${helperArg}". ` +
-              `Available: NativeWin, ${allHelpers.map(s => s.toolName).join(', ')}`
+              `Available: _System, ${allHelpers.map(s => s.toolName).join(', ')}`
             );
           }
           result = await this.helperRegistry.callCommand(
@@ -934,10 +999,10 @@ export class MCPServer {
         case 'listHelpers': {
           const full = args.full === true || args.full === 'true' || args.full === 1;
           const allHelpers = this.helperRegistry.getAll();
-          const nativeWinEntry = {
-            name: 'NativeWin',
+          const sysEntry = {
+            name: '_System',
             virtual: true,
-            description: 'Server-side built-in actions (no helper .exe required): exec_cmd, fs_read, fs_write, fs_list, fetch_webpage, fetch_webpage_render',
+            description: 'Built-in system tools (no external helper .exe): EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER',
             ...(full ? {
               commandCount: 6,
               commands: [
@@ -954,13 +1019,13 @@ export class MCPServer {
             }),
           };
           const helpers = full
-            ? [nativeWinEntry, ...allHelpers.map(s => ({
+            ? [sysEntry, ...allHelpers.map(s => ({
                 name: s.helper, version: s.version, description: s.description,
                 toolName: s.toolName, filePath: s.filePath,
                 commandCount: s.commands.length,
                 commands: s.commands.map(c => ({ name: c.name, description: c.description })),
               }))]
-            : [nativeWinEntry, ...allHelpers.map(s => slimHelperSummary(s))];
+            : [sysEntry, ...allHelpers.map(s => slimHelperSummary(s))];
           const raw = { success: true, helpers,
             _note: full ? undefined : 'Compact view. Pass full:true for complete command schemas.' };
           const { data } = truncateResponse(raw, {
@@ -989,12 +1054,12 @@ export class MCPServer {
 
         case 'getHelperSchema': {
           const full = args.full === true || args.full === 'true' || args.full === 1;
-          // NativeWin is a virtual helper — no exe, implemented natively in the server
-          if ((args.helperName || '').toLowerCase() === 'nativewin') {
-            const nativeWinSchema = {
-              name: 'NativeWin',
+          // _System is a virtual helper — no exe, implemented natively in the server
+          if ((args.helperName || '').toLowerCase() === '_system') {
+            const sysSchema = {
+              name: '_System',
               virtual: true,
-              description: 'Server-side built-in actions (no helper .exe required): exec_cmd, fs_read, fs_write, fs_list, fetch_webpage, fetch_webpage_render',
+              description: 'Built-in system tools (no external helper .exe): EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER',
               commandCount: 6,
               commands: [
                 {
@@ -1099,12 +1164,12 @@ export class MCPServer {
                 },
               ],
             };
-            const schemaOut = full ? nativeWinSchema : {
-              name: nativeWinSchema.name,
-              virtual: nativeWinSchema.virtual,
-              description: nativeWinSchema.description,
-              commandCount: nativeWinSchema.commandCount,
-              commands: nativeWinSchema.commands.map(c => c.name),
+            const schemaOut = full ? sysSchema : {
+              name: sysSchema.name,
+              virtual: sysSchema.virtual,
+              description: sysSchema.description,
+              commandCount: sysSchema.commandCount,
+              commands: sysSchema.commands.map(c => c.name),
             };
             const raw = { success: true, schema: schemaOut,
               _note: full ? undefined : 'Compact view. Pass full:true for complete inputSchema detail.' };
@@ -1126,6 +1191,271 @@ export class MCPServer {
           });
           result = data;
           break;
+        }
+
+        case 'getActionDetail': {
+          // Comprehensive per-action documentation with examples
+          const helperFilter = (args.helper || '').toLowerCase();
+          const actionFilter = (args.action || '').toUpperCase();
+          
+          // Complete action reference database
+          const actionDb: Record<string, Record<string, any>> = {
+            KeyWin: {
+              SENDKEYS: {
+                description: 'Send keystrokes to a target window via the OS input stack.',
+                parameters: {
+                  proc: 'Target window: process name ("calc.exe"), "HANDLE:12345", "PID:1234". Omit for foreground window.',
+                  value: 'Keystroke sequence. Supports tokens: {ENTER}, {TAB}, {ESC}, {BACK}, {DELETE}, {LEFT}, {RIGHT}, {UP}, {DOWN}, {F1}-{F12}, {CTRL+X}. Mix literal text and tokens freely.',
+                },
+                example: {
+                  jsonrpc: '2.0',
+                  method: 'tools/call',
+                  params: {
+                    name: 'AutomateUI',
+                    arguments: {
+                      helper: 'KeyWin',
+                      action: 'SENDKEYS',
+                      proc: 'HANDLE:2818972',
+                      value: '7*8={ENTER}',
+                    },
+                  },
+                },
+                notes: 'Always QUERYTREE or LISTWINDOWS first to find the correct handle. The window must be visible and focused.',
+              },
+              QUERYTREE: {
+                description: 'Walk the UI Automation tree and return structured JSON.',
+                parameters: {
+                  proc: 'Target window: "calc.exe", "HANDLE:12345", etc.',
+                  value: 'Depth limit (integer). Default 3. Use 5-6 for deep trees.',
+                  path: 'Optional subtree root (AutomationId or "/" separated path).',
+                },
+                example: {
+                  jsonrpc: '2.0',
+                  method: 'tools/call',
+                  params: {
+                    name: 'AutomateUI',
+                    arguments: {
+                      helper: 'KeyWin',
+                      action: 'QUERYTREE',
+                      proc: 'calc.exe',
+                      value: '4',
+                    },
+                  },
+                },
+              },
+              READ: {
+                description: 'Read the Name/text property of a control or window.',
+                parameters: {
+                  proc: 'Target window.',
+                  path: 'Optional element address (AutomationId). Omit for window-level read.',
+                },
+                example: {
+                  params: { name: 'AutomateUI', arguments: { helper: 'KeyWin', action: 'READ', proc: 'HANDLE:12345' } },
+                },
+              },
+              CLICKID: {
+                description: 'Click a control by its AutomationId.',
+                parameters: {
+                  proc: 'Target window.',
+                  path: 'AutomationId of the element to click (e.g. "number7Button", "equalButton").',
+                },
+                example: {
+                  params: { name: 'AutomateUI', arguments: { helper: 'KeyWin', action: 'CLICKID', proc: 'calc.exe', path: 'equalButton' } },
+                },
+              },
+              LAUNCH: {
+                description: 'Launch a process or attach to existing.',
+                parameters: {
+                  proc: 'Executable name or path (e.g. "calc.exe", "notepad.exe").',
+                },
+                example: {
+                  params: { name: 'AutomateUI', arguments: { helper: 'KeyWin', action: 'LAUNCH', proc: 'calc.exe' } },
+                },
+              },
+              LISTWINDOWS: {
+                description: 'List all visible windows with handles, titles, and PIDs.',
+                parameters: {
+                  proc: 'Optional filter. "SYSTEM" for all.',
+                },
+                example: {
+                  params: { name: 'AutomateUI', arguments: { helper: 'KeyWin', action: 'LISTWINDOWS', proc: 'SYSTEM' } },
+                },
+              },
+              KILL: {
+                description: 'Terminate a process or window.',
+                parameters: {
+                  proc: 'Target: "calc.exe", "HANDLE:12345", "PID:1234".',
+                },
+              },
+              SCREENSHOT: {
+                description: 'Capture window as base64 PNG.',
+                parameters: {
+                  proc: 'Target window.',
+                },
+              },
+            },
+            _System: {
+              EXEC_CMD: {
+                description: 'Run a shell command and capture stdout/stderr.',
+                parameters: {
+                  proc: 'Executable path or name (required). e.g. "calc.exe", "cmd.exe", "powershell".',
+                  value: 'Arguments as a string. e.g. "/c dir", "-Command Get-Process".',
+                  path: 'Working directory (optional).',
+                  timeoutMs: 'Max execution time. Default: 30000.',
+                },
+                example: {
+                  jsonrpc: '2.0',
+                  method: 'tools/call',
+                  params: {
+                    name: 'AutomateUI',
+                    arguments: {
+                      helper: '_System',
+                      action: 'EXEC_CMD',
+                      proc: 'calc.exe',
+                      value: '',
+                    },
+                  },
+                },
+                notes: 'CRITICAL: Use "proc" for executable (not "executable" or "command"). Use "value" for args (not "args").',
+              },
+              FS_READ: {
+                description: 'Read file content.',
+                parameters: {
+                  path: 'File path (required).',
+                  maxBytes: 'Max bytes. Default: 1MB.',
+                },
+                example: {
+                  params: { name: 'AutomateUI', arguments: { helper: '_System', action: 'FS_READ', path: 'C:\\Windows\\win.ini' } },
+                },
+              },
+              FS_WRITE: {
+                description: 'Write text to file.',
+                parameters: {
+                  path: 'File path (required).',
+                  value: 'Content to write.',
+                  append: 'Append mode. Default: false.',
+                },
+              },
+              FS_LIST: {
+                description: 'List directory.',
+                parameters: {
+                  path: 'Directory path (required).',
+                  filter: '"all" | "files" | "directories".',
+                },
+              },
+              FETCH_WEBPAGE: {
+                description: 'Fetch webpage via HTTP.',
+                parameters: {
+                  proc: 'URL (required).',
+                  value: 'JSON options string.',
+                },
+              },
+              FETCH_WEBPAGE_RENDER: {
+                description: 'Render webpage in real browser.',
+                parameters: {
+                  proc: 'URL (required).',
+                  value: 'JSON options: {browser, headless, timeoutMs, waitMs, selector}.',
+                },
+              },
+            },
+            BrowserWin: {
+              SENDKEYS: {
+                description: 'Send keystrokes to browser tab.',
+                parameters: {
+                  proc: 'Target: "chrome:URL:...", "PAGE:12345678", or browser name.',
+                  value: 'Keystroke sequence (same tokens as KeyWin).',
+                },
+              },
+              QUERYTREE: {
+                description: 'Query DOM tree.',
+                parameters: {
+                  proc: 'Browser target.',
+                  value: 'Depth. Default 3.',
+                  path: 'CSS selector root (e.g. "BODY", "#main").',
+                },
+              },
+              FILL: {
+                description: 'Fill input element.',
+                parameters: {
+                  proc: 'Browser target.',
+                  path: 'CSS selector of input element.',
+                  value: 'Text to type.',
+                },
+              },
+              NAVIGATE: {
+                description: 'Navigate to URL.',
+                parameters: {
+                  proc: 'Browser target.',
+                  path: 'URL to navigate to.',
+                },
+              },
+              LAUNCH: {
+                description: 'Launch browser.',
+                parameters: {
+                  proc: 'Browser: "chrome", "msedge", "brave", "firefox".',
+                  path: 'Optional initial URL.',
+                },
+              },
+              SCREENSHOT: {
+                description: 'Screenshot browser page.',
+                parameters: {
+                  proc: 'Browser target.',
+                },
+              },
+            },
+          };
+
+          // If no filter, return index
+          if (!helperFilter && !actionFilter) {
+            const index = {
+              description: 'Action Detail Index — use getActionDetail({helper, action}) for full docs with examples.',
+              helpers: Object.fromEntries(
+                Object.entries(actionDb).map(([h, actions]) => [h, Object.keys(actions)])
+              ),
+            };
+            result = { success: true, detail: index };
+            break;
+          }
+
+          // If helper specified, return helper-level summary
+          if (helperFilter && !actionFilter) {
+            const matchedHelper = Object.keys(actionDb).find(h => h.toLowerCase() === helperFilter);
+            if (!matchedHelper) {
+              return this.createErrorResponse(id, -32602,
+                `Helper "${args.helper}" not found in action database. Available: ${Object.keys(actionDb).join(', ')}`);
+            }
+            const helperInfo = actionDb[matchedHelper];
+            result = {
+              success: true,
+              helper: matchedHelper,
+              actions: Object.fromEntries(
+                Object.entries(helperInfo).map(([a, info]) => [a, (info as any).description || ''])
+              ),
+              note: `Use getActionDetail({ helper: "${matchedHelper}", action: "<ACTION>" }) for full parameter detail and examples.`,
+            };
+            break;
+          }
+
+          // If both helper and action
+          if (helperFilter && actionFilter) {
+            const matchedHelper = Object.keys(actionDb).find(h => h.toLowerCase() === helperFilter);
+            if (!matchedHelper) {
+              return this.createErrorResponse(id, -32602,
+                `Helper "${args.helper}" not found. Available: ${Object.keys(actionDb).join(', ')}`);
+            }
+            const actionInfo = actionDb[matchedHelper][actionFilter];
+            if (!actionInfo) {
+              return this.createErrorResponse(id, -32602,
+                `Action "${args.action}" not found for ${matchedHelper}. Available: ${Object.keys(actionDb[matchedHelper]).join(', ')}`);
+            }
+            result = {
+              success: true,
+              helper: matchedHelper,
+              action: actionFilter,
+              detail: actionInfo,
+            };
+            break;
+          }
         }
 
         default: {

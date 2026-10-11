@@ -49,6 +49,10 @@
 
 ### Standalone (without VS Code)
 
+**Option A — Pre-built release package (recommended)**:
+Download the release package from [`dist/release/`](dist/release/) and run `install-service.bat` as Administrator. The service will start on port 4457 (see [Endpoints](#endpoints)).
+
+**Option B — Compile from source**:
 ```powershell
 npm install
 npm run compile

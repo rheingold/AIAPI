@@ -18,12 +18,21 @@
 |---|---|
 | 🖥️ **Windows UI control** | Click, type, read, drag — any Win32 / UWP / WPF app via UI Automation |
 | 🌐 **Browser automation** | Full Chrome DevTools Protocol via BrowserWin.exe |
-| 🤖 **MCP protocol** | MCP@HTTP (port 3458) and MCP@IPC (VS Code command relay) |
-| 📊 **Dashboard** | Web UI on `http://localhost:3458/dashboard` — settings, scenarios, security |
+| 🤖 **MCP protocol** | MCP@HTTP (port 3457 for dev, 4457 for service) and MCP@IPC (VS Code command relay) |
+| 📊 **Dashboard** | Web UI on `http://localhost:3458/dashboard` (dev) or `http://localhost:4458/dashboard` (service) — settings, scenarios, security |
 | 🛡️ **Security filters** | Per-helper ALLOW/DENY rules with process, command, pattern scoping |
 | 🔑 **Authentication** | None / Password / API-Key / OAuth 2.0 / SAML 2.0 / Certificates |
 | 📜 **Scenario editor** | XML-based scenario authoring with IntelliSense autocomplete |
 | ⚙️ **Setup wizard** | Idempotent first-run setup — generates keys, signs config, creates admin |
+
+---
+
+## Endpoints
+
+| Mode | MCP API | Dashboard |
+|---|---|---|
+| **Development** | `http://127.0.0.1:3457` | `http://127.0.0.1:3458/dashboard` |
+| **Windows Service** | `http://127.0.0.1:4457` | `http://127.0.0.1:4458/dashboard` |
 
 ---
 
@@ -35,7 +44,7 @@
    ```bash
    code --install-extension dist/release/ai-ui-automation-0.2.0.vsix
    ```
-2. The server starts automatically on VS Code launch.  
+2. The server starts automatically on VS Code launch.
    Click the **$(rocket) AIAPI :3468** status bar item to open the dashboard.
 
 ### Standalone (without VS Code)
@@ -47,7 +56,6 @@ node dist/start-mcp-server.js
 # MCP server → http://127.0.0.1:3457
 # Dashboard  → http://127.0.0.1:3458/dashboard
 ```
-
 
 ### First-run setup
 
@@ -73,34 +81,35 @@ All tool calls pass through the security filter chain before reaching the helper
 
 ---
 
-## Standalone Installation
+## Standalone Release Package
 
-The `dist/release` folder contains everything needed for standalone installation without compilation:
+The [`dist/release`](dist/release/) folder contains a pre-built, ready-to-install package for users who want to run AIAPI without compiling from source. This is the recommended way to install AIAPI as a Windows Service.
+
+### What's Included
 
 ```
 dist/release/
-├── install-service.bat      # Install AIAPI as Windows Service
-├── uninstall-service.bat    # Uninstall the service
-├── aiapi-service.xml        # WinSW service configuration
-├── README.md               # Release-specific documentation
-└── .gitignore              # Excludes binaries from git
+├── install-service.bat      # Double-click to install as Windows Service (run as Administrator)
+├── uninstall-service.bat    # Double-click to remove the service (run as Administrator)
+├── aiapi-service.xml        # WinSW service configuration (port 4457/4458)
+├── README.md               # Release-specific documentation and changelog
+└── .gitignore              # Git excludes binaries - download release package for executables
 ```
 
-### Quick Install
+### Install as Windows Service
 
-1. Download or clone the repository
-2. Run `dist/release/install-service.bat` as Administrator
-3. The service will start automatically, listening on:
+1. Download the latest release from [GitHub Releases](https://github.com/rheingold/AIAPI/releases)
+2. Extract to a permanent location (e.g., `C:\Program Files\AIAPI\`)
+3. Run `install-service.bat` as **Administrator**
+4. The service starts automatically:
    - **MCP API**: `http://127.0.0.1:4457`
    - **Dashboard**: `http://127.0.0.1:4458/dashboard`
 
 ### Uninstall
 
-Run `dist/release/uninstall-service.bat` as Administrator to remove the service.
+Run `uninstall-service.bat` as **Administrator** to stop and remove the service. Your files will be preserved.
 
----
-
----
+> **Note**: The `.exe` files are not tracked in git (see `.gitignore`). Download the pre-built release package or compile from source using `build/windows/build.ps1`.
 
 ## Architecture
 

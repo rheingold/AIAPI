@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FS Escaping Test Scenarios — XML format for MCP Scenario Runner
+  
+  These scenarios test FS_WRITE/FS_READ through the scenario execution engine,
+  validating content integrity for scripts with special characters.
+  
+  Run via: test/integration/test-fs-escaping.js (integration test)
+  Or: mcp_aiapi_service4457_executeScenario with app="_System", scenarioId="fs-escaping-suite"
+-->
+<scenarios>
+
+  <!-- Scenario: PowerShell script round-trip -->
+  <scenario id="ps-roundtrip" name="PowerShell FS_WRITE Round-Trip">
+    <step action="FS_WRITE" path="{{outputDir}}/test.ps1" value="$greeting = "Hello!"&#10;$number = 42&#10;Write-Host "$greeting $number"" bind="writeResult"/>
+    <step action="ASSERT_EVAL" value="writeResult.success === true" description="FS_WRITE succeeded"/>
+    
+    <step action="FS_READ" path="{{outputDir}}/test.ps1" bind="readResult"/>
+    <step action="ASSERT_EVAL" value="readResult.success === true" description="FS_READ succeeded"/>
+    <step action="ASSERT_EVAL" value="readResult.value.includes('$greeting')" description="Dollar sign preserved"/>
+    <step action="ASSERT_EVAL" value="!readResult.value.includes('`$greeting')" description="Dollar NOT backtick-escaped"/>
+  </scenario>
+
+  <!-- Scenario: Batch script round-trip -->
+  <scenario id="bat-roundtrip" name="Batch FS_WRITE Round-Trip">
+    <step action="FS_WRITE" path="{{outputDir}}/test.bat" value="@echo off&#10;echo %PATH%&#10;echo 100%% complete" bind="writeResult"/>
+    <step action="ASSERT_EVAL" value="writeResult.success === true" description="FS_WRITE batch succeeded"/>
+    
+    <step action="FS_READ" path="{{outputDir}}/test.bat" bind="readResult"/>
+    <step action="ASSERT_EVAL" value="readResult.value.includes('%PATH%')" description="Percent signs preserved"/>
+    <step action="ASSERT_EVAL" value="readResult.value.includes('%%')" description="Double percent preserved"/>
+  </scenario>
+
+  <!-- Scenario: JSON content round-trip -->
+  <scenario id="json-roundtrip" name="JSON FS_WRITE Round-Trip">
+    <step action="FS_WRITE" path="{{outputDir}}/test.json" value="{"path":"C:\\\\Users\\\\test","url":"https://example.com?a=1&b=2"}" bind="writeResult"/>
+    <step action="ASSERT_EVAL" value="writeResult.success === true" description="FS_WRITE JSON succeeded"/>
+    
+    <step action="FS_READ" path="{{outputDir}}/test.json" bind="readResult"/>
+    <step action="ASSERT_EVAL" value="JSON.parse(readResult.value).path === 'C:\\\\Users\\\\test'" description="JSON path preserved"/>
+  </scenario>
+
+  <!-- Scenario: Whitespace preservation -->
+  <scenario id="whitespace" name="Whitespace Preservation Test">
+    <step action="FS_WRITE" path="{{outputDir}}/ws.txt" value="col1&#9;col2&#10;    indented&#10;&#9;&#9;tab-indented" bind="writeResult"/>
+    <step action="ASSERT_EVAL" value="writeResult.success === true" description="FS_WRITE whitespace"/>
+    
+    <step action="FS_READ" path="{{outputDir}}/ws.txt" bind="readResult"/>
+    <step action="ASSERT_EVAL" value="readResult.value.includes('&#9;')" description="Tab character preserved"/>
+    <step action="ASSERT_EVAL" value="readResult.value.includes('    indented')" description="Space indentation preserved"/>
+  </scenario>
+
+  <!-- Scenario: Append mode -->
+  <scenario id="append" name="FS_WRITE Append Mode">
+    <step action="FS_WRITE" path="{{outputDir}}/append.txt" value="line1&#10;"/>
+    <step action="FS_WRITE" path="{{outputDir}}/append.txt" value="line2&#10;" append="true"/>
+    <step action="FS_WRITE" path="{{outputDir}}/append.txt" value="line3&#10;" append="true"/>
+    
+    <step action="FS_READ" path="{{outputDir}}/append.txt" bind="readResult"/>
+    <step action="ASSERT_EVAL" value="readResult.value === 'line1&#10;line2&#10;line3&#10;'" description="Append mode correct"/>
+  </scenario>
+
+  <!-- Scenario: Unicode content -->
+  <scenario id="unicode" name="Unicode and Emoji Test">
+    <step action="FS_WRITE" path="{{outputDir}}/unicode.txt" value="Hello 世界 🌍 😀"/>
+    <step action="FS_READ" path="{{outputDir}}/unicode.txt" bind="readResult"/>
+    <step action="ASSERT_EVAL" value="readResult.value.includes('世界')" description="Chinese characters preserved"/>
+    <step action="ASSERT_EVAL" value="readResult.value.includes('🌍')" description="Emoji preserved"/>
+  </scenario>
+
+  <!-- Scenario: EXEC_CMD basic -->
+  <scenario id="exec-cmd" name="EXEC_CMD Basic Test">
+    <step action="EXEC_CMD" proc="cmd.exe" value="/c echo hello_from_cmd" bind="cmdResult"/>
+    <step action="ASSERT_EVAL" value="cmdResult.success === true" description="EXEC_CMD succeeded"/>
+    <step action="ASSERT_EVAL" value="cmdResult.stdout.includes('hello_from_cmd')" description="EXEC_CMD stdout correct"/>
+  </scenario>
+
+  <!-- Scenario: Large file handling -->
+  <scenario id="large-file" name="Large File Write/Read">
+    <step action="FS_WRITE" path="{{outputDir}}/large.txt" value="{{largeContent}}" bind="writeResult"/>
+    <step action="ASSERT_EVAL" value="writeResult.success === true" description="Large file write"/>
+    <step action="FS_READ" path="{{outputDir}}/large.txt" bind="readResult"/>
+    <step action="ASSERT_EVAL" value="readResult.success === true" description="Large file read"/>
+  </scenario>
+
+</scenarios>

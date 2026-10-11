@@ -1,0 +1,47 @@
+{
+    "// This is a JSON test fixture for FS_WRITE escaping": "comment",
+    "test_escaping": {
+        "unicode": "Hello 世界 🌍",
+        "newline": "line1\nline2\nline3",
+        "tab": "col1\tcol2\tcol3",
+        "carriage_return": "line1\r\nline2\r\n",
+        "backslash": "C:\\Users\\test\\path",
+        "forward_slash": "/usr/local/bin",
+        "mixed_slashes": "C:\\Users\\/shared\\/file",
+        "quotes": {
+            "double": "She said \"hello\"",
+            "single": "It's working",
+            "mixed": "He said 'hi' and she said \"bye\""
+        },
+        "control_chars": {
+            "bell": "\u0007",
+            "null": "\u0000",
+            "escape": "\u001b[32mgreen\u001b[0m"
+        },
+        "json_nested": "{\"inner\": {\"key\": \"value\"}}",
+        "html_embedded": "<div class=\"test\">Hello & World</div>",
+        "xml_embedded": "<?xml version=\"1.0\"?><root><item attr=\"value\">text</item></root>",
+        "sql_embedded": "SELECT * FROM users WHERE name = 'O''Brien'",
+        "regex_pattern": "\\b[A-Z]{2,}\\b",
+        "url": "https://example.com/path?query=value&foo=bar#fragment",
+        "powershell_embedded": "$var = \"hello\"; Write-Host `$var",
+        "batch_embedded": "@echo %PATH% & set \"var=value\"",
+        "python_embedded": "print(f'Hello {name}')",
+        "path_with_spaces": "C:\\Program Files (x86)\\Some App\\file.txt",
+        "unc_path": "\\\\server\\share\\file.txt",
+        "email": "user@example.com",
+        "empty_string": "",
+        "whitespace_only": "   \t\n  ",
+        "long_string": "a".repeat(1000)
+    },
+    "arrays": [
+        ["nested", "array"],
+        {"mixed": "types", "number": 42, "bool": true, "null": null}
+    ],
+    "special_keys": {
+        "0": "zero key",
+        "-": "dash key",
+        "space key": "has space",
+        "🔑emoji": "emoji key"
+    }
+}

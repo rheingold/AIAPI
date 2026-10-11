@@ -1,0 +1,47 @@
+/* Test CSS fixture for FS_WRITE escaping */
+
+/* URL with special characters */
+.background {
+    background-image: url("C:\Users\test\image.png");
+    background-image: url('https://example.com/path?q=test&lang=en');
+}
+
+/* Content with quotes and special chars */
+.test::before {
+    content: "\"Hello World\"";
+}
+.test::after {
+    content: "It's working — & more";
+}
+
+/* Paths in font-face */
+@font-face {
+    font-family: 'CustomFont';
+    src: url('fonts/file.woff2') format('woff2'),
+         url('C:\fonts\file.woff') format('woff');
+}
+
+/* Media queries with complex selectors */
+@media screen and (min-width: 768px) {
+    .container > .item:nth-child(2n+1) {
+        float: left;
+    }
+}
+
+/* Variables with special values */
+:root {
+    --primary-color: #ff0000;
+    --path: "C:\Users\shared";
+    --url: "https://api.example.com";
+}
+
+/* Keyframes */
+@keyframes slide {
+    from { transform: translateX(0); }
+    to { transform: translateX(100px); }
+}
+
+/* Pseudo-elements with attributes */
+[data-path="C:\test\note.txt"]::before {
+    content: attr(data-path);
+}

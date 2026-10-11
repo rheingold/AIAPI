@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta charset="UTF-8"/>
+    <title>FS_WRITE Escaping Test — HTML/XHTML Fixture</title>
+    <style>
+        /* CSS with special characters */
+        .test::before { content: "\"hello\""; }
+        .path { background-image: url('C:\Users\test\image.png'); }
+        .encoded { content: "a%20b&c"; }
+    </style>
+</head>
+<body>
+    <!-- Inline JavaScript with all escaping challenges -->
+    <script type="text/javascript">
+        // Variables and template literals
+        var greeting = "Hello, World!";
+        var path = "C:\\Users\\test\\Documents";
+        var url = "https://example.com/api?key=value&foo=bar";
+        
+        // Template literals with embedded expressions
+        var template = `Hello ${greeting}, path is ${path}`;
+        
+        // Nested quotes
+        var html = '<div class="test">Content & more</div>';
+        var json = '{"key": "value with \"quotes\""}';
+        
+        // Regular expressions
+        var re = /\b[A-Z]{2,}\b/g;
+        
+        // Functions with parameters
+        function process(input, output = "default") {
+            console.log(`Input: ${input}, Output: ${output}`);
+            return input.toUpperCase();
+        }
+        
+        // Event handlers with inline strings
+        document.addEventListener('click', function(e) {
+            console.log("Clicked: " + e.target.id);
+        });
+        
+        // Fetch with headers
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer token123'
+            },
+            body: JSON.stringify({query: "test", filter: {active: true}})
+        });
+    </script>
+    
+    <!-- HTML entities and special characters -->
+    <div id="entities">
+        <p>Less than: < Greater than: > Ampersand: &</p>
+        <p>Quotes: "double" and 'single'</p>
+        <p>Non-breaking space: &nbsp; — em dash: &#8212;</p>
+    </div>
+    
+    <!-- Attributes with special values -->
+    <div 
+        data-path="C:\Users\test\file.txt"
+        data-url="https://example.com?a=1&b=2"
+        data-json='{"nested": {"key": "value"}}'
+        data-regex="\b[A-Z]{2,}\b"
+    ></div>
+    
+    <!-- Embedded PowerShell command -->
+    <pre id="ps-command">
+powershell.exe -Command "& { $var = 'hello'; Write-Host `$var }"
+    </pre>
+    
+    <!-- Embedded batch command -->
+    <pre id="bat-command">
+@echo off & set "PATH=C:\Program Files\app" & echo %PATH%
+    </pre>
+    
+    <!-- SVG with special characters -->
+    <svg width="100" height="100">
+        <text x="10" y="50" title="Hello "World"">Test & More</text>
+    </svg>
+    
+    <!-- Comments with special chars -->
+    <!-- Path: C:\test\note.txt, URL: https://example.com?q=test -->
+</body>
+</html>

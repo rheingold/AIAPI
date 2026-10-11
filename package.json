@@ -2,7 +2,7 @@
   "name": "ai-ui-automation",
   "displayName": "AI UI Automation",
   "description": "MCP server for Windows UI automation inside VS Code. Drives desktop apps (Windows Forms, Win32, browsers) via natural-language tool calls. MCP@IPC + MCP@HTTP, dashboard UI, per-session HMAC security.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "license": "MIT",
   "publisher": "rheingold",
   "repository": {

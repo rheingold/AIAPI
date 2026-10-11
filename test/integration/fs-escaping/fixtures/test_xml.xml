@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Test XML fixture for FS_WRITE escaping -->
+<root xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <!-- Entity references -->
+    <entities>
+        <lt><tag></lt>
+        <gt>& symbol</gt>
+        <quote>She said "hello"</quote>
+        <apostrophe>It's working</apostrophe>
+        <space>&#160;non-breaking space</space>
+    </entities>
+    
+    <!-- CDATA sections with special characters -->
+    <cdata>
+        <script><![CDATA[
+            function test() {
+                var x = "hello";
+                var y = 'world';
+                console.log(`Template: ${x} ${y}`);
+                // URL with special chars
+                fetch("https://api.example.com?q=test&lang=en")
+                    .then(r => r.json());
+            }
+        ]]></script>
+        <powershell><![CDATA[
+            $var = "hello"
+            Write-Host "$var world"
+            Get-Process | Where-Object { $_.CPU -gt 100 }
+        ]]></powershell>
+        <sql><![CDATA[
+            SELECT * FROM users WHERE name = 'O''Brien'
+            AND city IN ('New York', 'Los Angeles')
+        ]]></sql>
+    </cdata>
+    
+    <!-- Attributes with special values -->
+    <attributes 
+        path="C:\Users\test\Documents"
+        url="https://example.com?a=1&b=2"
+        expression="$var + "literal""
+        regex="\b[A-Z]{2,}\b"
+    />
+    
+    <!-- Nested structure -->
+    <config>
+        <database>
+            <connection_string>Server=localhost;Database=test;User=admin;Password=p@ssw0rd!</connection_string>
+            <options>
+                <pool_size>10</pool_size>
+                <timeout>30000</timeout>
+            </options>
+        </database>
+        <paths>
+            <log_path>C:\var\log\app.log</log_path>
+            <temp_path>\\server\share\temp</temp_path>
+        </paths>
+    </config>
+    
+    <!-- XML processing instruction -->
+    <?xml-stylesheet type="text/xsl" href="style.xsl"?>
+</root>

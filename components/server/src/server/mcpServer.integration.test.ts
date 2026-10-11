@@ -351,6 +351,76 @@ describe('tools/call — no binary required', () => {
   });
 });
 
+// ─── _System tool enhanced features ───────────────────────────────────────────
+
+describe('_System — enhanced filesystem features', () => {
+  it('FS_READ with includeHash returns MD5 hash in attributes', async () => {
+    const res = await rpc(port, 'tools/call', {
+      name: '_System',
+      arguments: {
+        action: 'FS_READ',
+        path: 'package.json',
+        includeHash: true,
+      },
+    });
+    expect(res.error).toBeUndefined();
+    expect(res.result.success).toBe(true);
+    if (res.result.attributes) {
+      expect(res.result.attributes.hash).toBeDefined();
+      expect(res.result.attributes.hash.length).toBe(32); // MD5 is 32 hex chars
+    }
+  });
+
+  it('FS_READ with includeDates returns creation/modification dates', async () => {
+    const res = await rpc(port, 'tools/call', {
+      name: '_System',
+      arguments: {
+        action: 'FS_READ',
+        path: 'package.json',
+        includeDates: true,
+      },
+    });
+    expect(res.error).toBeUndefined();
+    expect(res.result.success).toBe(true);
+    if (res.result.attributes) {
+      expect(res.result.attributes.created).toBeDefined();
+    }
+  });
+
+  it('FS_LIST with recursive=true lists subdirectories', async () => {
+    const res = await rpc(port, 'tools/call', {
+      name: '_System',
+      arguments: {
+        action: 'FS_LIST',
+        path: 'config',
+        recursive: true,
+        depth: 1,
+      },
+    });
+    expect(res.error).toBeUndefined();
+    expect(res.result.success).toBe(true);
+    expect(res.result.entries).toBeDefined();
+  });
+
+  it('FS_LIST with glob filter filters files by pattern', async () => {
+    const res = await rpc(port, 'tools/call', {
+      name: '_System',
+      arguments: {
+        action: 'FS_LIST',
+        path: '.',
+        glob: '*.md',
+      },
+    });
+    expect(res.error).toBeUndefined();
+    expect(res.result.success).toBe(true);
+    if (res.result.entries && res.result.entries.length > 0) {
+      for (const entry of res.result.entries) {
+        expect(entry.name.endsWith('.md')).toBe(true);
+      }
+    }
+  });
+});
+
 // ─── Admin token endpoint ─────────────────────────────────────────────────────
 
 describe('POST /api/auth/admin-token', () => {

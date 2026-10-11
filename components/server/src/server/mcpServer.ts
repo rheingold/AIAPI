@@ -734,7 +734,7 @@ export class MCPServer {
           //   Implementation is integral to the service (builtinActions.ts).
           {
             name: '_System',
-            description: '[_System v1.0.0] Built-in system tools (no external helper .exe). Runs on the MCP host with full access to the local filesystem, command line, and HTTP. Commands: EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER. Call getHelperSchema for per-command docs, or use AutomateUI for routing.',
+            description: '[_System v1.1.0] Built-in system tools (no external helper .exe). Runs on the MCP host with full access to the local filesystem, command line, and HTTP. Commands: EXEC_CMD, FS_READ (with hash/dates/attributes/glob), FS_WRITE (with patch/search_replace/insert_line/delete_lines modes + glob), FS_LIST (with recursion/depth/glob/hash), FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER. Call getHelperSchema for per-command docs, or use AutomateUI for routing.',
             inputSchema: {
               type: 'object',
               properties: {
@@ -817,17 +817,44 @@ export class MCPServer {
               );
               break;
             case 'FS_READ':
-              result = await fsRead(args.path ?? '', { maxBytes: args.maxBytes });
+              result = await fsRead(args.path ?? '', {
+                maxBytes: args.maxBytes,
+                encoding: args.encoding,
+                includeHash: args.includeHash === true,
+                includeDates: args.includeDates === true,
+                includeLinkInfo: args.includeLinkInfo === true,
+                includeAttributes: args.includeAttributes,
+                glob: args.glob === true,
+              });
               break;
             case 'FS_WRITE':
               result = await fsWrite(
                 args.path ?? '',
                 args.content ?? args.value ?? '',
-                { append: args.append },
+                {
+                  append: args.append,
+                  encoding: args.encoding,
+                  mode: args.mode,
+                  search: args.search,
+                  replace: args.replace,
+                  lineNum: args.lineNum,
+                  lines: args.lines,
+                  glob: args.glob === true,
+                  recursive: args.recursive === true,
+                  depth: args.depth,
+                },
               );
               break;
             case 'FS_LIST':
-              result = await fsList(args.path ?? '', { filter: args.filter, maxEntries: args.maxEntries });
+              result = await fsList(args.path ?? '', {
+                filter: args.filter,
+                maxEntries: args.maxEntries,
+                recursive: args.recursive === true,
+                depth: args.depth,
+                glob: args.glob,
+                includeHash: args.includeHash === true,
+                includeDates: args.includeDates === true,
+              });
               break;
             case 'FETCH_WEBPAGE': {
               const url = args.url ?? args.proc ?? '';

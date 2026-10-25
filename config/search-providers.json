@@ -1,0 +1,160 @@
+{
+  "defaultEngine": "google",
+  "providers": {
+    "google": {
+      "name": "Google",
+      "mode": "html",
+      "requiresApiKey": false,
+      "enabled": true,
+      "searchUrlPattern": "https://www.google.com/search?q={encoded_query}&num={maxResults}&hl={lang}",
+      "resultParser": "GoogleParser",
+      "rateLimit": {
+        "maxPerMinute": 10,
+        "cooldownMs": 3000
+      }
+    },
+    "google_api": {
+      "name": "Google Custom Search API",
+      "mode": "api",
+      "requiresApiKey": true,
+      "enabled": false,
+      "apiEndpoint": "https://www.googleapis.com/customsearch/v1",
+      "apiKeyEnvVar": "GOOGLE_SEARCH_API_KEY",
+      "apiParams": {
+        "key": "{apiKey}",
+        "cx": "{cxId}",
+        "q": "{query}",
+        "num": "{maxResults}"
+      },
+      "resultParser": "GoogleApiParser"
+    },
+    "bing": {
+      "name": "Bing",
+      "mode": "html",
+      "requiresApiKey": false,
+      "enabled": false,
+      "searchUrlPattern": "https://www.bing.com/search?q={encoded_query}&count={maxResults}&setlang={lang}",
+      "resultParser": "BingParser",
+      "rateLimit": {
+        "maxPerMinute": 10,
+        "cooldownMs": 3000
+      }
+    },
+    "bing_api": {
+      "name": "Bing Web Search API",
+      "mode": "api",
+      "requiresApiKey": true,
+      "enabled": false,
+      "apiEndpoint": "https://api.bing.microsoft.com/v7.0/search",
+      "apiKeyEnvVar": "BING_SEARCH_API_KEY",
+      "apiHeaders": {
+        "Ocp-Apim-Subscription-Key": "{apiKey}"
+      },
+      "apiParams": {
+        "q": "{query}",
+        "count": "{maxResults}"
+      },
+      "resultParser": "BingApiParser"
+    },
+    "duckduckgo": {
+      "name": "DuckDuckGo",
+      "mode": "api",
+      "requiresApiKey": false,
+      "enabled": true,
+      "apiEndpoint": "https://api.duckduckgo.com/",
+      "apiParams": {
+        "q": "{query}",
+        "format": "json"
+      },
+      "resultParser": "DuckDuckGoParser"
+    },
+    "duckduckgo_html": {
+      "name": "DuckDuckGo (HTML)",
+      "mode": "html",
+      "requiresApiKey": false,
+      "enabled": false,
+      "searchUrlPattern": "https://duckduckgo.com/html/?q={encoded_query}",
+      "resultParser": "DuckDuckGoHtmlParser",
+      "rateLimit": {
+        "maxPerMinute": 15,
+        "cooldownMs": 2000
+      }
+    },
+    "yahoo": {
+      "name": "Yahoo",
+      "mode": "html",
+      "requiresApiKey": false,
+      "enabled": false,
+      "searchUrlPattern": "https://search.yahoo.com/search?p={encoded_query}&n={maxResults}",
+      "resultParser": "YahooParser",
+      "rateLimit": {
+        "maxPerMinute": 10,
+        "cooldownMs": 3000
+      }
+    },
+    "yandex": {
+      "name": "Yandex",
+      "mode": "html",
+      "requiresApiKey": false,
+      "enabled": false,
+      "searchUrlPattern": "https://yandex.com/search/?text={encoded_query}&lr={region}",
+      "resultParser": "YandexParser",
+      "rateLimit": {
+        "maxPerMinute": 8,
+        "cooldownMs": 4000
+      }
+    },
+    "baidu": {
+      "name": "Baidu",
+      "mode": "html",
+      "requiresApiKey": false,
+      "enabled": false,
+      "searchUrlPattern": "https://www.baidu.com/s?wd={encoded_query}&rn={maxResults}",
+      "resultParser": "BaiduParser",
+      "rateLimit": {
+        "maxPerMinute": 8,
+        "cooldownMs": 4000
+      }
+    },
+    "jina": {
+      "name": "Jina Reader",
+      "mode": "api",
+      "requiresApiKey": false,
+      "enabled": false,
+      "apiEndpoint": "https://s.jina.ai",
+      "apiMethod": "POST",
+      "apiBodyTemplate": "{\"url\": \"{query}\", \"json\": true}",
+      "apiKeyEnvVar": "JINA_API_KEY",
+      "resultParser": "JinaParser"
+    },
+    "firecrawl": {
+      "name": "Firecrawl",
+      "mode": "api",
+      "requiresApiKey": true,
+      "enabled": false,
+      "apiEndpoint": "https://api.firecrawl.dev/v1/search",
+      "apiMethod": "POST",
+      "apiHeaders": {
+        "Authorization": "Bearer {apiKey}"
+      },
+      "apiKeyEnvVar": "FIRECRAWL_API_KEY",
+      "resultParser": "FireCrawlParser"
+    },
+    "brave": {
+      "name": "Brave Search",
+      "mode": "api",
+      "requiresApiKey": true,
+      "enabled": false,
+      "apiEndpoint": "https://api.search.brave.com/res/v1/web/search",
+      "apiHeaders": {
+        "X-Subscription-Token": "{apiKey}"
+      },
+      "apiParams": {
+        "q": "{query}",
+        "count": "{maxResults}"
+      },
+      "apiKeyEnvVar": "BRAVE_SEARCH_API_KEY",
+      "resultParser": "BraveParser"
+    }
+  }
+}

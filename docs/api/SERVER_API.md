@@ -451,7 +451,76 @@ Write-Host "Calculator shows: $($result.value)"
 └─────────────────────────┘
 ```
 
-## Error Codes
+## Search & Retrieve Services (ADR-019)
+
+### _System Helper - Search Actions
+
+The `_System` helper supports these search-related actions:
+
+#### SEARCH_WEB
+Search the web via any configured provider.
+```json
+{
+  "name": "_System",
+  "arguments": {
+    "action": "SEARCH_WEB",
+    "query": "TypeScript best practices",
+    "provider": "google",
+    "mode": "html",
+    "maxResults": 10
+  }
+}
+```
+
+#### FETCH_MARKDOWN / FETCH_TXT / FETCH_HTML / FETCH_JSON
+Fetch content with automatic content-type handling:
+```json
+{
+  "name": "_System",
+  "arguments": {
+    "action": "FETCH_MARKDOWN",
+    "url": "https://example.com/page"
+  }
+}
+```
+
+### Standalone MCP Tools
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `brave_search` | Search via Brave API | `query`, `maxResults` |
+| `local_search` | Search via configured provider | `query`, `provider`, `mode`, `maxResults` |
+| `fetch_markdown` | Fetch as Markdown | `url`, `timeoutMs` |
+| `fetch_txt` | Fetch as text | `url`, `timeoutMs` |
+| `fetch_html` | Fetch as HTML | `url`, `timeoutMs` |
+| `fetch_json` | Fetch and parse JSON | `url`, `timeoutMs` |
+
+### Search Provider Configuration
+
+Providers are configured in `config/search-providers.json`:
+```json
+{
+  "defaultEngine": "google",
+  "providers": {
+    "google": {
+      "name": "Google",
+      "mode": "html",
+      "enabled": true,
+      "apiKeyEnv": "",
+      "rateLimit": { "perMinute": 10 },
+      "urlTemplate": "https://www.google.com/search?q={{query}}"
+    }
+  }
+}
+```
+
+**Dashboard API Endpoints:**
+- `GET /api/settings/search-providers` - List providers
+- `POST /api/settings/search-providers` - Save provider
+- `POST /api/settings/search-providers/{id}/toggle` - Enable/disable
+- `POST /api/settings/search-providers/default` - Set default
+
+### Error Codes
 
 - `-32600`: Invalid Request
 - `-32601`: Method not found

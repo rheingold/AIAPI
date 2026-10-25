@@ -41,8 +41,13 @@ They are technology-level primitives, not application scenarios.
 | `FS_LIST`    | NativeWin          | List directory entries. **`path=`** directory path. `bind=` captures JSON array of `{name, type, size, modified}`. |
 | `FETCH_WEBPAGE` | NativeWin       | Fetch a webpage via plain HTTP(S). **`proc=`** URL; **`value=`** JSON options. Detects login forms and auto-escalates to interactive browser mode (see §5.8). Returns `{success, url, content, text, loginForm?, _escalated?, obstacle?}`. |
 | `FETCH_WEBPAGE_RENDER` | NativeWin | Render a webpage in a real browser (via BrowserWin) and return the JS-rendered DOM. **`proc=`** URL; **`value=`** JSON options `{browser, headless, detectObstacles, timeoutMs, waitMs, selector, background}`. Interactive-by-default: visible window unless `headless:true`. Obstacle detection pauses for user to solve captcha/login (§5.7). Session 0 routing via WinSvcBridge unless `background:true`. |
+| `SEARCH_WEB`   | _System          | Search the web via configured search engine. **`value=`** or **`query=`** search string; **`provider=`** engine ID (e.g. `google`, `duckduckgo`, `brave`); **`mode=`** `html` or `api`; **`maxResults=`** integer. Returns `{query, results: [{title, url, snippet}], count}`. Container-safe: no local tool exposure. Configured in `config/search-providers.json`. |
+| `FETCH_MARKDOWN` | _System       | Fetch a URL and return content as Markdown. **`proc=`** or **`url=`** target URL; **`timeoutMs=`** integer (default 15000). Uses built-in HTML-to-Markdown converter (JSDOM-based). Returns `{url, content, contentType}`. |
+| `FETCH_TXT`    | _System        | Fetch a URL and return raw text content. **`proc=`** or **`url=`** target URL; **`timeoutMs=`** integer. Returns `{url, content, contentType}`. |
+| `FETCH_HTML`   | _System        | Fetch a URL and return raw HTML content. **`proc=`** or **`url=`** target URL; **`timeoutMs=`** integer. Returns `{url, content, contentType}`. |
+| `FETCH_JSON`   | _System        | Fetch a URL and parse as JSON. **`proc=`** or **`url=`** target URL; **`timeoutMs=`** integer. Returns `{url, content, contentType, json}`. |
 
-> **NativeWin** is a virtual helper — no executable, implemented natively in the server TypeScript/Node.js runtime. It groups `exec_cmd`, `fs_read`, `fs_write`, `fs_list`, `fetch_webpage`, and `fetch_webpage_render`. It appears in `listHelpers` (with `virtual: true`) and `getHelperSchema` but has no subprocess. Tool IDs remain unchanged.
+> **_System** (formerly NativeWin) is a virtual helper — no executable, implemented natively in the server TypeScript/Node.js runtime. It groups `EXEC_CMD`, `FS_READ`, `FS_WRITE`, `FS_LIST`, `FETCH_WEBPAGE`, `FETCH_WEBPAGE_RENDER`, `SEARCH_WEB`, `FETCH_MARKDOWN`, `FETCH_TXT`, `FETCH_HTML`, `FETCH_JSON`. It appears in `listHelpers` (with `virtual: true`) and `getHelperSchema` but has no subprocess. Tool IDs remain unchanged.
 >
 > **Session 0 behavior:** When running as a Windows Service (Session 0), `EXEC_CMD` routes through `WinSvcBridge.exe` by default so commands run in the active user session with user identity and desktop access. Set `background="true"` to skip the bridge and run directly in Session 0 (for headless operations like file processing, web scraping, or console utilities that don't need UI).
 >
@@ -598,6 +603,27 @@ path   → address part of parameter  (via pathToAddress — abbreviation layer)
 value  → value part of parameter    (appended as |value)
 ⇒ {target, command, parameter}  → callCommand() → C# wire (§2.7)
 ```
+
+---
+
+### 2.6b Standalone MCP tools (ADR-019)
+
+In addition to helper-based tools (`_System`, `KeyWin`, `BrowserWin`, etc.), the MCP
+server exposes **standalone tools** that require no helper binary. These are registered
+directly in `handleToolsList()` and dispatched in `handleToolsCall()`.
+
+| Tool Name | Purpose | Container-safe | Key Parameters |
+|---|---|---|---|
+| `brave_search` | Search via Brave Search API | Yes | `query`, `maxResults` |
+| `local_search` | Search via any configured provider | Yes | `query`, `provider`, `mode`, `maxResults` |
+| `fetch_markdown` | Fetch URL as Markdown | Yes | `url`, `timeoutMs` |
+| `fetch_txt` | Fetch URL as plain text | Yes | `url`, `timeoutMs` |
+| `fetch_html` | Fetch URL as raw HTML | Yes | `url`, `timeoutMs` |
+| `fetch_json` | Fetch URL and parse as JSON | Yes | `url`, `timeoutMs` |
+
+These tools are fully container-safe: they use Node.js native `http/https` stack
+with no local process spawning. Search provider configuration is managed via
+`config/search-providers.json` with API keys loaded from environment variables only.
 
 ---
 

@@ -23,10 +23,24 @@ export class MCPServer {
   private scenarioReplayer: ScenarioReplayer;
   private sessionTokenManager: SessionTokenManager;
   private port: number;
-  private serverInfo = {
-    name: 'ai-ui-automation',
-    version: '0.1.1',
-  };
+  private serverInfo: { name: string; version: string } = MCPServer.initializeServerInfo();
+
+  private static loadPackageVersion(): string {
+    try {
+      const pkgPath = path.resolve(__dirname, '../../package.json');
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+      return pkg.version || '0.0.0';
+    } catch {
+      return '0.0.0';
+    }
+  }
+
+  private static initializeServerInfo() {
+    return {
+      name: 'ai-ui-automation',
+      version: MCPServer.loadPackageVersion(),
+    };
+  }
   private docsPath: string;
   private helperRegistry: HelperRegistry;
   private advancedFilters: Array<{
@@ -734,7 +748,7 @@ export class MCPServer {
           //   Implementation is integral to the service (builtinActions.ts).
           {
             name: '_System',
-            description: '[_System v1.1.0] Built-in system tools (no external helper .exe). Runs on the MCP host with full access to the local filesystem, command line, and HTTP. Commands: EXEC_CMD, FS_READ (with hash/dates/attributes/glob), FS_WRITE (with patch/search_replace/insert_line/delete_lines modes + glob), FS_LIST (with recursion/depth/glob/hash), FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER. Call getHelperSchema for per-command docs, or use AutomateUI for routing.',
+            description: '[_System v1.2.0] Built-in system tools (no external helper .exe). Runs on the MCP host with full access to the local filesystem, command line, and HTTP. Commands: EXEC_CMD, FS_READ (with hash/dates/attributes/glob), FS_WRITE (with patch/search_replace/insert_line/delete_lines modes + glob), FS_LIST (with recursion/depth/glob/hash), FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER, SEARCH_WEB, FETCH_MARKDOWN, FETCH_TXT, FETCH_HTML, FETCH_JSON. Call getHelperSchema for per-command docs, or use AutomateUI for routing.',
             inputSchema: {
               type: 'object',
               properties: {
@@ -745,6 +759,7 @@ export class MCPServer {
                   enum: [
                     'EXEC_CMD', 'FS_READ', 'FS_WRITE', 'FS_LIST',
                     'FETCH_WEBPAGE', 'FETCH_WEBPAGE_RENDER',
+                    'SEARCH_WEB', 'FETCH_MARKDOWN', 'FETCH_TXT', 'FETCH_HTML', 'FETCH_JSON',
                   ],
                   description: 'Command. Call getHelperSchema for details.',
                 },
@@ -755,6 +770,7 @@ export class MCPServer {
               required: ['action'],
             },
           },
+
         ],
       },
     };
@@ -884,10 +900,47 @@ export class MCPServer {
                 },
               );
               break;
+            case 'SEARCH_WEB': {
+              // Lazy-import SearchEngineClient to avoid loading when unused
+              const { SearchEngineClient } = await import('../engine/searchEngineClient');
+              const configPath = path.resolve(__dirname, '../../../config/search-providers.json');
+              const searchClient = new SearchEngineClient(configPath);
+              const queryText = args.query ?? args.value ?? '';
+              result = await searchClient.search({
+                query: queryText,
+                engineId: args.provider,
+                mode: args.mode as ('html' | 'api') | undefined,
+                maxResults: args.maxResults,
+              });
+              break;
+            }
+            case 'FETCH_MARKDOWN':
+            case 'FETCH_TXT':
+            case 'FETCH_HTML':
+            case 'FETCH_JSON': {
+              const { FetchContentClient } = await import('../engine/fetchContentClient');
+              const fetchClient = new FetchContentClient();
+              const url = args.url ?? args.proc ?? '';
+              switch (args.action) {
+                case 'FETCH_MARKDOWN':
+                  result = await fetchClient.fetchMarkdown(url, { timeout: args.timeoutMs });
+                  break;
+                case 'FETCH_TXT':
+                  result = await fetchClient.fetchTxt(url, { timeout: args.timeoutMs });
+                  break;
+                case 'FETCH_HTML':
+                  result = await fetchClient.fetchHtml(url, { timeout: args.timeoutMs });
+                  break;
+                case 'FETCH_JSON':
+                  result = await fetchClient.fetchJson(url, { timeout: args.timeoutMs });
+                  break;
+              }
+              break;
+            }
             default:
               return this.createErrorResponse(id, -32602,
                 `_System: unknown action "${args.action}". ` +
-                `Supported: EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER`);
+                `Supported: EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER, SEARCH_WEB, FETCH_MARKDOWN, FETCH_TXT, FETCH_HTML, FETCH_JSON`);
           }
           break;
         }
@@ -1029,9 +1082,9 @@ export class MCPServer {
           const sysEntry = {
             name: '_System',
             virtual: true,
-            description: 'Built-in system tools (no external helper .exe): EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER',
+            description: 'Built-in system tools (no external helper .exe): EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER, SEARCH_WEB, FETCH_MARKDOWN, FETCH_TXT, FETCH_HTML, FETCH_JSON',
             ...(full ? {
-              commandCount: 6,
+              commandCount: 11,
               commands: [
                 { name: 'exec_cmd',      description: 'Run a shell command on the server and capture stdout/stderr. High-risk: subject to security policy.' },
                 { name: 'fs_read',       description: "Read a file's text content from the server filesystem. Returns up to 1 MB." },
@@ -1039,10 +1092,15 @@ export class MCPServer {
                 { name: 'fs_list',       description: 'List entries in a directory on the server filesystem.' },
                 { name: 'fetch_webpage', description: 'Fetch content from a webpage with security filtering.' },
                 { name: 'fetch_webpage_render', description: 'Fetch a webpage by rendering it in a real browser (via BrowserWin) and returning the JS-rendered DOM. For dynamic/SPA pages where plain HTTP fetch only sees the pre-render shell. Detects captcha/login/consent obstacles (config/browser-obstacles.json) and pauses in the visible window for the user to resolve them before continuing.' },
+                { name: 'search_web',    description: 'Search the web using configured search providers (dual-mode HTML/API). See config/search-providers.json.' },
+                { name: 'fetch_markdown', description: 'Fetch a URL and return content as Markdown (HTML auto-converted).' },
+                { name: 'fetch_txt',     description: 'Fetch a URL and return content as plain text.' },
+                { name: 'fetch_html',    description: 'Fetch a URL and return raw HTML content.' },
+                { name: 'fetch_json',    description: 'Fetch a URL and parse response as JSON.' },
               ],
             } : {
-              commandCount: 6,
-              commands: ['exec_cmd', 'fs_read', 'fs_write', 'fs_list', 'fetch_webpage', 'fetch_webpage_render'],
+              commandCount: 11,
+              commands: ['exec_cmd', 'fs_read', 'fs_write', 'fs_list', 'fetch_webpage', 'fetch_webpage_render', 'search_web', 'fetch_markdown', 'fetch_txt', 'fetch_html', 'fetch_json'],
             }),
           };
           const helpers = full
@@ -1086,8 +1144,8 @@ export class MCPServer {
             const sysSchema = {
               name: '_System',
               virtual: true,
-              description: 'Built-in system tools (no external helper .exe): EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER',
-              commandCount: 6,
+              description: 'Built-in system tools (no external helper .exe): EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER, SEARCH_WEB, FETCH_MARKDOWN, FETCH_TXT, FETCH_HTML, FETCH_JSON',
+              commandCount: 11,
               commands: [
                 {
                   name: 'exec_cmd',
@@ -1185,6 +1243,64 @@ export class MCPServer {
                           background: { type: 'boolean', description: 'Session 0 only: bypass WinSvcBridge/interactive routing entirely (spawn BrowserWin directly, no user desktop). Default false. Obstacle detection cannot pause for user input when true.' },
                         },
                       },
+                    },
+                    required: ['url'],
+                  },
+                },
+                {
+                  name: 'search_web',
+                  description: 'Search the web using configured search providers (dual-mode HTML/API). See config/search-providers.json for available providers.',
+                  inputSchema: {
+                    type: 'object',
+                    properties: {
+                      query: { type: 'string', description: 'Search query string.' },
+                      provider: { type: 'string', description: 'Provider id (google, duckduckgo, bing, etc). Default: uses configured default.' },
+                      mode: { type: 'string', enum: ['html', 'api', 'auto'], description: 'Search mode. "auto" selects API if key available, otherwise HTML scraping.' },
+                      maxResults: { type: 'number', description: 'Maximum number of results. Default: 10.', default: 10 },
+                    },
+                    required: ['query'],
+                  },
+                },
+                {
+                  name: 'fetch_markdown',
+                  description: 'Fetch a URL and return content as Markdown (HTML auto-converted).',
+                  inputSchema: {
+                    type: 'object',
+                    properties: {
+                      url: { type: 'string', description: 'URL to fetch (HTTP/HTTPS).' },
+                    },
+                    required: ['url'],
+                  },
+                },
+                {
+                  name: 'fetch_txt',
+                  description: 'Fetch a URL and return content as plain text.',
+                  inputSchema: {
+                    type: 'object',
+                    properties: {
+                      url: { type: 'string', description: 'URL to fetch (HTTP/HTTPS).' },
+                    },
+                    required: ['url'],
+                  },
+                },
+                {
+                  name: 'fetch_html',
+                  description: 'Fetch a URL and return raw HTML content.',
+                  inputSchema: {
+                    type: 'object',
+                    properties: {
+                      url: { type: 'string', description: 'URL to fetch (HTTP/HTTPS).' },
+                    },
+                    required: ['url'],
+                  },
+                },
+                {
+                  name: 'fetch_json',
+                  description: 'Fetch a URL and parse response as JSON.',
+                  inputSchema: {
+                    type: 'object',
+                    properties: {
+                      url: { type: 'string', description: 'URL to fetch (HTTP/HTTPS).' },
                     },
                     required: ['url'],
                   },

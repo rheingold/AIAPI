@@ -464,6 +464,7 @@ export class HttpServerWithDashboard {
       '/api/login',
       '/api/settings',
       '/api/settings/validate',
+      '/api/settings/search-providers',
       '/api/workdir',
       '/api/token/generate',
       '/api/listWindows',
@@ -762,6 +763,19 @@ export class HttpServerWithDashboard {
       }
       if (pathname === '/api/settings/validate' && req.method === 'GET') {
         return this.handleValidateSettings(req, res);
+      }
+      // Search provider endpoints (ADR-019)
+      if (pathname === '/api/settings/search-providers' && req.method === 'GET') {
+        return this.handleGetSearchProviders(req, res);
+      }
+      if (pathname === '/api/settings/search-providers' && req.method === 'POST') {
+        return this.handleSaveSearchProvider(req, res);
+      }
+      if (pathname.startsWith('/api/settings/search-providers/') && pathname.endsWith('/toggle') && req.method === 'POST') {
+        return this.handleToggleSearchProvider(req, res, pathname);
+      }
+      if (pathname === '/api/settings/search-providers/default' && req.method === 'POST') {
+        return this.handleSetDefaultSearchProvider(req, res);
       }
       if (pathname === '/api/auth/config' && req.method === 'GET') {
         return this.handleGetAuthConfig(req, res);
@@ -2994,6 +3008,145 @@ export class HttpServerWithDashboard {
     } catch (error) {
       this.log('error', 'settings', `Failed to change directory: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
       res.writeHead(400);
+      res.end(JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }));
+    }
+  }
+
+  // ============================================================
+  // Search Provider Handlers (ADR-019)
+  // ============================================================
+
+  private async handleGetSearchProviders(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const configPath = path.resolve(__dirname, '../../config/search-providers.json');
+      let config: any = { defaultEngine: 'google', providers: {} };
+      if (fs.existsSync(configPath)) {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      }
+      // Anonymize API keys in response
+      const safeProviders: Record<string, any> = {};
+      for (const [id, prov] of Object.entries(config.providers || {})) {
+        const p: any = prov && typeof prov === 'object' ? { ...(prov as object) } : {};
+        p.hasApiKey = !!process.env[p.apiKeyEnv || ''] || false;
+        delete p.apiKeyEnv; // Never expose env var names either
+        safeProviders[id] = p;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ defaultEngine: config.defaultEngine, providers: safeProviders }));
+    } catch (error) {
+      this.log('error', 'search-providers', `Failed to get providers: ${error instanceof Error ? error.message : String(error)}`);
+      res.writeHead(500);
+      res.end(JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }));
+    }
+  }
+
+  private async handleSaveSearchProvider(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const body = await this.readBody(req);
+      const data = JSON.parse(body);
+      const fs = require('fs');
+      const path = require('path');
+      const configPath = path.resolve(__dirname, '../../config/search-providers.json');
+      let config: any = { defaultEngine: 'google', providers: {} };
+      if (fs.existsSync(configPath)) {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      }
+      if (!config.providers) config.providers = {};
+      // Validate id
+      if (!data.id || typeof data.id !== 'string') {
+        res.writeHead(400);
+        res.end(JSON.stringify({ success: false, error: 'Provider ID is required' }));
+        return;
+      }
+      const provider = {
+        name: data.name || data.id,
+        mode: data.mode || 'html',
+        enabled: data.enabled !== false,
+        apiKeyEnv: data.apiKeyEnv || '',
+        rateLimit: data.rateLimit || { perMinute: 10 },
+        urlTemplate: data.urlTemplate || '',
+        apiEndpoint: data.apiEndpoint || '',
+      };
+      config.providers[data.id] = provider;
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+      this.log('info', 'search-providers', `Saved provider ${data.id}`);
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, id: data.id }));
+    } catch (error) {
+      this.log('error', 'search-providers', `Failed to save provider: ${error instanceof Error ? error.message : String(error)}`);
+      res.writeHead(500);
+      res.end(JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }));
+    }
+  }
+
+  private async handleToggleSearchProvider(req: http.IncomingMessage, res: http.ServerResponse, pathname: string): Promise<void> {
+    try {
+      const body = await this.readBody(req);
+      const data = JSON.parse(body);
+      // Extract provider ID from path: /api/settings/search-providers/{id}/toggle
+      const parts = pathname.split('/');
+      const providerIndex = parts.indexOf('search-providers');
+      const providerId = providerIndex >= 0 ? parts[providerIndex + 1] : null;
+      if (!providerId) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ success: false, error: 'Provider ID not found in path' }));
+        return;
+      }
+      const fs = require('fs');
+      const path = require('path');
+      const configPath = path.resolve(__dirname, '../../config/search-providers.json');
+      let config: any = { providers: {} };
+      if (fs.existsSync(configPath)) {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      }
+      if (!config.providers[providerId]) {
+        res.writeHead(404);
+        res.end(JSON.stringify({ success: false, error: `Provider ${providerId} not found` }));
+        return;
+      }
+      config.providers[providerId].enabled = data.enabled !== false;
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+      this.log('info', 'search-providers', `${data.enabled ? 'Enabled' : 'Disabled'} provider ${providerId}`);
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, id: providerId, enabled: config.providers[providerId].enabled }));
+    } catch (error) {
+      this.log('error', 'search-providers', `Failed to toggle provider: ${error instanceof Error ? error.message : String(error)}`);
+      res.writeHead(500);
+      res.end(JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }));
+    }
+  }
+
+  private async handleSetDefaultSearchProvider(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const body = await this.readBody(req);
+      const data = JSON.parse(body);
+      const fs = require('fs');
+      const path = require('path');
+      const configPath = path.resolve(__dirname, '../../config/search-providers.json');
+      let config: any = { defaultEngine: 'google', providers: {} };
+      if (fs.existsSync(configPath)) {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      }
+      if (!data.defaultEngine) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ success: false, error: 'defaultEngine is required' }));
+        return;
+      }
+      if (!config.providers[data.defaultEngine]) {
+        res.writeHead(404);
+        res.end(JSON.stringify({ success: false, error: `Provider ${data.defaultEngine} not found` }));
+        return;
+      }
+      config.defaultEngine = data.defaultEngine;
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+      this.log('info', 'search-providers', `Set ${data.defaultEngine} as default`);
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, defaultEngine: config.defaultEngine }));
+    } catch (error) {
+      this.log('error', 'search-providers', `Failed to set default: ${error instanceof Error ? error.message : String(error)}`);
+      res.writeHead(500);
       res.end(JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }));
     }
   }

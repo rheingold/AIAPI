@@ -58,12 +58,21 @@
           <button class="nav-btn active" data-section="logs">
             📋 Live Logs
           </button>
-          <button class="nav-btn" data-section="settings">
-            ⚙️ Settings
-          </button>
-          <button class="nav-btn" data-section="security">
-            🛡️ Security Filters
-          </button>
+
+          <!-- Settings with expandable sub-menu -->
+          <div class="nav-group">
+            <button class="nav-btn nav-group-header" data-group="settings-group">
+              ⚙️ Settings
+            </button>
+            <ul class="nav-group-children" id="settings-group" style="display:none;">
+              <li><button class="nav-btn nav-sub" data-section="settings-general">📁 General</button></li>
+              <li><button class="nav-btn nav-sub" data-section="settings-search">🔍 Search Providers</button></li>
+              <li><button class="nav-btn nav-sub" data-section="settings-security">🛡️ Security Filters</button></li>
+              <li><button class="nav-btn nav-sub" data-section="settings-auth">🔑 Auth</button></li>
+              <li><button class="nav-btn nav-sub" data-section="settings-helpers">🔌 Helpers</button></li>
+            </ul>
+          </div>
+
           <button class="nav-btn" data-section="tools">
             🔧 MCP Tools
           </button>
@@ -72,9 +81,6 @@
           </button>
           <button class="nav-btn" data-section="templates">
             📚 App Templates
-          </button>
-          <button class="nav-btn" data-section="auth">
-            🔑 Auth
           </button>
         </nav>
 
@@ -133,10 +139,10 @@
           </div>
         </section>
 
-        <!-- Settings Section -->
-        <section id="section-settings" class="section">
+        <!-- Settings - General -->
+        <section id="section-settings-general" class="section">
           <div class="section-header">
-            <h2>Server Settings</h2>
+            <h2>📁 General Settings</h2>
             <button id="btn-save-settings" class="btn-primary">💾 Save Changes</button>
             <button id="btn-reload-settings" class="btn-secondary">🔄 Reload</button>
           </div>
@@ -304,8 +310,31 @@
           </div>
         </section>
 
-        <!-- Security Filters Section -->
-        <section id="section-security" class="section">
+        <!-- Settings - Search Providers -->
+        <section id="section-settings-search" class="section">
+          <div class="section-header">
+            <h2>🔍 Search Providers</h2>
+            <button id="btn-add-search-provider" class="btn-primary">➕ Add Provider</button>
+          </div>
+          
+          <div class="info-banner">
+            Configure search engine providers for <code>SEARCH_WEB</code> and <code>_System</code> MCP actions.
+            Each provider supports HTML scraping mode (free) and/or API mode (with API key).
+          </div>
+
+          <div class="settings-container">
+            <div id="search-provider-list" class="filter-list">
+              <!-- Providers loaded dynamically -->
+              <div class="status-item">
+                <span class="status-icon">⏳</span>
+                <span>Loading providers...</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Settings - Security Filters -->
+        <section id="section-settings-security" class="section">
           <div class="section-header">
             <h2>🛡️ Security Filters - Context-Aware Access Control</h2>
             <button id="btn-add-filter" class="btn-primary">➕ Add Filter Rule</button>
@@ -1257,6 +1286,125 @@
       </div>
       <div class="modal-body" style="padding:0">
         <pre id="helper-schema-content" style="margin:0;padding:1rem;background:var(--bg-primary);color:var(--text-primary);font-size:0.82rem;overflow:auto;max-height:65vh;border-radius:0 0 6px 6px"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Search Provider Editor Modal with Templates -->
+  <div id="search-provider-modal" class="modal">
+    <div class="modal-content" style="max-width:700px;">
+      <div class="modal-header">
+        <h3 id="search-provider-modal-title">🔍 Add Search Provider</h3>
+        <button class="modal-close" onclick="closeSearchProviderModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="sp-edit-id">
+        
+        <!-- Step 1: Choose Template -->
+        <div id="sp-step-template">
+          <h4 style="margin-bottom:0.75rem;">📋 Choose a Provider Template</h4>
+          <div class="provider-template-grid" id="provider-template-grid">
+            <!-- Templates populated by JS -->
+          </div>
+          <div style="margin-top:1rem;text-align:center;">
+            <button type="button" onclick="showCustomProviderForm()" class="btn-secondary" style="font-size:0.85rem;">
+              ⚙️ Use Custom Provider (manual config)
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 2: Provider Details Form -->
+        <div id="sp-step-form" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+            <h4>📝 Provider Configuration</h4>
+            <button type="button" onclick="backToTemplateSelection()" class="btn-secondary" style="font-size:0.78rem;padding:0.3rem 0.6rem;">
+              ← Back to Templates
+            </button>
+          </div>
+
+          <div class="provider-form-field">
+            <label>Provider ID:</label>
+            <input type="text" id="sp-id" placeholder="e.g. my-google">
+            <div class="field-hint">Unique identifier for this provider</div>
+          </div>
+
+          <div class="provider-form-field">
+            <label>Display Name:</label>
+            <input type="text" id="sp-name" placeholder="e.g. Google">
+          </div>
+
+          <div class="provider-form-field">
+            <label>Mode:</label>
+            <select id="sp-mode" onchange="onProviderModeChange()">
+              <option value="html">HTML (browser scraping)</option>
+              <option value="api">API (direct HTTP)</option>
+              <option value="auto">Auto (API if key, else HTML)</option>
+            </select>
+          </div>
+
+          <div class="provider-form-field">
+            <label>
+              <input type="checkbox" id="sp-enabled" checked>
+              Enabled
+            </label>
+          </div>
+
+          <!-- HTML Mode Fields -->
+          <div id="sp-html-fields">
+            <div class="provider-form-field">
+              <label>Search URL Pattern:</label>
+              <input type="text" id="sp-searchUrl" placeholder="https://www.google.com/search?q={encoded_query}&num={maxResults}">
+              <div class="field-hint">Placeholders: <code>{encoded_query}</code>, <code>{maxResults}</code>, <code>{lang}</code></div>
+            </div>
+          </div>
+
+          <!-- API Mode Fields -->
+          <div id="sp-api-fields" style="display:none;">
+            <div class="provider-form-field">
+              <label>API Endpoint:</label>
+              <input type="text" id="sp-apiEndpoint" placeholder="https://api.example.com/search">
+            </div>
+
+            <div class="provider-form-field">
+              <label>API Key Environment Variable:</label>
+              <input type="text" id="sp-apiKeyEnv" placeholder="e.g. MY_SEARCH_API_KEY">
+              <div class="field-hint">Leave empty if no API key required</div>
+            </div>
+
+            <div class="provider-form-field">
+              <label>HTTP Method:</label>
+              <select id="sp-httpMethod">
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+              </select>
+            </div>
+
+            <!-- Custom Headers -->
+            <div class="provider-form-field">
+              <label>Custom Headers:</label>
+              <div id="sp-headers-container"></div>
+              <button type="button" class="btn-add-row" onclick="addProviderHeader()">+ Add Header</button>
+            </div>
+
+            <!-- Custom Query Params (GET) or Body Params (POST) -->
+            <div class="provider-form-field">
+              <label id="sp-params-label">Query Parameters:</label>
+              <div id="sp-params-container"></div>
+              <button type="button" class="btn-add-row" onclick="addProviderParam()">+ Add Parameter</button>
+            </div>
+          </div>
+
+          <!-- Common Fields -->
+          <div class="provider-form-field">
+            <label>Rate Limit (requests/minute):</label>
+            <input type="number" id="sp-rateLimit" value="10" min="0">
+            <div class="field-hint">0 = no limit</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:0.75rem;padding:1rem 1.5rem;border-top:1px solid var(--border);">
+        <button onclick="closeSearchProviderModal()" class="btn-secondary">Cancel</button>
+        <button onclick="saveSearchProvider()" class="btn-primary" id="sp-save-btn" style="display:none;">Save Provider</button>
       </div>
     </div>
   </div>

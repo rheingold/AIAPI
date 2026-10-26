@@ -772,12 +772,6 @@ export class MCPServer {
           },
 
 
-          { name: 'brave_search', description: 'Search the web using Brave Search API. Returns structured results with titles, URLs, and snippets.', inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Search query string.' }, maxResults: { type: 'number', description: 'Maximum number of results (default: 10).', default: 10 }, provider: { type: 'string', description: 'Override search provider (default: brave).' } }, required: ['query'] } },
-          { name: 'local_search', description: 'Search the web using the default local search provider (dual-mode HTML/API based on config).', inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Search query string.' }, maxResults: { type: 'number', description: 'Maximum number of results (default: 10).', default: 10 }, provider: { type: 'string', description: 'Override search provider.' }, mode: { type: 'string', enum: ['html', 'api'], description: 'Force search mode (html or api).' } }, required: ['query'] } },
-          { name: 'fetch_markdown', description: 'Fetch a URL and return content as Markdown (HTML auto-converted).', inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'URL to fetch.' }, timeout: { type: 'number', description: 'Request timeout in ms (default: 15000).', default: 15000 } }, required: ['url'] } },
-          { name: 'fetch_txt', description: 'Fetch a URL and return content as plain text.', inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'URL to fetch.' }, timeout: { type: 'number', description: 'Request timeout in ms (default: 15000).', default: 15000 } }, required: ['url'] } },
-          { name: 'fetch_html', description: 'Fetch a URL and return raw HTML content.', inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'URL to fetch.' }, timeout: { type: 'number', description: 'Request timeout in ms (default: 15000).', default: 15000 } }, required: ['url'] } },
-          { name: 'fetch_json', description: 'Fetch a URL and parse response as JSON.', inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'URL to fetch.' }, timeout: { type: 'number', description: 'Request timeout in ms (default: 15000).', default: 15000 } }, required: ['url'] } },
         ],
       },
     };
@@ -1084,53 +1078,6 @@ export class MCPServer {
         }
 
        
-        case 'brave_search': {
-          const { SearchEngineClient } = await import('../engine/searchEngineClient');
-          const configPath = path.resolve(__dirname, '../../config/search-providers.json');
-          const searchClient = new SearchEngineClient(configPath);
-          result = await searchClient.search({
-            query: args.query,
-            engineId: 'brave',
-            maxResults: args.maxResults,
-          });
-          break;
-        }
-        case 'local_search': {
-          const { SearchEngineClient } = await import('../engine/searchEngineClient');
-          const configPath = path.resolve(__dirname, '../../config/search-providers.json');
-          const searchClient = new SearchEngineClient(configPath);
-          result = await searchClient.search({
-            query: args.query,
-            engineId: args.provider,
-            mode: args.mode,
-            maxResults: args.maxResults,
-          });
-          break;
-        }
-        case 'fetch_markdown': {
-          const { FetchContentClient } = await import('../engine/fetchContentClient');
-          const fc = new FetchContentClient();
-          result = await fc.fetchMarkdown(args.url, { timeout: args.timeout });
-          break;
-        }
-        case 'fetch_txt': {
-          const { FetchContentClient } = await import('../engine/fetchContentClient');
-          const fc = new FetchContentClient();
-          result = await fc.fetchTxt(args.url, { timeout: args.timeout });
-          break;
-        }
-        case 'fetch_html': {
-          const { FetchContentClient } = await import('../engine/fetchContentClient');
-          const fc = new FetchContentClient();
-          result = await fc.fetchHtml(args.url, { timeout: args.timeout });
-          break;
-        }
-        case 'fetch_json': {
-          const { FetchContentClient } = await import('../engine/fetchContentClient');
-          const fc = new FetchContentClient();
-          result = await fc.fetchJson(args.url, { timeout: args.timeout });
-          break;
-        }
  case 'listHelpers': {
           const full = args.full === true || args.full === 'true' || args.full === 1;
           const allHelpers = this.helperRegistry.getAll();
@@ -1726,12 +1673,6 @@ export class MCPServer {
               text: JSON.stringify(result, null, 2),
             },
 
-          { name: 'brave_search', description: 'Search the web using Brave Search API. Returns structured results with titles, URLs, and snippets.', inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Search query string.' }, maxResults: { type: 'number', description: 'Maximum number of results (default: 10).', default: 10 }, provider: { type: 'string', description: 'Override search provider (default: brave).' } }, required: ['query'] } },
-          { name: 'local_search', description: 'Search the web using the default local search provider (dual-mode HTML/API based on config).', inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Search query string.' }, maxResults: { type: 'number', description: 'Maximum number of results (default: 10).', default: 10 }, provider: { type: 'string', description: 'Override search provider.' }, mode: { type: 'string', enum: ['html', 'api'], description: 'Force search mode (html or api).' } }, required: ['query'] } },
-          { name: 'fetch_markdown', description: 'Fetch a URL and return content as Markdown (HTML auto-converted).', inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'URL to fetch.' }, timeout: { type: 'number', description: 'Request timeout in ms (default: 15000).', default: 15000 } }, required: ['url'] } },
-          { name: 'fetch_txt', description: 'Fetch a URL and return content as plain text.', inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'URL to fetch.' }, timeout: { type: 'number', description: 'Request timeout in ms (default: 15000).', default: 15000 } }, required: ['url'] } },
-          { name: 'fetch_html', description: 'Fetch a URL and return raw HTML content.', inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'URL to fetch.' }, timeout: { type: 'number', description: 'Request timeout in ms (default: 15000).', default: 15000 } }, required: ['url'] } },
-          { name: 'fetch_json', description: 'Fetch a URL and parse response as JSON.', inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'URL to fetch.' }, timeout: { type: 'number', description: 'Request timeout in ms (default: 15000).', default: 15000 } }, required: ['url'] } },
           ],
         },
       };

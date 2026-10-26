@@ -3826,4 +3826,390 @@ async function runSetup() {
   }
 }
 
+// ============================================================
+// Search Provider Management (ADR-019)
+// ============================================================
+
+/** Load search providers from backend and render the list. */
+async function loadSearchProviders() {
+  const container = document.getElementById('search-provider-list');
+  if (!container) return;
+  try {
+    const res = await fetch('/api/settings/search-providers');
+    const data = await res.json();
+    const providers = data.providers || {};
+    const defaultEngine = data.defaultEngine || 'google';
+    if (Object.keys(providers).length === 0) {
+      container.innerHTML = '<div class="status-item"><span class="status-icon">ℹ️</span><span>No search providers configured.</span></div>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">';
+    html += '<thead><tr style="background:var(--bg-secondary);text-align:left;">';
+    html += '<th style="padding:8px;border-bottom:2px solid var(--border);">Provider</th>';
+    html += '<th style="padding:8px;border-bottom:2px solid var(--border);">Mode</th>';
+    html += '<th style="padding:8px;border-bottom:2px solid var(--border);">Enabled</th>';
+    html += '<th style="padding:8px;border-bottom:2px solid var(--border);">Default</th>';
+    html += '<th style="padding:8px;border-bottom:2px solid var(--border);">API Key</th>';
+    html += '<th style="padding:8px;border-bottom:2px solid var(--border);">Actions</th>';
+    html += '</tr></thead><tbody>';
+    for (const [id, prov] of Object.entries(providers)) {
+      const isDefault = id === defaultEngine;
+      html += '<tr style="border-bottom:1px solid var(--border);">';
+      html += `<td style="padding:6px;"><strong>${prov.name || id}</strong><br><small style="color:var(--text-secondary)">${id}</small></td>`;
+      html += `<td style="padding:6px;"><span class="badge" style="background:${prov.mode === 'api' ? 'var(--info)' : 'var(--success)'};padding:2px 8px;border-radius:3px;font-size:0.75rem;">${prov.mode || 'html'}</span></td>`;
+      html += `<td style="padding:6px;">${prov.enabled ? '✅' : '❌'}</td>`;
+      html += `<td style="padding:6px;">${isDefault ? '⭐' : ''}</td>`;
+      html += `<td style="padding:6px;">${prov.hasApiKey ? '🔑' : '—'}</td>`;
+      html += `<td style="padding:6px;">`;
+      html += `<button onclick="editSearchProvider('${id}')" class="btn-secondary" style="padding:2px 8px;font-size:0.75rem;margin-right:4px;">✏️ Edit</button>`;
+      html += `<button onclick="setDefaultProvider('${id}')" class="btn-secondary" style="padding:2px 8px;font-size:0.75rem;margin-right:4px;" ${isDefault ? 'disabled' : ''}>⭐</button>`;
+      html += `<button onclick="toggleProviderEnabled('${id}', ${!prov.enabled})" class="btn-secondary" style="padding:2px 8px;font-size:0.75rem;">🔄</button>`;
+      html += '</td></tr>';
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = `<div class="status-item"><span class="status-icon">❌</span><span>Failed to load providers: ${e.message}</span></div>`;
+    addLog('error', 'search-providers', `Failed to load: ${e.message}`);
+  }
+}
+
+/** ========== Provider Templates ========== */
+const PROVIDER_TEMPLATES = [
+  {
+    id: 'google', name: 'Google', icon: '🔍', mode: 'html',
+    searchUrl: 'https://www.google.com/search?q={encoded_query}&num={maxResults}',
+    apiKeyEnv: '', rateLimit: 10,
+    desc: 'Free HTML scraping'
+  },
+  {
+    id: 'bing', name: 'Bing', icon: '🅱️', mode: 'html',
+    searchUrl: 'https://www.bing.com/search?q={encoded_query}&count={maxResults}',
+    apiKeyEnv: '', rateLimit: 10,
+    desc: 'Free HTML scraping'
+  },
+  {
+    id: 'duckduckgo', name: 'DuckDuckGo', icon: '🦆', mode: 'api',
+    apiEndpoint: 'https://api.duckduckgo.com/', apiKeyEnv: 'DUCKDUCKGO_API_KEY',
+    rateLimit: 30, httpMethod: 'GET',
+    desc: 'API mode (needs key)'
+  },
+  {
+    id: 'brave', name: 'Brave', icon: '🦁', mode: 'api',
+    apiEndpoint: 'https://api.search.brave.com/res/v1/web/search', apiKeyEnv: 'BRAVE_SEARCH_API_KEY',
+    rateLimit: 40, httpMethod: 'GET',
+    desc: 'API mode (needs key)'
+  },
+  {
+    id: 'jina', name: 'Jina AI', icon: '🤖', mode: 'api',
+    apiEndpoint: 'https://s.jina.ai/', apiKeyEnv: 'JINA_API_KEY',
+    rateLimit: 60, httpMethod: 'GET',
+    desc: 'AI-powered search'
+  },
+  {
+    id: 'firecrawl', name: 'FireCrawl', icon: '🔥', mode: 'api',
+    apiEndpoint: 'https://api.firecrawl.dev/v1/search', apiKeyEnv: 'FIRECRAWL_API_KEY',
+    rateLimit: 20, httpMethod: 'POST',
+    desc: 'Web scraping API'
+  },
+  {
+    id: 'yahoo', name: 'Yahoo', icon: '🅾️', mode: 'html',
+    searchUrl: 'https://search.yahoo.com/search?p={encoded_query}&n={maxResults}',
+    apiKeyEnv: '', rateLimit: 8,
+    desc: 'Free HTML scraping'
+  },
+  {
+    id: 'yandex', name: 'Yandex', icon: '🅾️', mode: 'html',
+    searchUrl: 'https://yandex.com/search/?text={encoded_query}&n={maxResults}',
+    apiKeyEnv: '', rateLimit: 8,
+    desc: 'Free HTML scraping'
+  },
+  {
+    id: 'baidu', name: 'Baidu', icon: '🐾', mode: 'html',
+    searchUrl: 'https://www.baidu.com/s?wd={encoded_query}&rn={maxResults}',
+    apiKeyEnv: '', rateLimit: 8,
+    desc: 'Free HTML scraping'
+  },
+];
+
+let currentProviderTemplate = null;
+
+/** Render provider template grid. */
+function renderProviderTemplates() {
+  const grid = document.getElementById('provider-template-grid');
+  if (!grid) return;
+  grid.innerHTML = PROVIDER_TEMPLATES.map(t => `
+    <div class="provider-template-card" onclick="selectProviderTemplate('${t.id}')" data-template-id="${t.id}">
+      <span class="provider-icon">${t.icon}</span>
+      <div class="provider-name">${t.name}</div>
+      <div class="provider-mode">${t.mode.toUpperCase()} · ${t.desc}</div>
+    </div>
+  `).join('');
+}
+
+/** Select a provider template and auto-fill the form. */
+function selectProviderTemplate(templateId) {
+  const template = PROVIDER_TEMPLATES.find(t => t.id === templateId);
+  if (!template) return;
+  currentProviderTemplate = template;
+
+  // Highlight selected
+  document.querySelectorAll('.provider-template-card').forEach(c => c.classList.remove('selected'));
+  document.querySelector(`[data-template-id="${templateId}"]`)?.classList.add('selected');
+
+  // Auto-fill form
+  document.getElementById('sp-id').value = template.id;
+  document.getElementById('sp-name').value = template.name;
+  document.getElementById('sp-mode').value = template.mode;
+  document.getElementById('sp-enabled').checked = true;
+  document.getElementById('sp-rateLimit').value = template.rateLimit || 10;
+  document.getElementById('sp-apiKeyEnv').value = template.apiKeyEnv || '';
+  document.getElementById('sp-searchUrl').value = template.searchUrl || '';
+  document.getElementById('sp-apiEndpoint').value = template.apiEndpoint || '';
+  document.getElementById('sp-httpMethod').value = template.httpMethod || 'GET';
+
+  // Show form, hide templates
+  document.getElementById('sp-step-template').style.display = 'none';
+  document.getElementById('sp-step-form').style.display = 'block';
+  document.getElementById('sp-save-btn').style.display = 'inline-block';
+  document.getElementById('search-provider-modal-title').textContent = `🔍 Add: ${template.name}`;
+
+  onProviderModeChange();
+}
+
+/** Show custom provider form (no template). */
+function showCustomProviderForm() {
+  currentProviderTemplate = null;
+  document.querySelectorAll('.provider-template-card').forEach(c => c.classList.remove('selected'));
+
+  // Reset form
+  document.getElementById('sp-id').value = '';
+  document.getElementById('sp-name').value = '';
+  document.getElementById('sp-mode').value = 'html';
+  document.getElementById('sp-enabled').checked = true;
+  document.getElementById('sp-rateLimit').value = '10';
+  document.getElementById('sp-apiKeyEnv').value = '';
+  document.getElementById('sp-searchUrl').value = '';
+  document.getElementById('sp-apiEndpoint').value = '';
+  document.getElementById('sp-httpMethod').value = 'GET';
+
+  document.getElementById('sp-step-template').style.display = 'none';
+  document.getElementById('sp-step-form').style.display = 'block';
+  document.getElementById('sp-save-btn').style.display = 'inline-block';
+  document.getElementById('search-provider-modal-title').textContent = '🔍 Add Custom Provider';
+
+  onProviderModeChange();
+}
+
+/** Go back to template selection. */
+function backToTemplateSelection() {
+  document.getElementById('sp-step-template').style.display = 'block';
+  document.getElementById('sp-step-form').style.display = 'none';
+  document.getElementById('sp-save-btn').style.display = 'none';
+  currentProviderTemplate = null;
+  document.querySelectorAll('.provider-template-card').forEach(c => c.classList.remove('selected'));
+}
+
+/** Toggle HTML/API mode fields. */
+function onProviderModeChange() {
+  const mode = document.getElementById('sp-mode').value;
+  const htmlFields = document.getElementById('sp-html-fields');
+  const apiFields = document.getElementById('sp-api-fields');
+
+  if (mode === 'html') {
+    htmlFields.style.display = 'block';
+    apiFields.style.display = 'none';
+  } else if (mode === 'api') {
+    htmlFields.style.display = 'none';
+    apiFields.style.display = 'block';
+  } else {
+    // auto - show both
+    htmlFields.style.display = 'block';
+    apiFields.style.display = 'block';
+  }
+
+  // Update params label based on HTTP method
+  const httpMethod = document.getElementById('sp-httpMethod')?.value || 'GET';
+  const paramsLabel = document.getElementById('sp-params-label');
+  if (paramsLabel) {
+    paramsLabel.textContent = httpMethod === 'POST' ? 'Body Parameters:' : 'Query Parameters:';
+  }
+}
+
+/** Add a custom header row. */
+function addProviderHeader() {
+  const container = document.getElementById('sp-headers-container');
+  const row = document.createElement('div');
+  row.className = 'header-row';
+  row.innerHTML = `
+    <input type="text" placeholder="Header name" class="header-name">
+    <input type="text" placeholder="Header value" class="header-value">
+    <button type="button" class="btn-remove-row" onclick="this.parentElement.remove()">×</button>
+  `;
+  container.appendChild(row);
+}
+
+/** Add a custom parameter row. */
+function addProviderParam() {
+  const container = document.getElementById('sp-params-container');
+  const row = document.createElement('div');
+  row.className = 'param-row';
+  row.innerHTML = `
+    <input type="text" placeholder="Key" class="param-key">
+    <input type="text" placeholder="Value (use {encoded_query})" class="param-value">
+    <button type="button" class="btn-remove-row" onclick="this.parentElement.remove()">×</button>
+  `;
+  container.appendChild(row);
+}
+
+/** Open the search provider editor modal. */
+function editSearchProvider(providerId) {
+  const modal = document.getElementById('search-provider-modal');
+  if (!modal) return;
+
+  // Reset to template view
+  document.getElementById('sp-step-template').style.display = 'block';
+  document.getElementById('sp-step-form').style.display = 'none';
+  document.getElementById('sp-save-btn').style.display = 'none';
+  currentProviderTemplate = null;
+
+  renderProviderTemplates();
+
+  if (providerId) {
+    // Editing existing - load and populate form directly
+    document.getElementById('search-provider-modal-title').textContent = `✏️ Edit: ${providerId}`;
+    fetch('/api/settings/search-providers')
+      .then(r => r.json())
+      .then(data => {
+        const prov = data.providers?.[providerId];
+        if (prov) {
+          document.getElementById('sp-edit-id').value = providerId;
+          document.getElementById('sp-id').value = providerId;
+          document.getElementById('sp-name').value = prov.name || '';
+          document.getElementById('sp-mode').value = prov.mode || 'html';
+          document.getElementById('sp-enabled').checked = prov.enabled !== false;
+          document.getElementById('sp-apiKeyEnv').value = prov.apiKeyEnv || '';
+          document.getElementById('sp-rateLimit').value = prov.rateLimit?.perMinute ?? 10;
+          document.getElementById('sp-searchUrl').value = prov.searchUrl || prov.urlTemplate || '';
+          document.getElementById('sp-apiEndpoint').value = prov.apiEndpoint || '';
+          document.getElementById('sp-httpMethod').value = prov.httpMethod || 'GET';
+
+          // Show form directly
+          document.getElementById('sp-step-template').style.display = 'none';
+          document.getElementById('sp-step-form').style.display = 'block';
+          document.getElementById('sp-save-btn').style.display = 'inline-block';
+          onProviderModeChange();
+        }
+      })
+      .catch(err => addLog('error', 'search-providers', `Failed to load provider ${providerId}: ${err.message}`));
+  } else {
+    document.getElementById('sp-edit-id').value = '';
+    document.getElementById('search-provider-modal-title').textContent = '➕ New Provider';
+  }
+
+  modal.style.display = 'flex';
+}
+
+/** Close the search provider modal. */
+function closeSearchProviderModal() {
+  const modal = document.getElementById('search-provider-modal');
+  if (modal) modal.style.display = 'none';
+  currentProviderTemplate = null;
+}
+
+/** Save search provider configuration. */
+async function saveSearchProvider() {
+  const id = document.getElementById('sp-edit-id').value || document.getElementById('sp-id').value.trim();
+  if (!id) { alert('Provider ID is required'); return; }
+
+  // Collect headers
+  const headers = [];
+  document.querySelectorAll('#sp-headers-container .header-row').forEach(row => {
+    const name = row.querySelector('.header-name')?.value?.trim();
+    const value = row.querySelector('.header-value')?.value?.trim();
+    if (name && value) headers.push({ name, value });
+  });
+
+  // Collect params
+  const params = [];
+  document.querySelectorAll('#sp-params-container .param-row').forEach(row => {
+    const key = row.querySelector('.param-key')?.value?.trim();
+    const value = row.querySelector('.param-value')?.value?.trim();
+    if (key && value) params.push({ key, value });
+  });
+
+  const body = {
+    id,
+    name: document.getElementById('sp-name').value.trim(),
+    mode: document.getElementById('sp-mode').value,
+    enabled: document.getElementById('sp-enabled').checked,
+    apiKeyEnv: document.getElementById('sp-apiKeyEnv').value.trim(),
+    rateLimit: { perMinute: parseInt(document.getElementById('sp-rateLimit').value) || 10 },
+    searchUrl: document.getElementById('sp-searchUrl').value.trim(),
+    apiEndpoint: document.getElementById('sp-apiEndpoint').value.trim(),
+    httpMethod: document.getElementById('sp-httpMethod').value,
+    headers: headers.length ? headers : undefined,
+    params: params.length ? params : undefined,
+  };
+
+  try {
+    const res = await fetch('/api/settings/search-providers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    addLog('info', 'search-providers', `Saved provider ${id}`);
+    closeSearchProviderModal();
+    await loadSearchProviders();
+  } catch (e) {
+    addLog('error', 'search-providers', `Failed to save: ${e.message}`);
+    alert(`Failed to save provider: ${e.message}`);
+  }
+}
+
+/** Toggle provider enabled/disabled. */
+async function toggleProviderEnabled(providerId, enabled) {
+  try {
+    const res = await fetch(`/api/settings/search-providers/${encodeURIComponent(providerId)}/toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    addLog('info', 'search-providers', `${enabled ? 'Enabled' : 'Disabled'} ${providerId}`);
+    await loadSearchProviders();
+  } catch (e) {
+    addLog('error', 'search-providers', `Toggle failed: ${e.message}`);
+  }
+}
+
+/** Set default search provider. */
+async function setDefaultProvider(providerId) {
+  try {
+    const res = await fetch('/api/settings/search-providers/default', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ defaultEngine: providerId }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    addLog('info', 'search-providers', `Set ${providerId} as default`);
+    await loadSearchProviders();
+  } catch (e) {
+    addLog('error', 'search-providers', `Set default failed: ${e.message}`);
+  }
+}
+
+// Wire up search provider button on init
+document.getElementById('btn-add-search-provider')?.addEventListener('click', () => editSearchProvider(null));
+
+// Load search providers when section becomes visible
+const searchObserver = new MutationObserver(() => {
+  const section = document.getElementById('section-search');
+  if (section?.classList.contains('active')) {
+    loadSearchProviders();
+  }
+});
+searchObserver.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['class'] });
+
 

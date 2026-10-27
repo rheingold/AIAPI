@@ -10,6 +10,8 @@
 import * as https from 'https';
 import * as http from 'http';
 import * as url from 'url';
+import * as path from 'path';
+import * as fs from 'fs';
 import { JSDOM } from 'jsdom';
 import { globalLogger } from '../utils/Logger';
 import {
@@ -21,6 +23,15 @@ import {
 } from '../settings/types';
 
 const TAG = 'SearchEngineClient';
+
+/**
+ * Resolve config file path - pkg-safe.
+ */
+function resolveConfigPath(): string {
+  const isPkg = typeof (process as any).pkg !== 'undefined';
+  const base = isPkg ? path.dirname(process.execPath) : path.resolve(__dirname, '..', '..');
+  return path.resolve(base, 'config', 'search-providers.json');
+}
 
 /**
  * Rate limiter tracker per provider.
@@ -570,13 +581,12 @@ export class SearchEngineClient {
    */
   private loadConfig(configPath?: string): SearchProvidersConfig {
     try {
-      const path = configPath || './config/search-providers.json';
-      const fs = require('fs');
-      if (!fs.existsSync(path)) {
-        globalLogger.warn(TAG, `Search providers config not found at ${path}, using defaults`);
+      const cfgPath = configPath || resolveConfigPath();
+      if (!fs.existsSync(cfgPath)) {
+        globalLogger.warn(TAG, `Search providers config not found at ${cfgPath}, using defaults`);
         return { defaultEngine: 'google', providers: {} };
       }
-      const content = fs.readFileSync(path, 'utf-8');
+      const content = fs.readFileSync(cfgPath, 'utf-8');
       const parsed = JSON.parse(content);
       // Enrich provider configs with id field
       for (const [id, cfg] of Object.entries(parsed.providers || {})) {
@@ -594,12 +604,11 @@ export class SearchEngineClient {
    */
   private watchConfig(configPath?: string): void {
     try {
-      const fs = require('fs');
-      const path = configPath || './config/search-providers.json';
-      if (fs.existsSync(path)) {
-        fs.watchFile(path, { interval: 5000 }, () => {
+      const cfgPath = configPath || resolveConfigPath();
+      if (fs.existsSync(cfgPath)) {
+        fs.watchFile(cfgPath, { interval: 5000 }, () => {
           globalLogger.debug(TAG, 'Reloading search providers config...');
-          this.config = this.loadConfig(configPath);
+          this.config = this.loadConfig();
         });
       }
     } catch (error) {

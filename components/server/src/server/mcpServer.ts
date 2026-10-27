@@ -772,6 +772,83 @@ export class MCPServer {
           },
 
 
+          // ── Standalone search/fetch tools (ADR-019) ──
+          {
+            name: 'brave_search',
+            description: 'Search the web using Brave Search API (requires BRAVE_SEARCH_API_KEY). Returns structured results with titles, URLs, and snippets.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                query: { type: 'string', description: 'Search query text.' },
+                maxResults: { type: 'number', description: 'Maximum number of results (default: 10).', default: 10 },
+                provider: { type: 'string', description: 'Override search provider: brave, google, bing, duckduckgo, etc.' },
+                mode: { type: 'string', enum: ['html', 'api'], description: 'Force search mode: html (scraping) or api.' },
+              },
+              required: ['query'],
+            },
+          },
+          {
+            name: 'local_search',
+            description: 'Search the web using local/default search providers (Google HTML + DuckDuckGo API). No API key required for default providers.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                query: { type: 'string', description: 'Search query text.' },
+                maxResults: { type: 'number', description: 'Maximum number of results (default: 10).', default: 10 },
+                provider: { type: 'string', description: 'Override search provider: google, bing, duckduckgo, etc.' },
+                mode: { type: 'string', enum: ['html', 'api'], description: 'Force search mode: html (scraping) or api.' },
+              },
+              required: ['query'],
+            },
+          },
+          {
+            name: 'fetch_markdown',
+            description: 'Fetch a URL and return the content converted to Markdown format. Uses built-in HTML-to-Markdown converter.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                url: { type: 'string', description: 'URL to fetch.' },
+                timeout: { type: 'number', description: 'Request timeout in milliseconds (default: 15000).', default: 15000 },
+              },
+              required: ['url'],
+            },
+          },
+          {
+            name: 'fetch_txt',
+            description: 'Fetch a URL and return plain text content. Strips HTML tags if the response is HTML.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                url: { type: 'string', description: 'URL to fetch.' },
+                timeout: { type: 'number', description: 'Request timeout in milliseconds (default: 15000).', default: 15000 },
+              },
+              required: ['url'],
+            },
+          },
+          {
+            name: 'fetch_html',
+            description: 'Fetch a URL and return raw HTML content.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                url: { type: 'string', description: 'URL to fetch.' },
+                timeout: { type: 'number', description: 'Request timeout in milliseconds (default: 15000).', default: 15000 },
+              },
+              required: ['url'],
+            },
+          },
+          {
+            name: 'fetch_json',
+            description: 'Fetch a URL and parse the response as JSON. Returns parsed JSON object.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                url: { type: 'string', description: 'URL to fetch.' },
+                timeout: { type: 'number', description: 'Request timeout in milliseconds (default: 15000).', default: 15000 },
+              },
+              required: ['url'],
+            },
+          },
         ],
       },
     };
@@ -904,14 +981,18 @@ export class MCPServer {
             case 'SEARCH_WEB': {
               // Lazy-import SearchEngineClient to avoid loading when unused
               const { SearchEngineClient } = await import('../engine/searchEngineClient');
-              const configPath = path.resolve(__dirname, '../../config/search-providers.json');
-              const searchClient = new SearchEngineClient(configPath);
-              const queryText = args.query ?? args.value ?? '';
+              const searchClient = new SearchEngineClient();
+              // args.value may be an object {query, maxResults, ...} or a plain string
+              const rawValue = args.value;
+              const queryText = typeof rawValue === 'string' ? rawValue : (rawValue && rawValue.query) ?? args.query ?? '';
+              const maxResults = typeof rawValue === 'object' && rawValue.maxResults ? rawValue.maxResults : args.maxResults;
+              const provider = (typeof rawValue === 'object' && rawValue.provider) ?? args.provider;
+              const mode = (typeof rawValue === 'object' && rawValue.mode) ?? args.mode;
               result = await searchClient.search({
                 query: queryText,
-                engineId: args.provider,
-                mode: args.mode as ('html' | 'api') | undefined,
-                maxResults: args.maxResults,
+                engineId: provider,
+                mode: mode as ('html' | 'api') | undefined,
+                maxResults,
               });
               break;
             }
@@ -943,6 +1024,53 @@ export class MCPServer {
                 `_System: unknown action "${args.action}". ` +
                 `Supported: EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER, SEARCH_WEB, FETCH_MARKDOWN, FETCH_TXT, FETCH_HTML, FETCH_JSON`);
           }
+          break;
+        }
+
+        // ── Standalone search/fetch tools (ADR-019) ──
+        case 'brave_search': {
+          const { SearchEngineClient } = await import('../engine/searchEngineClient');
+          const searchClient = new SearchEngineClient();
+          result = await searchClient.search({
+            query: args.query,
+            engineId: args.provider,
+            mode: args.mode as ('html' | 'api') | undefined,
+            maxResults: args.maxResults,
+          });
+          break;
+        }
+        case 'local_search': {
+          const { SearchEngineClient } = await import('../engine/searchEngineClient');
+          const searchClient = new SearchEngineClient();
+          result = await searchClient.search({
+            query: args.query,
+            mode: args.mode as ('html' | 'api') | undefined,
+            maxResults: args.maxResults,
+          });
+          break;
+        }
+        case 'fetch_markdown': {
+          const { FetchContentClient } = await import('../engine/fetchContentClient');
+          const fc = new FetchContentClient();
+          result = await fc.fetchMarkdown(args.url, { timeout: args.timeout });
+          break;
+        }
+        case 'fetch_txt': {
+          const { FetchContentClient } = await import('../engine/fetchContentClient');
+          const fc = new FetchContentClient();
+          result = await fc.fetchTxt(args.url, { timeout: args.timeout });
+          break;
+        }
+        case 'fetch_html': {
+          const { FetchContentClient } = await import('../engine/fetchContentClient');
+          const fc = new FetchContentClient();
+          result = await fc.fetchHtml(args.url, { timeout: args.timeout });
+          break;
+        }
+        case 'fetch_json': {
+          const { FetchContentClient } = await import('../engine/fetchContentClient');
+          const fc = new FetchContentClient();
+          result = await fc.fetchJson(args.url, { timeout: args.timeout });
           break;
         }
 

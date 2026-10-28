@@ -230,20 +230,6 @@
               </label>
             </div>
 
-            <!-- Discovered Helpers -->
-            <div class="setting-group" id="discovered-helpers-group">
-              <h3>🔌 Discovered Helpers</h3>
-              <p class="setting-hint">Helper executables advertise their commands via <code>--api-schema</code>. Paths above control where they are discovered on startup.</p>
-              <div class="helpers-toolbar">
-                <button id="btn-scan-helpers" class="btn-secondary">🔍 Scan for Helpers</button>
-                <button id="btn-reload-helpers" class="btn-secondary" title="Shutdown daemons, re-scan exes, restart daemons">♻️ Reload Helpers</button>
-                <span id="helpers-scan-status" class="helpers-scan-status"></span>
-              </div>
-              <div id="helpers-list" class="helpers-list">
-                <div class="helpers-empty">Click "Scan for Helpers" to discover available helper executables.</div>
-              </div>
-            </div>
-
             <!-- Security Policy -->
             <div class="setting-group">
               <h3>🔐 Security Policy</h3>
@@ -306,6 +292,28 @@
                 </div>
               </div>
               <button id="btn-validate-config" class="btn-secondary">🔍 Validate Configuration</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Settings - Helpers -->
+        <section id="section-settings-helpers" class="section">
+          <div class="section-header">
+            <h2>🔌 Helpers</h2>
+          </div>
+          <div class="settings-container">
+            <!-- Discovered Helpers -->
+            <div class="setting-group" id="discovered-helpers-group">
+              <h3>🔌 Discovered Helpers</h3>
+              <p class="setting-hint">Helper executables advertise their commands via <code>--api-schema</code>. Paths above control where they are discovered on startup.</p>
+              <div class="helpers-toolbar">
+                <button id="btn-scan-helpers" class="btn-secondary">🔍 Scan for Helpers</button>
+                <button id="btn-reload-helpers" class="btn-secondary" title="Shutdown daemons, re-scan exes, restart daemons">♻️ Reload Helpers</button>
+                <span id="helpers-scan-status" class="helpers-scan-status"></span>
+              </div>
+              <div id="helpers-list" class="helpers-list">
+                <div class="helpers-empty">Click "Scan for Helpers" to discover available helper executables.</div>
+              </div>
             </div>
           </div>
         </section>
@@ -495,7 +503,7 @@
           </div>
         </section>
         <!-- Auth Configuration Section -->
-        <section id="section-auth" class="section">
+        <section id="section-settings-auth" class="section">
           <div class="section-header">
             <h2>🔑 Authentication Configuration</h2>
             <button id="btn-save-auth" class="btn-primary">💾 Save Auth Config</button>

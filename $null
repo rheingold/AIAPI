@@ -1,0 +1,7 @@
+curl: (26) .netrc error: no such file
+curl: (3) URL rejected: Bad hostname
+curl: (26) .netrc error: no such file
+curl: (3) URL rejected: Bad hostname
+curl: (3) unmatched brace in position 2:
+{
+ ^

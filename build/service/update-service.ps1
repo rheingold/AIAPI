@@ -185,11 +185,13 @@ Write-Section "Copying Updated Files"
 
 $filesToCopy = @(
     @{ Src = "dist\release\aiapi-server.exe"; Dest = "aiapi-server.exe"; Desc = "Main executable" },
+    @{ Src = "package.json"; Dest = "package.json"; Desc = "Package manifest (version source)" },
     @{ Src = "dist\helpers\KeyWin.exe"; Dest = "dist\helpers\KeyWin.exe"; Desc = "KeyWin helper" },
     @{ Src = "dist\helpers\BrowserWin.exe"; Dest = "dist\helpers\BrowserWin.exe"; Desc = "BrowserWin helper" },
     @{ Src = "dist\helpers\SecurityLib.dll"; Dest = "dist\helpers\SecurityLib.dll"; Desc = "Security library" },
     @{ Src = "dist\helpers\WinSvcBridge.exe"; Dest = "dist\helpers\WinSvcBridge.exe"; Desc = "Session-0 bridge (WinSvcBridge)" },
-    @{ Src = "config\browser-obstacles.json"; Dest = "config\browser-obstacles.json"; Desc = "Browser obstacle-detection profiles" }
+    @{ Src = "config\browser-obstacles.json"; Dest = "config\browser-obstacles.json"; Desc = "Browser obstacle-detection profiles" },
+    @{ Src = "config\search-providers.json"; Dest = "config\search-providers.json"; Desc = "Search provider configuration" }
 )
 
 $dirsToCopy = @(

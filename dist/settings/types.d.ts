@@ -92,4 +92,115 @@ export interface SettingsSourceConfig {
     /** DB connection info (when settingsSource = "db") */
     db?: DbConfig;
 }
+/**
+ * Search provider mode.
+ * - "html"  scrape the provider public search results page
+ * - "api"   call the provider REST API
+ * - "auto"  try API first; fall back to HTML when no API key available
+ */
+export type SearchProviderMode = 'html' | 'api' | 'auto';
+/** Rate limiting configuration for a single provider. */
+export interface SearchProviderRateLimit {
+    /** Maximum requests per minute */
+    maxPerMinute?: number;
+    /** Cooldown between requests in ms */
+    cooldownMs?: number;
+}
+/**
+ * Single search provider configuration entry.
+ * Loaded from config/search-providers.json at server startup.
+ */
+export interface SearchProviderConfig {
+    /** Unique provider identifier, e.g. "google", "duckduckgo_api" */
+    id: string;
+    /** Human-readable display name */
+    name: string;
+    /** Operating mode */
+    mode: SearchProviderMode;
+    /** Whether this provider requires an API key for API mode */
+    requiresApiKey: boolean;
+    /** Provider enabled flag */
+    enabled: boolean;
+    /** URL template for HTML scraping. Placeholders: {encoded_query}, {maxResults}, {lang}, {region} */
+    searchUrlPattern?: string;
+    /** Parser class name for HTML results (e.g. "GoogleParser") */
+    resultParser?: string;
+    /** Base URL for API calls */
+    apiEndpoint?: string;
+    /** HTTP method (default: GET) */
+    apiMethod?: 'GET' | 'POST';
+    /** Headers template. {apiKey} substituted at runtime from env. */
+    apiHeaders?: Record<string, string>;
+    /** Query-string params template (for GET requests) */
+    apiParams?: Record<string, string>;
+    /** JSON body template for POST requests */
+    apiBodyTemplate?: string;
+    /** Environment variable name holding the API key */
+    apiKeyEnvVar?: string;
+    /** Per-provider rate limit settings */
+    rateLimit?: SearchProviderRateLimit;
+}
+/**
+ * Full search provider configuration file shape.
+ * Matches config/search-providers.json structure.
+ */
+export interface SearchProvidersConfig {
+    /** Default engine ID when caller does not specify one */
+    defaultEngine: string;
+    /** Map of provider ID to provider config */
+    providers: Record<string, SearchProviderConfig>;
+}
+/**
+ * Search query parameters passed to SearchEngineClient.search().
+ */
+export interface SearchQuery {
+    /** The search query string */
+    query: string;
+    /** Provider ID; omit to use default */
+    engineId?: string;
+    /** Maximum results to return (default: 10) */
+    maxResults?: number;
+    /** Override provider mode */
+    mode?: 'html' | 'api';
+    /** Language preference (e.g. "en", "de") */
+    lang?: string;
+    /** Region/locale preference (e.g. "US", "DE") */
+    region?: string;
+    /** Enable safe search filtering */
+    safeSearch?: boolean;
+    /** Time range filter: 'day', 'week', 'month', 'year' */
+    freshness?: string;
+}
+/**
+ * Individual search result item.
+ */
+export interface SearchResultItem {
+    title: string;
+    url: string;
+    snippet?: string;
+    /** Position in ranking (1-based) */
+    position?: number;
+    /** Publication date if available */
+    date?: string;
+    /** Provider-specific metadata */
+    metadata?: Record<string, unknown>;
+}
+/**
+ * Normalized search result envelope returned by SearchEngineClient.
+ */
+export interface SearchResult {
+    success: boolean;
+    /** Provider ID used */
+    engine: string;
+    /** Original query string */
+    query: string;
+    /** Parsed result items */
+    results: SearchResultItem[];
+    /** Total results count from the engine */
+    totalResults?: number;
+    /** Error message on failure */
+    error?: string;
+    /** Additional metadata */
+    metadata?: Record<string, unknown>;
+}
 //# sourceMappingURL=types.d.ts.map

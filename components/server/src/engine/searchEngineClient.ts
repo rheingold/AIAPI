@@ -25,12 +25,17 @@ import {
 const TAG = 'SearchEngineClient';
 
 /**
- * Resolve config file path - pkg-safe.
+ * Resolve config file path - always use user-writable location.
+ * This avoids pkg virtual filesystem issues entirely.
  */
 function resolveConfigPath(): string {
-  const isPkg = typeof (process as any).pkg !== 'undefined';
-  const base = isPkg ? path.dirname(process.execPath) : path.resolve(__dirname, '..', '..');
-  return path.resolve(base, 'config', 'search-providers.json');
+  const tmp = process.env.TMP || process.env.TEMP || '/tmp';
+  const dir = path.join(tmp, 'aiapi_cfg');
+  // Ensure directory exists
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return path.join(dir, 'search_providers.json');
 }
 
 /**

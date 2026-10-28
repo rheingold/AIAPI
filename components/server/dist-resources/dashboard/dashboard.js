@@ -47,20 +47,52 @@ document.addEventListener('DOMContentLoaded', () => {
 // Navigation
 function initializeNavigation() {
   const navButtons = document.querySelectorAll('.nav-btn');
+
+  // Expandable group headers (Settings etc.)
+  const groupHeaders = document.querySelectorAll('.nav-group-header');
+  groupHeaders.forEach(header => {
+    header.addEventListener('click', () => {
+      const groupId = header.dataset.group;
+      const childUl = document.getElementById(groupId);
+      if (!childUl) return;
+
+      // Toggle visibility
+      const isHidden = getComputedStyle(childUl).display === 'none' || childUl.style.display === 'none';
+      childUl.style.display = isHidden ? 'block' : 'none';
+
+      // Auto-select first sub-item when opening the group
+      if (isHidden) {
+        const firstSub = childUl.querySelector('.nav-sub');
+        if (firstSub) {
+          firstSub.click();
+        }
+      }
+    });
+  });
+
   navButtons.forEach(btn => {
     btn.addEventListener('click', () => {
       const section = btn.dataset.section;
-      
+      if (!section) return;  // skip group headers (no data-section)
+
       // Update active nav button
       navButtons.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      
+
+      // Also highlight parent group header
+      const parentGroup = btn.closest('.nav-group');
+      if (parentGroup) {
+        const header = parentGroup.querySelector('.nav-group-header');
+        if (header) header.classList.add('active');
+      }
+
       // Show corresponding section
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-      document.getElementById(`section-${section}`).classList.add('active');
+      const target = document.getElementById(`section-${section}`);
+      if (target) target.classList.add('active');
 
-      // Auto-validate config whenever Settings section is opened
-      if (section === 'settings') {
+      // Auto-validate config whenever Settings-General section is opened
+      if (section === 'settings-general') {
         validateConfiguration();
         loadSetupStatus();
       }
@@ -69,8 +101,16 @@ function initializeNavigation() {
         loadAppTemplates();
       }
       // Load auth config when auth section is opened
-      if (section === 'auth') {
+      if (section === 'settings-auth') {
         loadAuthConfig();
+      }
+      // Load search providers when that section is opened
+      if (section === 'settings-search') {
+        loadSearchProviders();
+      }
+      // Load helpers when helpers section is opened
+      if (section === 'settings-helpers') {
+        scanHelpers();
       }
     });
   });
@@ -4205,7 +4245,7 @@ document.getElementById('btn-add-search-provider')?.addEventListener('click', ()
 
 // Load search providers when section becomes visible
 const searchObserver = new MutationObserver(() => {
-  const section = document.getElementById('section-search');
+  const section = document.getElementById('section-settings-search');
   if (section?.classList.contains('active')) {
     loadSearchProviders();
   }

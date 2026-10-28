@@ -1,4 +1,4 @@
-﻿{
+{
     "version":  "1.0",
     "security":  {
                      "defaultPolicy":  "DENY_UNLISTED",
@@ -54,11 +54,12 @@
                         }
                     ],
     "binaryHashes":  {
+    "SecurityLib.dll": { "path": "dist\helpers\SecurityLib.dll", "sha256": "109f7b3ac6b308032c2fa8fcc8dc21036bd424630e67abfc65eef3af2d82a739", "size": 122089, "lastModified": "2026-07-05T21:51:34.066Z" },
                          "keyWin":  {
                                         "path":  "dist\\helpers\\KeyWin.exe",
-                                        "sha256":  "04cd39c92147acc4e7f2673c6a240abb5bda9383ccd6aaca2d343c6e0cf37d47",
+                                        "sha256":  "c0ed86b53d2f433544b694f8dad379f33b97ed03a385e52c3027f64a6df5ee77",
                                         "size":  129536,
-                                        "lastModified":  "2026-07-05T21:51:31.7215830Z"
+                                        "lastModified":  "2026-08-25T19:50:38.1859375Z"
                                     },
                          "securityLib":  {
                                              "path":  "dist\\helpers\\SecurityLib.dll",
@@ -68,21 +69,21 @@
                                          },
                          "browserWin":  {
                                             "path":  "dist\\helpers\\BrowserWin.exe",
-                                            "sha256":  "200633070c4442a1dce732179eafd8c0853b3e9d8f3ff6c7d308265cc8b98e01",
+                                            "sha256":  "2e387644bcffa10e767fc31ecf4d1487cd92db93b05a08c38fbb9ecd077d736f",
                                             "size":  138752,
-                                            "lastModified":  "2026-07-05T21:51:31.9739457Z"
+                                            "lastModified":  "2026-08-25T19:50:38.4131279Z"
                                         },
                          "msOfficeWin":  {
                                              "path":  "dist\\helpers\\MSOfficeWin.exe",
-                                             "sha256":  "8c58868b8be9b5f7ca535af1f151ccaa9d014e786e8e2dadff82c7e6dd34cea2",
+                                             "sha256":  "6af857c15472660c57b969c47c4e57c89994c69db932b2be08bcc5f68bc2e696",
                                              "size":  118784,
-                                             "lastModified":  "2026-07-05T21:51:32.1824823Z"
+                                             "lastModified":  "2026-08-25T19:50:38.6182868Z"
                                          },
                          "libreOfficeWin":  {
                                                 "path":  "dist\\helpers\\LibreOfficeWin.exe",
-                                                "sha256":  "fb755e5112fccbfe3dd68788148a642256b5a4618f7b4aa7c1567ae47b5ae081",
+                                                "sha256":  "5223c640039a05f237261fd911583b44c7de8ce5c44bd502ee981b06de03b2d0",
                                                 "size":  109056,
-                                                "lastModified":  "2026-07-05T21:51:32.4027944Z"
+                                                "lastModified":  "2026-08-25T19:50:38.8178333Z"
                                             }
                      }
 }

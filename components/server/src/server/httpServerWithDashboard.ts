@@ -3016,11 +3016,21 @@ export class HttpServerWithDashboard {
   // Search Provider Handlers (ADR-019)
   // ============================================================
 
+  private resolveSearchConfigPath(): string {
+    // Use a temp directory path that pkg will never intercept.
+    const tmp = process.env.TMP || process.env.TEMP || '/tmp';
+    const dir = path.join(tmp, 'aiapi_cfg');
+    // Ensure directory exists
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const file = 'search_providers.json';
+    return path.join(dir, file);
+  }
+
   private async handleGetSearchProviders(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     try {
-      const fs = require('fs');
-      const path = require('path');
-      const configPath = path.resolve(__dirname, '../../config/search-providers.json');
+      const configPath = this.resolveSearchConfigPath();
       let config: any = { defaultEngine: 'google', providers: {} };
       if (fs.existsSync(configPath)) {
         config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -3046,9 +3056,7 @@ export class HttpServerWithDashboard {
     try {
       const body = await this.readBody(req);
       const data = JSON.parse(body);
-      const fs = require('fs');
-      const path = require('path');
-      const configPath = path.resolve(__dirname, '../../config/search-providers.json');
+      const configPath = this.resolveSearchConfigPath();
       let config: any = { defaultEngine: 'google', providers: {} };
       if (fs.existsSync(configPath)) {
         config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -3094,9 +3102,7 @@ export class HttpServerWithDashboard {
         res.end(JSON.stringify({ success: false, error: 'Provider ID not found in path' }));
         return;
       }
-      const fs = require('fs');
-      const path = require('path');
-      const configPath = path.resolve(__dirname, '../../config/search-providers.json');
+      const configPath = this.resolveSearchConfigPath();
       let config: any = { providers: {} };
       if (fs.existsSync(configPath)) {
         config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -3122,9 +3128,7 @@ export class HttpServerWithDashboard {
     try {
       const body = await this.readBody(req);
       const data = JSON.parse(body);
-      const fs = require('fs');
-      const path = require('path');
-      const configPath = path.resolve(__dirname, '../../config/search-providers.json');
+      const configPath = this.resolveSearchConfigPath();
       let config: any = { defaultEngine: 'google', providers: {} };
       if (fs.existsSync(configPath)) {
         config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));

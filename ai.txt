@@ -97,7 +97,14 @@ node dist/start-mcp-server.js --emergency-admin-mode
 
 ## Completed Major Features:
 - ✅ Project organization & cleanup
-- ✅ Command detection & security validation  
+- ✅ Command detection & security validation
 - ✅ Privileged mode (admin tokens + emergency override)
 - ✅ Dynamic helper API discovery foundation
 - ✅ File restructuring (docs/, config/, tests/)
+- ✅ MCP Search/Retrieve Services (ADR-019) — searchEngineClient.ts, fetchContentClient.ts, _System SEARCH_WEB/FETCH_* actions, standalone tools (brave_search, local_search, fetch_markdown/txt/html/json), dashboard UI, API endpoints
+
+## Pending Items:
+- Unit tests for searchEngineClient.ts
+- Integration tests for new MCP tools
+- Package distribution + deploy
+- Git commit + push

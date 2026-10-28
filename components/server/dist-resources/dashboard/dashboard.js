@@ -2289,13 +2289,14 @@ function initializeHelpers() {
   const scanBtn = document.getElementById('btn-scan-helpers');
   if (scanBtn) {
     scanBtn.addEventListener('click', () => scanHelpers());
-    // Auto-scan on load so helpers appear without manual interaction
-    scanHelpers();
   }
   const reloadBtn = document.getElementById('btn-reload-helpers');
   if (reloadBtn) {
     reloadBtn.addEventListener('click', () => reloadHelpers());
   }
+  // Pre-scan on startup so helpers appear without manual interaction
+  // Delay to allow server to be ready
+  setTimeout(() => scanHelpers(), 500);
 }
 
 async function scanHelpers() {
@@ -2933,6 +2934,9 @@ async function scenarioEditorSave() {
 function initializeAuth() {
   document.getElementById('btn-save-auth')?.addEventListener('click', saveAuthConfig);
   document.getElementById('btn-reload-auth')?.addEventListener('click', loadAuthConfig);
+  // Pre-load auth config on startup so the section is not empty when first opened
+  // Use a short delay to allow server to be ready
+  setTimeout(() => loadAuthConfig(), 500);
 }
 
 // Active sub-tab: 'config' | 'users'

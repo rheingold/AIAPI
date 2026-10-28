@@ -364,8 +364,15 @@ nav {
 /* Settings */
 .settings-container {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-  gap: 2rem;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 1.5rem;
+  /* Prevent micro-tiles on narrow viewports - stack vertically */
+  grid-auto-rows: min-content;
+}
+
+/* Single-column layout for settings-general to prevent cramped tiles */
+#section-settings-general .settings-container {
+  grid-template-columns: 1fr;
 }
 
 .setting-group {

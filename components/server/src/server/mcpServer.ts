@@ -591,6 +591,27 @@ export class MCPServer {
           prompts: {},
         },
         serverInfo: this.serverInfo,
+        instructions: [
+          'AIAPI MCP Server — AI UI Automation platform for desktop automation, web scraping, search, filesystem, and scenario execution.',
+          '',
+          'CAPABILITIES:',
+          '  Helpers: KeyWin, BrowserWin, MSOfficeWin, LibreOfficeWin (Windows desktop automation)',
+          '  _System: Built-in server-side actions — EXEC_CMD, FS_READ, FS_WRITE, FS_LIST,',
+          '    FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER, SEARCH_WEB, FETCH_MARKDOWN, FETCH_TXT, FETCH_HTML, FETCH_JSON',
+          '  AutomateUI: Unified router — dispatch any action to any helper',
+          '  executeScenario: Run XML/JSON scenarios from app template library',
+          '  listHelpers / getHelperSchema / getActionDetail: Discovery & documentation',
+          '',
+          'KEY NOTES:',
+          '  - FETCH_WEBPAGE fetches static HTML only (no JavaScript execution).',
+          '    For JS-rendered SPAs use FETCH_WEBPAGE_RENDER.',
+          '  - FETCH_WEBPAGE auto-escalates to FETCH_WEBPAGE_RENDER when login forms are detected.',
+          '  - URL goes in "proc" parameter for _System and AutomateUI helpers.',
+          '  - JSON options go in "value" parameter (parsed as JSON object).',
+          '  - Use getActionDetail(helper, action) for per-action docs with examples.',
+          '  - Session 0 helpers route to interactive user via WinSvcBridge by default;',
+          '    pass background:true for headless mode.',
+        ].join('\n'),
       },
     };
   }
@@ -753,8 +774,11 @@ export class MCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                helper: { type: 'string', description: 'Helper binary — normally omitted. Maps to "_System" (virtual).' },
-                proc: { type: 'string', description: 'Target: executable path, URL, or file path depending on action.' },
+                helper: { type: 'string', description: 'Helper name — normally omit, defaults to "_System".' },
+                proc: {
+                  type: 'string',
+                  description: 'Primary target. For FETCH_* actions: URL string. For EXEC_CMD: executable path. For FS_* actions: leave empty (use path= instead).',
+                },
                 action: {
                   type: 'string',
                   enum: [
@@ -762,10 +786,13 @@ export class MCPServer {
                     'FETCH_WEBPAGE', 'FETCH_WEBPAGE_RENDER',
                     'SEARCH_WEB', 'FETCH_MARKDOWN', 'FETCH_TXT', 'FETCH_HTML', 'FETCH_JSON',
                   ],
-                  description: 'Command. Call getHelperSchema for details.',
+                  description: 'Command to execute. FETCH_WEBPAGE = static HTML only. FETCH_WEBPAGE_RENDER = full JS-rendered page (use for SPAs/dynamic content). SEARCH_WEB = web search. FETCH_MARKDOWN/TXT/HTML/JSON = fetch with content conversion.',
                 },
-                path: { type: 'string', description: 'File/directory path or working directory.' },
-                value: { type: 'string', description: 'Payload: args, content, or JSON options.' },
+                path: { type: 'string', description: 'File/directory path for FS_* actions. Fallback URL target if proc= is empty.' },
+                value: {
+                  type: 'string',
+                  description: 'Payload. For FETCH_*: JSON string with options like {"headless":true,"waitMs":3000}. For SEARCH_WEB: query string or {"query":"...","maxResults":10}. For FS_WRITE: file content. For EXEC_CMD: command arguments.',
+                },
                 background: { type: 'boolean', description: 'Session 0: bypass bridge for headless mode.', default: false },
               },
               required: ['action'],

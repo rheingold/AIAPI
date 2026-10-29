@@ -23,7 +23,7 @@ export class MCPServer {
   private scenarioReplayer: ScenarioReplayer;
   private sessionTokenManager: SessionTokenManager;
   private port: number;
-  private serverInfo: { name: string; version: string } = MCPServer.initializeServerInfo();
+  private serverInfo: { name: string; version: string; description: string } = MCPServer.initializeServerInfo();
 
   private static loadPackageVersion(): string {
     try {
@@ -39,6 +39,7 @@ export class MCPServer {
     return {
       name: 'ai-ui-automation',
       version: MCPServer.loadPackageVersion(),
+      description: 'AI UI Automation MCP Server — Model Context Protocol service for desktop UI automation, web scraping, search, filesystem operations, and scenario execution. Supports Windows helpers (KeyWin, BrowserWin, MSOfficeWin, LibreOfficeWin) and built-in _System actions.',
     };
   }
   private docsPath: string;

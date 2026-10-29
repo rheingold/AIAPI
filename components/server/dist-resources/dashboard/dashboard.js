@@ -3907,7 +3907,8 @@ async function loadSearchProviders() {
       html += `<td style="padding:6px;">`;
       html += `<button onclick="editSearchProvider('${id}')" class="btn-secondary" style="padding:2px 8px;font-size:0.75rem;margin-right:4px;">✏️ Edit</button>`;
       html += `<button onclick="setDefaultProvider('${id}')" class="btn-secondary" style="padding:2px 8px;font-size:0.75rem;margin-right:4px;" ${isDefault ? 'disabled' : ''}>⭐</button>`;
-      html += `<button onclick="toggleProviderEnabled('${id}', ${!prov.enabled})" class="btn-secondary" style="padding:2px 8px;font-size:0.75rem;">🔄</button>`;
+      html += `<button onclick="toggleProviderEnabled('${id}', ${!prov.enabled})" class="btn-secondary" style="padding:2px 8px;font-size:0.75rem;margin-right:4px;">🔄</button>`;
+      html += `<button onclick="deleteSearchProvider('${id}', '${prov.name || id}')" class="btn-secondary" style="padding:2px 8px;font-size:0.75rem;color:#ff6b6b;" title="Delete this provider">🗑️</button>`;
       html += '</td></tr>';
     }
     html += '</tbody></table>';
@@ -4241,6 +4242,27 @@ async function setDefaultProvider(providerId) {
     await loadSearchProviders();
   } catch (e) {
     addLog('error', 'search-providers', `Set default failed: ${e.message}`);
+  }
+}
+
+/** Delete a search provider. */
+async function deleteSearchProvider(providerId, providerName) {
+  if (!confirm(`Delete search provider "${providerName}" (${providerId})? This cannot be undone.`)) {
+    return;
+  }
+  try {
+    const res = await fetch(`/api/settings/search-providers/${encodeURIComponent(providerId)}`, {
+      method: 'DELETE',
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    addLog('info', 'search-providers', `Deleted provider ${providerId}`);
+    await loadSearchProviders();
+  } catch (e) {
+    addLog('error', 'search-providers', `Delete failed: ${e.message}`);
+    alert(`Delete failed: ${e.message}`);
   }
 }
 

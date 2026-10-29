@@ -777,6 +777,9 @@ export class HttpServerWithDashboard {
       if (pathname === '/api/settings/search-providers/default' && req.method === 'POST') {
         return this.handleSetDefaultSearchProvider(req, res);
       }
+      if (pathname.startsWith('/api/settings/search-providers/') && req.method === 'DELETE') {
+        return this.handleDeleteSearchProvider(req, res, pathname);
+      }
       if (pathname === '/api/auth/config' && req.method === 'GET') {
         return this.handleGetAuthConfig(req, res);
       }
@@ -3144,6 +3147,50 @@ export class HttpServerWithDashboard {
       res.end(JSON.stringify({ success: true, defaultEngine: config.defaultEngine }));
     } catch (error) {
       this.log('error', 'search-providers', `Failed to set default: ${error instanceof Error ? error.message : String(error)}`);
+      res.writeHead(500);
+      res.end(JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }));
+    }
+  }
+
+  private async handleDeleteSearchProvider(req: http.IncomingMessage, res: http.ServerResponse, pathname: string): Promise<void> {
+    try {
+      // Extract provider ID from path: /api/settings/search-providers/{id}
+      const parts = pathname.split('/');
+      const providerIndex = parts.indexOf('search-providers');
+      const providerId = providerIndex >= 0 ? parts[providerIndex + 1] : null;
+      if (!providerId) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ success: false, error: 'Provider ID not found in path' }));
+        return;
+      }
+      const configPath = this.resolveSearchConfigPath();
+      let config: any = { defaultEngine: 'google', providers: {} };
+      if (fs.existsSync(configPath)) {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      }
+      if (!config.providers[providerId]) {
+        res.writeHead(404);
+        res.end(JSON.stringify({ success: false, error: `Provider ${providerId} not found` }));
+        return;
+      }
+      // Prevent deleting the last provider
+      if (Object.keys(config.providers).length <= 1) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ success: false, error: 'Cannot delete the last remaining provider' }));
+        return;
+      }
+      const wasDefault = config.defaultEngine === providerId;
+      delete config.providers[providerId];
+      // If the deleted provider was default, switch to another
+      if (wasDefault) {
+        config.defaultEngine = Object.keys(config.providers)[0];
+      }
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+      this.log('info', 'search-providers', `Deleted provider ${providerId}`);
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, id: providerId, newDefault: wasDefault ? config.defaultEngine : null }));
+    } catch (error) {
+      this.log('error', 'search-providers', `Failed to delete provider: ${error instanceof Error ? error.message : String(error)}`);
       res.writeHead(500);
       res.end(JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }));
     }

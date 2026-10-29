@@ -905,8 +905,11 @@ export class MCPServer {
               // Lazy-import SearchEngineClient to avoid loading when unused
               const { SearchEngineClient } = await import('../engine/searchEngineClient');
               const searchClient = new SearchEngineClient();
-              // args.value may be an object {query, maxResults, ...} or a plain string
-              const rawValue = args.value;
+              // args.value may be an object {query, maxResults, ...}, a JSON string, or a plain query string
+              let rawValue = args.value;
+              if (typeof rawValue === 'string') {
+                try { rawValue = JSON.parse(rawValue); } catch { /* stays as plain query string */ }
+              }
               const queryText = typeof rawValue === 'string' ? rawValue : (rawValue && rawValue.query) ?? args.query ?? '';
               const maxResults = typeof rawValue === 'object' && rawValue.maxResults ? rawValue.maxResults : args.maxResults;
               const provider = (typeof rawValue === 'object' && rawValue.provider) ?? args.provider;
@@ -925,19 +928,25 @@ export class MCPServer {
             case 'FETCH_JSON': {
               const { FetchContentClient } = await import('../engine/fetchContentClient');
               const fetchClient = new FetchContentClient();
-              const url = args.url ?? args.proc ?? '';
+              // args.value may be JSON {"url":"...","timeoutMs":...} or a plain URL string
+              let fetchValue = args.value;
+              if (typeof fetchValue === 'string') {
+                try { fetchValue = JSON.parse(fetchValue); } catch { /* stays as plain url */ }
+              }
+              const fetchUrl = typeof fetchValue === 'string' ? fetchValue : (fetchValue && fetchValue.url) ?? args.url ?? args.proc ?? '';
+              const fetchTimeout = (typeof fetchValue === 'object' && fetchValue.timeoutMs) ?? args.timeoutMs;
               switch (args.action) {
                 case 'FETCH_MARKDOWN':
-                  result = await fetchClient.fetchMarkdown(url, { timeout: args.timeoutMs });
+                  result = await fetchClient.fetchMarkdown(fetchUrl, { timeout: fetchTimeout });
                   break;
                 case 'FETCH_TXT':
-                  result = await fetchClient.fetchTxt(url, { timeout: args.timeoutMs });
+                  result = await fetchClient.fetchTxt(fetchUrl, { timeout: fetchTimeout });
                   break;
                 case 'FETCH_HTML':
-                  result = await fetchClient.fetchHtml(url, { timeout: args.timeoutMs });
+                  result = await fetchClient.fetchHtml(fetchUrl, { timeout: fetchTimeout });
                   break;
                 case 'FETCH_JSON':
-                  result = await fetchClient.fetchJson(url, { timeout: args.timeoutMs });
+                  result = await fetchClient.fetchJson(fetchUrl, { timeout: fetchTimeout });
                   break;
               }
               break;

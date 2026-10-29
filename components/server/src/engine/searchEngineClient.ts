@@ -29,13 +29,9 @@ const TAG = 'SearchEngineClient';
  * This avoids pkg virtual filesystem issues entirely.
  */
 function resolveConfigPath(): string {
-  const tmp = process.env.TMP || process.env.TEMP || '/tmp';
-  const dir = path.join(tmp, 'aiapi_cfg');
-  // Ensure directory exists
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  return path.join(dir, 'search_providers.json');
+  const isPkg = typeof (process as any).pkg !== 'undefined';
+  const base = isPkg ? path.dirname(process.execPath) : path.resolve(__dirname, '..', '..');
+  return path.resolve(base, 'config', 'search-providers.json');
 }
 
 /**

@@ -1103,3 +1103,11 @@
 {"timestamp":"20:47:05","level":"info","source":"security","message":"Loaded 1103 security audit entries from disk (total on disk: 1103)"}
 {"timestamp":"21:49:13","level":"warn","source":"security","message":"Failed to load security policy: SyntaxError: Bad escaped character in JSON at position 2414 (line 57 column 40)"}
 {"timestamp":"21:49:13","level":"info","source":"security","message":"Loaded 1105 security audit entries from disk (total on disk: 1105)"}
+{"timestamp":"10:49:09","level":"warn","source":"security","message":"Failed to load security policy: SyntaxError: Bad escaped character in JSON at position 2414 (line 57 column 40)"}
+{"timestamp":"10:49:09","level":"info","source":"security","message":"Loaded 1107 security audit entries from disk (total on disk: 1107)"}
+{"timestamp":"11:06:16","level":"warn","source":"security","message":"Failed to load security policy: SyntaxError: Bad escaped character in JSON at position 2414 (line 57 column 40)"}
+{"timestamp":"11:06:16","level":"info","source":"security","message":"Loaded 1109 security audit entries from disk (total on disk: 1109)"}
+{"timestamp":"11:10:08","level":"warn","source":"security","message":"Failed to load security policy: SyntaxError: Bad escaped character in JSON at position 2414 (line 57 column 40)"}
+{"timestamp":"11:10:08","level":"info","source":"security","message":"Loaded 1111 security audit entries from disk (total on disk: 1111)"}
+{"timestamp":"11:18:51","level":"warn","source":"security","message":"Failed to load security policy: SyntaxError: Bad escaped character in JSON at position 2414 (line 57 column 40)"}
+{"timestamp":"11:18:51","level":"info","source":"security","message":"Loaded 1113 security audit entries from disk (total on disk: 1113)"}

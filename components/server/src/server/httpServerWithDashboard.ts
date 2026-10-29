@@ -3017,15 +3017,9 @@ export class HttpServerWithDashboard {
   // ============================================================
 
   private resolveSearchConfigPath(): string {
-    // Use a temp directory path that pkg will never intercept.
-    const tmp = process.env.TMP || process.env.TEMP || '/tmp';
-    const dir = path.join(tmp, 'aiapi_cfg');
-    // Ensure directory exists
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    const file = 'search_providers.json';
-    return path.join(dir, file);
+    const isPkg = typeof (process as any).pkg !== 'undefined';
+    const base = isPkg ? path.dirname(process.execPath) : path.resolve(__dirname, '..', '..');
+    return path.resolve(base, 'config', 'search-providers.json');
   }
 
   private async handleGetSearchProviders(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {

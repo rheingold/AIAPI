@@ -1215,6 +1215,28 @@ export class HttpServerWithDashboard {
       commandCount: s.commands.length,
       commands: s.commands.map(c => ({ name: c.name, description: c.description })),
     }));
+    // _System is a virtual helper (built-in, no .exe) — always prepend it
+    helpers.unshift({
+      name: '_System',
+      version: '1.2.0',
+      description: 'Built-in server-side actions: EXEC_CMD, FS_READ, FS_WRITE, FS_LIST, FETCH_WEBPAGE, FETCH_WEBPAGE_RENDER, SEARCH_WEB, FETCH_MARKDOWN, FETCH_TXT, FETCH_HTML, FETCH_JSON.',
+      toolName: '_System',
+      filePath: '',
+      commandCount: 11,
+      commands: [
+        { name: 'EXEC_CMD', description: 'Run a shell command on the server and capture stdout/stderr.' },
+        { name: 'FS_READ', description: "Read a file's text content from the server filesystem." },
+        { name: 'FS_WRITE', description: 'Write text to a file on the server filesystem.' },
+        { name: 'FS_LIST', description: 'List entries in a directory on the server filesystem.' },
+        { name: 'FETCH_WEBPAGE', description: 'Fetch content from a webpage (static HTML). Auto-escalates to render mode on login forms.' },
+        { name: 'FETCH_WEBPAGE_RENDER', description: 'Fetch a webpage by rendering it in a real browser (JS/SPA support).' },
+        { name: 'SEARCH_WEB', description: 'Search the web using configured search providers.' },
+        { name: 'FETCH_MARKDOWN', description: 'Fetch a URL and return content as Markdown.' },
+        { name: 'FETCH_TXT', description: 'Fetch a URL and return content as plain text.' },
+        { name: 'FETCH_HTML', description: 'Fetch a URL and return raw HTML content.' },
+        { name: 'FETCH_JSON', description: 'Fetch a URL and parse response as JSON.' },
+      ],
+    });
     res.writeHead(200);
     res.end(JSON.stringify({ success: true, helpers }));
   }
@@ -1323,16 +1345,27 @@ export class HttpServerWithDashboard {
    * GET /api/tools
    */
   private handleGetTools(req: http.IncomingMessage, res: http.ServerResponse): void {
+    // Current MCP tool set (ADR-017-P2: legacy tools removed, see mcpServer.ts handleToolsList)
     const tools = [
-      { name: 'queryTree', description: 'Query UI element tree from a provider' },
-      { name: 'clickElement', description: 'Click a UI element' },
-      { name: 'setProperty', description: 'Set a property on a UI element' },
-      { name: 'readProperty', description: 'Read a property from a UI element' },
-      { name: 'getProviders', description: 'Get list of available automation providers' },
-      { name: 'listWindows', description: 'List all visible windows with titles and process information' },
-      { name: 'launchProcess', description: 'Launch an application process' },
-      { name: 'terminateProcess', description: 'Terminate a running process by name or PID' },
-      { name: 'executeScenario', description: 'Execute a JSON automation scenario' },
+      { name: 'executeScenario', description: 'Execute a scenario from the app template library (XML) or a legacy JSON scenario file.' },
+      { name: 'AutomateUI', description: 'UI automation router — dispatches any action to any helper (KeyWin, BrowserWin, MSOfficeWin, LibreOfficeWin, _System).' },
+      { name: 'getActionDetail', description: 'Returns the complete reference for a single action with parameter detail and call examples.' },
+      { name: 'listHelpers', description: 'List all helpers with compact summary. Pass full:true for schemas.' },
+      { name: 'getHelperSchema', description: 'Get schema for one helper.' },
+      { name: 'BrowserWin', description: 'Browser automation via Chrome DevTools Protocol (CDP).' },
+      { name: 'KeyWin', description: 'Windows desktop UI automation (click, type, read, query windows).' },
+      { name: 'MSOfficeWin', description: 'Microsoft Office document automation.' },
+      { name: 'LibreOfficeWin', description: 'LibreOffice document automation.' },
+      { name: '_System', description: 'Built-in server actions: EXEC_CMD, FS_*, FETCH_*, SEARCH_WEB.' },
+      // Legacy tools still accepted via grace-period stubs (return migration-hint errors)
+      { name: 'queryTree', description: '[REMOVED] Use AutomateUI { helper:"KeyWin", action:"QUERYTREE" }', deprecated: true },
+      { name: 'clickElement', description: '[REMOVED] Use AutomateUI { helper:"KeyWin", action:"CLICKID" }', deprecated: true },
+      { name: 'setProperty', description: '[REMOVED] Use AutomateUI { helper:"KeyWin", action:"SENDKEYS" }', deprecated: true },
+      { name: 'readProperty', description: '[REMOVED] Use AutomateUI { helper:"KeyWin", action:"READ" }', deprecated: true },
+      { name: 'getProviders', description: '[REMOVED] Use listHelpers', deprecated: true },
+      { name: 'listWindows', description: '[REMOVED] Use AutomateUI { helper:"KeyWin", action:"LISTWINDOWS" }', deprecated: true },
+      { name: 'launchProcess', description: '[REMOVED] Use AutomateUI { helper:"KeyWin", action:"LAUNCH" }', deprecated: true },
+      { name: 'terminateProcess', description: '[REMOVED] Use AutomateUI { helper:"KeyWin", action:"KILL" }', deprecated: true },
     ];
 
     res.writeHead(200);

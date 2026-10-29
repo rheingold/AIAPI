@@ -1111,3 +1111,5 @@
 {"timestamp":"11:10:08","level":"info","source":"security","message":"Loaded 1111 security audit entries from disk (total on disk: 1111)"}
 {"timestamp":"11:18:51","level":"warn","source":"security","message":"Failed to load security policy: SyntaxError: Bad escaped character in JSON at position 2414 (line 57 column 40)"}
 {"timestamp":"11:18:51","level":"info","source":"security","message":"Loaded 1113 security audit entries from disk (total on disk: 1113)"}
+{"timestamp":"11:53:01","level":"warn","source":"security","message":"Failed to load security policy: SyntaxError: Bad escaped character in JSON at position 2414 (line 57 column 40)"}
+{"timestamp":"11:53:01","level":"info","source":"security","message":"Loaded 1115 security audit entries from disk (total on disk: 1115)"}

@@ -28,104 +28,112 @@ function rpc(method, params = {}) {
 
 (async () => {
   console.log('=== MCP Search/Fetch Smoke Tests ===\n');
+  let passCount = 0;
+  let failCount = 0;
 
-  // 1. tools/list - verify new tools exist
-  console.log('[1] tools/list ...');
-  const tools = await rpc('tools/list');
-  const toolNames = tools.result.tools.map(t => t.name);
-  const expected = ['brave_search', 'local_search', 'fetch_markdown', 'fetch_txt', 'fetch_html', 'fetch_json'];
-  const found = expected.filter(n => toolNames.includes(n));
-  console.log(`    Expected tools: ${expected.join(', ')}`);
-  console.log(`    Found: ${found.join(', ')}`);
-  console.log(`    ${found.length === expected.length ? 'PASS' : 'FAIL'}\n`);
+  function report(name, ok) {
+    if (ok) { passCount++; console.log(`    PASS\n`); }
+    else { failCount++; console.log(`    FAIL\n`); }
+  }
 
-  // 2. _System SEARCH_WEB
-  console.log('[2] _System SEARCH_WEB ...');
+  // 1. _System SEARCH_WEB
+  console.log('[1] _System SEARCH_WEB ...');
   try {
     const srch = await rpc('tools/call', {
       name: '_System',
       arguments: { action: 'SEARCH_WEB', query: 'Node.js TypeScript MCP server' }
     });
-    if (srch.result && srch.result.items && srch.result.items.length > 0) {
-      console.log(`    Got ${srch.result.items.length} results`);
-      console.log(`    First: ${srch.result.items[0].title}`);
-      console.log('    PASS\n');
-    } else {
-      console.log('    No results returned\n');
-    }
+    // Result is wrapped in content[0].text as JSON string
+    const text = srch?.result?.content?.[0]?.text || '';
+    const parsed = JSON.parse(text);
+    report('SEARCH_WEB', parsed.success === true);
+    if (parsed.success) console.log(`    Engine: ${parsed.engine}, results: ${parsed.results?.length || 0}`);
   } catch(e) {
-    console.log(`    FAIL: ${e.message}\n`);
+    report('SEARCH_WEB', false);
+    console.log(`    Error: ${e.message}\n`);
   }
 
-  // 3. brave_search standalone
-  console.log('[3] brave_search ...');
-  try {
-    const bs = await rpc('tools/call', {
-      name: 'brave_search',
-      arguments: { query: 'AIAPI MCP server' }
-    });
-    if (bs.result && bs.result.items) {
-      console.log(`    Got ${bs.result.items.length} results`);
-      console.log('    PASS\n');
-    } else {
-      console.log('    No results\n');
-    }
-  } catch(e) {
-    console.log(`    FAIL: ${e.message}\n`);
-  }
-
-  // 4. fetch_markdown
-  console.log('[4] fetch_markdown ...');
+  // 2. _System FETCH_MARKDOWN
+  console.log('[2] _System FETCH_MARKDOWN ...');
   try {
     const fm = await rpc('tools/call', {
-      name: 'fetch_markdown',
-      arguments: { url: 'https://example.com' }
+      name: '_System',
+      arguments: { action: 'FETCH_MARKDOWN', proc: 'https://example.com' }
     });
-    if (fm.result && fm.result.content) {
-      console.log(`    Content length: ${fm.result.content.length}`);
-      console.log('    PASS\n');
-    } else {
-      console.log('    No content\n');
-    }
+    const text = fm?.result?.content?.[0]?.text || '';
+    const parsed = JSON.parse(text);
+    report('FETCH_MARKDOWN', parsed.success === true && parsed.content?.length > 0);
+    if (parsed.success) console.log(`    Content length: ${parsed.content.length}`);
   } catch(e) {
-    console.log(`    FAIL: ${e.message}\n`);
+    report('FETCH_MARKDOWN', false);
+    console.log(`    Error: ${e.message}\n`);
   }
 
-  // 5. fetch_json
-  console.log('[5] fetch_json ...');
+  // 3. _System FETCH_JSON
+  console.log('[3] _System FETCH_JSON ...');
   try {
     const fj = await rpc('tools/call', {
-      name: 'fetch_json',
-      arguments: { url: 'https://jsonplaceholder.typicode.com/posts/1' }
+      name: '_System',
+      arguments: { action: 'FETCH_JSON', proc: 'https://jsonplaceholder.typicode.com/posts/1' }
     });
-    if (fj.result && fj.result.data) {
-      console.log(`    Got JSON: ${JSON.stringify(fj.result.data).slice(0,100)}...`);
-      console.log('    PASS\n');
-    } else {
-      console.log('    No JSON data\n');
-    }
+    const text = fj?.result?.content?.[0]?.text || '';
+    const parsed = JSON.parse(text);
+    report('FETCH_JSON', parsed.success === true && parsed.json !== undefined);
+    if (parsed.success) console.log(`    JSON keys: ${Object.keys(parsed.json).join(', ')}`);
   } catch(e) {
-    console.log(`    FAIL: ${e.message}\n`);
+    report('FETCH_JSON', false);
+    console.log(`    Error: ${e.message}\n`);
   }
 
-  // 6. getHelperSchema - _System shows new commands
+  // 4. _System FETCH_TXT
+  console.log('[4] _System FETCH_TXT ...');
+  try {
+    const ft = await rpc('tools/call', {
+      name: '_System',
+      arguments: { action: 'FETCH_TXT', proc: 'https://example.com' }
+    });
+    const text = ft?.result?.content?.[0]?.text || '';
+    const parsed = JSON.parse(text);
+    report('FETCH_TXT', parsed.success === true && parsed.content?.length > 0);
+  } catch(e) {
+    report('FETCH_TXT', false);
+    console.log(`    Error: ${e.message}\n`);
+  }
+
+  // 5. _System FETCH_HTML
+  console.log('[5] _System FETCH_HTML ...');
+  try {
+    const fh = await rpc('tools/call', {
+      name: '_System',
+      arguments: { action: 'FETCH_HTML', proc: 'https://example.com' }
+    });
+    const text = fh?.result?.content?.[0]?.text || '';
+    const parsed = JSON.parse(text);
+    report('FETCH_HTML', parsed.success === true && parsed.content?.toLowerCase().includes('<!doctype'));
+  } catch(e) {
+    report('FETCH_HTML', false);
+    console.log(`    Error: ${e.message}\n`);
+  }
+
+  // 6. getHelperSchema - verify _System has SEARCH_WEB + FETCH_* commands
   console.log('[6] getHelperSchema _System ...');
   try {
     const schema = await rpc('tools/call', {
       name: 'getHelperSchema',
       arguments: { helperName: '_System' }
     });
-    if (schema.result && schema.result.inputSchema) {
-      const actions = schema.result.inputSchema.properties.action.enum;
-      const hasSearch = actions.includes('SEARCH_WEB');
-      const hasFetch = actions.includes('FETCH_MARKDOWN');
-      console.log(`    SEARCH_WEB in schema: ${hasSearch}`);
-      console.log(`    FETCH_MARKDOWN in schema: ${hasFetch}`);
-      console.log(`    ${hasSearch && hasFetch ? 'PASS' : 'FAIL'}\n`);
-    }
+    const text = schema?.result?.content?.[0]?.text || '';
+    const parsed = JSON.parse(text);
+    const cmds = parsed.schema?.commands || [];
+    const hasSearch = cmds.includes('search_web');
+    const hasFetchMd = cmds.includes('fetch_markdown');
+    const hasFetchJson = cmds.includes('fetch_json');
+    report('getHelperSchema', hasSearch && hasFetchMd && hasFetchJson);
+    console.log(`    search_web: ${hasSearch}, fetch_markdown: ${hasFetchMd}, fetch_json: ${hasFetchJson}`);
   } catch(e) {
-    console.log(`    FAIL: ${e.message}\n`);
+    report('getHelperSchema', false);
+    console.log(`    Error: ${e.message}\n`);
   }
 
-  console.log('=== Smoke tests complete ===');
+  console.log(`\n=== Smoke tests complete: ${passCount} passed, ${failCount} failed ===`);
 })().catch(e => console.error('Fatal:', e));

@@ -2,7 +2,7 @@
 
 **Date**: 2026-11-10
 **Issue**: MCP SCREENSHOT action cannot return image data as vision input to AI clients
-**Status**: ✅ FIXED AND TESTED - Implementation complete in `mcpServer.ts`
+**Status**: ✅ FIXED AND DEPLOYED - Both AutomateUI and direct helper tools now return proper image content
 
 ---
 
@@ -96,6 +96,19 @@ if (actionName === 'SCREENSHOT') {
 
 This flag is read by `buildContentItems()` from the raw result and is stripped by [`sanitiseResultForWire()`](components/server/src/server/mcpServer.ts:1850) to prevent leaking internal state to the wire.
 
+### Direct Helper Tools Fix
+
+**Location**: [`mcpServer.ts:1746-1748`](components/server/src/server/mcpServer.ts:1746)
+
+The direct helper tool path (e.g., calling "KeyWin" directly instead of through AutomateUI) was also missing the `_isScreenshot` flag. Added the same flag setting:
+```typescript
+if (resolved.command.toUpperCase() === 'SCREENSHOT') {
+  result._isScreenshot = true;
+}
+```
+
+This ensures both code paths (AutomateUI and direct helper tools) properly mark screenshot results for `buildContentItems()` transformation.
+
 ### Response Wrapper Update
 
 **Location**: [`mcpServer.ts:1763-1775`](components/server/src/server/mcpServer.ts:1763)
@@ -141,6 +154,14 @@ A comprehensive test suite was created and executed ([`test/screenshot_vision_in
 | Short string not detected as base64 | 2 | ✅ Pass |
 
 **Total**: 36/36 tests passed ✅
+
+### Live Verification
+
+Both code paths now correctly return `type: "image"` content:
+- **Direct KeyWin tool**: ✅ IMAGE CONTENT TYPE DETECTED - data length: 31204
+- **AutomateUI with KeyWin**: ✅ AutomateUI IMAGE CONTENT TYPE DETECTED - data length: 31204
+
+The text summary correctly excludes the base64 image data, preventing context bloat.
 
 ---
 

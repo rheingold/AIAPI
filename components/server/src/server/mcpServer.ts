@@ -1743,6 +1743,10 @@ export class MCPServer {
               20000, '', '', false,
               args.background === true || args.background === 'true',
             );
+            // Mark SCREENSHOT results so the response wrapper can emit image content
+            if (resolved.command.toUpperCase() === 'SCREENSHOT') {
+              result._isScreenshot = true;
+            }
             // Propagate helper-level failures as JSON-RPC errors so AI clients get
             // an unambiguous error signal rather than a "successful" result with
             // success:false buried inside.

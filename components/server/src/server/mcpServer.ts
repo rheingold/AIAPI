@@ -1090,7 +1090,7 @@ export class MCPServer {
               const rawMsg = result?.error ?? result?.message ?? JSON.stringify(result ?? null);
               const prefix = `${action} failed: `;
               const msg = typeof rawMsg === 'string' && rawMsg.startsWith(prefix) ? rawMsg : `${prefix}${rawMsg}`;
-              return this.createErrorResponse(id, -32603, msg);
+              return this.createErrorResponse(id, -32603, MCPServer.stripStackLines(msg));
             }
             break;
           }
@@ -1108,6 +1108,7 @@ export class MCPServer {
               `Available: _System, ${allHelpers.map(s => s.toolName).join(', ')}`
             );
           }
+          const actionName = (args.action || '').toUpperCase();
           result = await this.helperRegistry.callCommand(
             schema.helper,
             args.proc  ?? '',
@@ -1121,7 +1122,11 @@ export class MCPServer {
             const rawMsg = result?.error ?? result?.message ?? JSON.stringify(result ?? null);
             const prefix = `${args.action} failed: `;
             const msg = typeof rawMsg === 'string' && rawMsg.startsWith(prefix) ? rawMsg : `${prefix}${rawMsg}`;
-            return this.createErrorResponse(id, -32603, msg);
+            return this.createErrorResponse(id, -32603, MCPServer.stripStackLines(msg));
+          }
+          // Mark SCREENSHOT results so the response wrapper can emit image content
+          if (actionName === 'SCREENSHOT') {
+            result._isScreenshot = true;
           }
           break;
         }
@@ -1513,36 +1518,80 @@ export class MCPServer {
                 notes: 'CRITICAL: Use "proc" for executable (not "executable" or "command"). Use "value" for args (not "args").',
               },
               FS_READ: {
-                description: 'Read file content.',
+                description: 'Read file content with optional attributes (hash, dates, symlink info, custom attributes). Supports glob patterns.',
                 parameters: {
-                  path: 'File path (required).',
-                  maxBytes: 'Max bytes. Default: 1MB.',
+                  path: 'File path (required). Supports glob patterns when glob:true.',
+                  encoding: 'Text encoding. Default: utf-8.',
+                  maxBytes: 'Max bytes to read. Default: 1048576 (1 MB).',
+                  includeHash: 'Include MD5 hash of file content. Default: false.',
+                  includeDates: 'Include creation/modification dates. Default: false.',
+                  includeLinkInfo: 'Include symlink/junction information. Default: false.',
+                  includeAttributes: 'Include custom file attributes. boolean or string[] to filter specific keys. Default: false.',
+                  glob: 'Enable glob pattern matching (*, **). Default: false.',
                 },
                 example: {
-                  params: { name: 'AutomateUI', arguments: { helper: '_System', action: 'FS_READ', path: 'C:\\Windows\\win.ini' } },
+                  params: { name: 'AutomateUI', arguments: { helper: '_System', action: 'FS_READ', path: 'C:\\Windows\\win.ini', includeHash: true, includeDates: true } },
                 },
+                notes: 'Returns file content in value. Attributes returned in attributes field. Glob mode returns JSON array of {path, content, attrs} entries.',
               },
               FS_WRITE: {
-                description: 'Write text to file.',
+                description: 'Write text to file with advanced modes: diff patching, search/replace, line insert/delete. Supports glob patterns for multiple files.',
                 parameters: {
-                  path: 'File path (required).',
-                  value: 'Content to write.',
+                  path: 'File path (required). Supports glob patterns when glob:true.',
+                  value: 'Content to write, OR diff patch, OR search pattern depending on mode.',
+                  encoding: 'Text encoding. Default: utf-8.',
                   append: 'Append mode. Default: false.',
+                  mode: 'Operation mode: "write" (default), "patch" (unified diff), "search_replace", "insert_line", "delete_lines".',
+                  search: 'Search pattern (regex or literal) for search_replace mode.',
+                  replace: 'Replacement string for search_replace mode.',
+                  lineNum: 'Line number for insert_line/delete_lines modes (1-indexed).',
+                  lines: 'Number of lines to delete for delete_lines mode.',
+                  glob: 'Enable glob pattern matching for multiple files. Default: false.',
+                  recursive: 'For glob: enable recursive directory matching. Default: false.',
+                  depth: 'For glob: maximum recursion depth. Default: unlimited.',
                 },
+                example: {
+                  params: { name: 'AutomateUI', arguments: { helper: '_System', action: 'FS_WRITE', path: 'output.txt', value: 'Hello World' } },
+                },
+                notes: 'High-risk action. Creates parent directories as needed. Patch mode applies unified diff format.',
               },
               FS_LIST: {
-                description: 'List directory.',
+                description: 'List directory entries with optional recursion, glob filtering, and extended attributes.',
                 parameters: {
                   path: 'Directory path (required).',
-                  filter: '"all" | "files" | "directories".',
+                  filter: '"all" | "files" | "directories". Default: "all".',
+                  maxEntries: 'Cap returned entries. Default: 500.',
+                  recursive: 'Enable recursive directory listing. Default: false.',
+                  depth: 'Maximum recursion depth (only with recursive:true). Default: unlimited.',
+                  glob: 'Glob filter pattern (e.g. "*.ts"). Default: null.',
+                  includeHash: 'Include MD5 hash for files. Default: false.',
+                  includeDates: 'Include creation dates. Default: false.',
+                },
+                example: {
+                  params: { name: 'AutomateUI', arguments: { helper: '_System', action: 'FS_LIST', path: 'src', recursive: true, glob: '*.ts' } },
                 },
               },
               FETCH_WEBPAGE: {
-                description: 'Fetch webpage via HTTP.',
+                description: 'Fetch webpage via HTTP with full options support. Auto-escalates to interactive browser mode on login forms.',
                 parameters: {
-                  proc: 'URL (required).',
-                  value: 'JSON options string.',
+                  proc: 'URL (required). Also accepted as path or url.',
+                  value: 'JSON options string. See options below.',
+                  method: 'HTTP method (GET, POST, PUT, PATCH, DELETE). Default: GET.',
+                  body: 'Request body for POST/PUT/PATCH. Serialized to JSON if object.',
+                  headers: 'Custom headers as object {key: value}.',
+                  timeoutMs: 'Request timeout in ms. Default: 30000.',
+                  userAgent: 'Custom User-Agent string.',
+                  extractText: 'Extract text content from HTML. Default: false.',
+                  selector: 'CSS selector to extract specific element content.',
+                  autoEscalate: 'Auto-escalate to interactive browser on login forms. Default: true.',
+                  followRedirects: 'Follow HTTP redirects. Default: true.',
+                  maxRedirects: 'Max redirect count. Default: 5.',
+                  rejectUnauthorized: 'Reject invalid TLS certificates. Default: true.',
                 },
+                example: {
+                  params: { name: 'AutomateUI', arguments: { helper: '_System', action: 'FETCH_WEBPAGE', proc: 'https://example.com', value: '{"method":"GET","extractText":true}' } },
+                },
+                notes: 'Login/captcha detection triggers auto-escalation to FETCH_WEBPAGE_RENDER. Use FETCH_WEBPAGE_RENDER for JS-rendered SPAs.',
               },
               FETCH_WEBPAGE_RENDER: {
                 description: 'Render webpage in real browser.',
@@ -1703,7 +1752,7 @@ export class MCPServer {
               // Avoid double-prefix by checking before prepending.
               const prefix = `${resolved.command} failed: `;
               const msg = typeof rawMsg === 'string' && rawMsg.startsWith(prefix) ? rawMsg : `${prefix}${rawMsg}`;
-              return this.createErrorResponse(id, -32603, msg);
+              return this.createErrorResponse(id, -32603, MCPServer.stripStackLines(msg));
             }
             break;
           }
@@ -1712,17 +1761,16 @@ export class MCPServer {
       }
 
       // MCP protocol requires tools/call responses to wrap result in content array
+      // Strip internal-only fields from the result before serializing to the wire.
+      const cleanResult = MCPServer.sanitiseResultForWire(result);
+
+      // Detect if this is a screenshot result and emit proper MCP image content
+      const contentItems = MCPServer.buildContentItems(cleanResult, result);
       return {
         jsonrpc: '2.0',
         id,
         result: {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-
-          ],
+          content: contentItems,
         },
       };
     } catch (error) {
@@ -1784,12 +1832,124 @@ export class MCPServer {
    * Callers should emit only `message` to local (dev) callers and `'internal_error'`
    * plus the correlationId to remote callers.
    */
+  /** Strip stack-trace lines ("    at ...") from any error message string. */
+  private static stripStackLines(text: string): string {
+    return text
+      .split('\n')
+      .filter(line => !line.match(/^\s+at\s+/))
+      .join(' ')
+      .trim();
+  }
+
+  /**
+   * Recursively remove internal-only fields from a result object before
+   * serializing it to the wire. Fields starting with `_` that are not part
+   * of the public contract (like `_note`, `_escalated`) are stripped.
+   * Specifically removes `_bridgeError` which leaks internal WinSvcBridge paths.
+   */
+  private static sanitiseResultForWire(obj: unknown): unknown {
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(item => MCPServer.sanitiseResultForWire(item));
+    const entry = obj as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(entry)) {
+      // Remove internal diagnostics that leak paths or implementation details
+      if (key === '_bridgeError' || key === '_isScreenshot') continue;
+      out[key] = MCPServer.sanitiseResultForWire(val);
+    }
+    return out;
+  }
+
+  /**
+   * Build MCP content items array from a tool result.
+   *
+   * When the result is marked as a screenshot (via _isScreenshot flag set during
+   * AutomateUI dispatch), extract the base64 image data and emit proper MCP
+   * image content items that AI clients can use as vision input.
+   *
+   * MCP spec supports:
+   *   - { type: 'text', text: '...' }
+   *   - { type: 'image', data: '<base64>', mimeType: 'image/png' }
+   *
+   * @param cleanResult - The sanitized result object (internal fields already stripped)
+   * @param rawResult   - The original result before sanitization (to read _isScreenshot flag)
+   */
+  private static buildContentItems(
+    cleanResult: unknown,
+    rawResult: unknown,
+  ): Array<{ type: string; text?: string; data?: string; mimeType?: string }> {
+    const items: Array<{ type: string; text?: string; data?: string; mimeType?: string }> = [];
+
+    // Check if this was a screenshot call
+    const isScreenshot = (rawResult as any)?._isScreenshot === true;
+
+    if (isScreenshot && typeof cleanResult === 'object' && cleanResult !== null && !Array.isArray(cleanResult)) {
+      const result = cleanResult as Record<string, unknown>;
+
+      // Extract base64 image data from common field names used by helpers
+      const imageFieldNames = ['screenshot', 'image', 'data', 'png', 'base64'];
+      let imageBase64: string | undefined;
+      let imageFieldUsed = '';
+
+      for (const fieldName of imageFieldNames) {
+        if (fieldName in result && typeof result[fieldName] === 'string' && result[fieldName].length > 100) {
+          // Validate it looks like base64 data (PNG starts with iVBOR, or general base64 pattern)
+          const val = result[fieldName] as string;
+          if (/^[A-Za-z0-9+/=]+$/.test(val.slice(0, 100))) {
+            imageBase64 = val;
+            imageFieldUsed = fieldName;
+            break;
+          }
+        }
+      }
+
+      if (imageBase64) {
+        // Emit image content item for vision input
+        items.push({
+          type: 'image',
+          data: imageBase64,
+          mimeType: 'image/png',
+        });
+
+        // Also emit a lightweight text summary (without the large base64 blob)
+        const summary: Record<string, unknown> = {};
+        for (const [key, val] of Object.entries(result)) {
+          if (key !== imageFieldUsed) {
+            summary[key] = val;
+          }
+        }
+        items.push({
+          type: 'text',
+          text: JSON.stringify(summary, null, 2),
+        });
+      } else {
+        // No image data found - fall back to text-only
+        items.push({
+          type: 'text',
+          text: JSON.stringify(cleanResult, null, 2),
+        });
+      }
+    } else {
+      // Non-screenshot result: standard text content
+      items.push({
+        type: 'text',
+        text: JSON.stringify(cleanResult, null, 2),
+      });
+    }
+
+    return items;
+  }
+
   private sanitiseInternalError(error: unknown, context: string): { message: string; corrId: string } {
     const corrId = crypto.randomBytes(8).toString('hex');
-    const msg   = error instanceof Error ? error.message : String(error);
-    const stack = error instanceof Error ? (error.stack ?? msg) : String(error);
+    const rawMsg  = error instanceof Error ? error.message : String(error);
+    const stack   = error instanceof Error ? (error.stack ?? rawMsg) : String(error);
+    // Some error constructors embed stack traces inside the message property itself.
+    // Strip "    at ..." lines to prevent internal path disclosure.
+    const safeMsg = MCPServer.stripStackLines(rawMsg);
     globalLogger.error('MCP', `[corrId=${corrId}] ${context}: ${stack}`);
-    return { message: `${context}: ${msg}`, corrId };
+    return { message: `${context}: ${safeMsg}`, corrId };
   }
 
   /**

@@ -1702,3 +1702,47 @@ To prevent LLM context overflow (30 k token limit in many chat agents):
 - **`queryTree`** results exceeding 24 000 chars are automatically trimmed; `_truncated: true` and `_hint` are appended to the response.
 - All trimmed responses include `_truncated: true` and `_hint` explaining how to retrieve full data.
 - Budget constant: `DEFAULT_MAX_CHARS = 24 000` in [`components/server/src/utils/truncateResponse.ts`](components/server/src/utils/truncateResponse.ts).
+
+### Public Response Fields (MCP Wire Format)
+
+MCP tool responses use a standardized field contract. **All public fields are now lowercase-prefixed** (no underscore prefix). Internal fields stripped by `sanitiseResultForWire()` retain the underscore.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | `boolean` | Operation succeeded (`true`) or failed (`false`) |
+| `error` | `string` | Error message (present when `success: false`) |
+| `escalated` | `boolean` | `true` when auto-escalation was triggered (e.g., login form detected) |
+| `escalationReason` | `string` | Human-readable reason for escalation |
+| `escalationError` | `string` | Error message when escalation attempt failed |
+| `sessionWarning` | `string` | Warning about Session 0 / background mode constraints |
+| `note` | `string` | Additional context or diagnostic information |
+| `truncated` | `boolean` | `true` when response was size-truncated |
+| `hint` | `string` | Guidance on how to retrieve full data when truncated |
+
+**Error Response Structure** (JSON-RPC error `data` field):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `correlationId` | `string` | Unique ID for correlating logs across request/response |
+| `category` | `string` | Error category: `not_found`, `invalid_input`, `permission`, `timeout`, `network`, `security`, `internal` |
+| `retryable` | `boolean` | `true` if the operation may succeed on retry |
+| `suggestedAction` | `string` | Human-readable suggestion for resolving the error |
+
+**Content Annotations** (MCP content item `annotations` field):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `audience` | `string[]` | Intended audience: `["assistant"]`, `["user"]`, or `["assistant","user"]` |
+| `priority` | `number` | Priority scale 0.0–1.0 (1.0 = critical, 0.3 = informational) |
+| `role` | `string` | Response role: `result`, `error`, `hint`, `diagnostic` |
+
+**Progress Notifications** (SSE `notifications/progress` events):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `progressToken` | `string` | Unique token identifying the long-running operation |
+| `progress` | `number` | Current progress (0–100) |
+| `total` | `number` | Total work units (typically 100) |
+| `message` | `string` | Human-readable status message |
+
+> **Migration Note:** Fields `_escalated`, `_escalationReason`, `_escalationFailed`, `_sessionWarning`, and `_note` were renamed to remove the underscore prefix, exposing them as part of the public MCP response contract. The underscore prefix now reserves fields for internal-only use (stripped by `sanitiseResultForWire()`).

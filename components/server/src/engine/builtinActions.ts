@@ -58,8 +58,8 @@ export interface BuiltinResult {
   exitCode?: number;
   /** entries for FS_LIST */
   entries?: BuiltinFsEntry[];
-  /** QA-3: present when running in Windows Session 0 and the command may have no visible effect */
-  _sessionWarning?: string;
+  /** QA-3: present when running in Windows Session 0 and the command may have no visible effect (public contract) */
+  sessionWarning?: string;
   /** attributes for FS_READ with includeHash/includeDates options */
   attributes?: FileAttributes | FileAttributes[];
 }
@@ -179,6 +179,7 @@ export async function execCmd(
             stderr:   rawErr || undefined,
             exitCode: 0,
             _bridge:  'exec' as any,
+            ...(looksLikeGuiProcess(executable) ? { sessionWarning: 'exec_cmd launched a process in Session 0 which has no interactive desktop. GUI windows will not be visible to users. Use launchProcess for GUI automation. See docs/specs/SESSION0_ISOLATION.md for details.' } as any : {}),
           } as BuiltinResult;
         }
         const exitCode = typeof parsed.exitCode === 'number' ? parsed.exitCode : 0;
@@ -189,13 +190,16 @@ export async function execCmd(
           stderr:   parsed.stderr || undefined,
           exitCode,
           _bridge:  'exec' as any,
+          ...(looksLikeGuiProcess(executable) ? { sessionWarning: 'exec_cmd launched a process in Session 0 which has no interactive desktop. GUI windows will not be visible to users. Use launchProcess for GUI automation. See docs/specs/SESSION0_ISOLATION.md for details.' } as any : {}),
         } as BuiltinResult;
       } catch (bridgeErr: any) {
         // Bridge itself failed (not the child command) — fall through to direct exec
         // and attach a warning so the caller knows the user-session route failed.
         const fallbackResult = await execCmdDirect(executable, args, { cwd, timeout, env });
+        // Sanitize: never expose internal WinSvcBridge paths or CreateProcessAsUser internals
+        // to callers. Keep only the generic fallback indicator.
         (fallbackResult as any)._bridgeError =
-          `WinSvcBridge --exec failed (${bridgeErr?.message ?? bridgeErr}); fell back to Session-0 direct exec`;
+          'User-session bridge unavailable; executed in current session context';
         return fallbackResult;
       }
     }
@@ -227,7 +231,7 @@ async function execCmdDirect(
     };
     // QA-3: warn when running in Session 0 and the command likely spawns a GUI app
     if (isSession0() && looksLikeGuiProcess(executable)) {
-      result._sessionWarning = 'exec_cmd launched a process in Session 0 which has no interactive desktop. '
+      result.sessionWarning = 'exec_cmd launched a process in Session 0 which has no interactive desktop. '
         + 'GUI windows will not be visible to users. '
         + 'Use launchProcess for GUI automation. '
         + 'See docs/specs/SESSION0_ISOLATION.md for details.';
@@ -270,6 +274,10 @@ export async function fsRead(
     glob?: boolean;
   } = {},
 ): Promise<BuiltinResult> {
+  // F1-silent-fail2: validate empty path
+  if (!filePath || filePath.trim().length === 0) {
+    return { success: false, error: 'FS_READ: path must not be empty' };
+  }
   const encoding = opts.encoding ?? 'utf-8';
   const maxBytes = opts.maxBytes ?? 1_048_576; // 1 MB
   const includeHash = opts.includeHash ?? false;
@@ -291,6 +299,10 @@ export async function fsRead(
     for (const abs of pathsToRead) {
       try {
         const stat = fs.statSync(abs);
+        // F1-silent-fail: reject directories — reading a directory is not a valid fsRead
+        if (stat.isDirectory()) {
+          return { success: false, error: `FS_READ: "${filePath}" is a directory` };
+        }
         const fd = fs.openSync(abs, 'r');
         const buf = Buffer.alloc(Math.min(stat.size, maxBytes));
         fs.readSync(fd, buf, 0, buf.length, 0);
@@ -591,6 +603,15 @@ export async function fsList(
         // Ignore directory read errors
       }
     };
+    
+    // F1-silent-fail3: verify the target directory actually exists before listing
+    if (!fs.existsSync(abs)) {
+      return { success: false, error: `FS_LIST: directory does not exist "${abs}"` };
+    }
+    const dirStat = fs.statSync(abs);
+    if (!dirStat.isDirectory()) {
+      return { success: false, error: `FS_LIST: path is not a directory "${abs}"` };
+    }
     
     listDirectory(abs);
     

@@ -749,13 +749,22 @@ export class SearchEngineClient {
       const limit = query.maxResults || 10;
       results = results.slice(0, limit);
 
+      const hasResults = results.length > 0;
       globalLogger.info(TAG, `HTML search via ${provider.id}: ${results.length} results`);
 
+      if (!hasResults) {
+        globalLogger.warn(TAG, `HTML search returned no results for query: "${query.query}" via ${provider.id}`);
+      }
+
       return {
-        success: true,
+        success: hasResults,
         engine: provider.id,
         query: query.query,
         results,
+        metadata: {
+          hasResults,
+          resultCount: results.length,
+        },
       };
     } catch (error) {
       globalLogger.error(TAG, `HTML search failed for ${provider.id}: ${(error as Error).message}`);
@@ -873,14 +882,23 @@ export class SearchEngineClient {
       const limit = query.maxResults || 10;
       results = results.slice(0, limit);
 
+      const hasResults = results.length > 0;
       globalLogger.info(TAG, `API search via ${provider.id}: ${results.length} results`);
 
+      if (!hasResults) {
+        globalLogger.warn(TAG, `API search returned no results for query: "${query.query}" via ${provider.id}`);
+      }
+
       return {
-        success: true,
+        success: hasResults,
         engine: provider.id,
         query: query.query,
         results,
         totalResults,
+        metadata: {
+          hasResults,
+          resultCount: results.length,
+        },
       };
     } catch (error) {
       globalLogger.error(TAG, `API search failed for ${provider.id}: ${(error as Error).message}`);

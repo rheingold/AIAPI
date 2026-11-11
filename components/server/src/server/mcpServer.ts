@@ -55,6 +55,8 @@ export class MCPServer {
   }> = [];
   private sseClients = new Map<string, http.ServerResponse>();
   private disabledHelpers: string[] = [];
+  // Progress notification state: tracks active progress tokens per SSE session
+  private progressTokens = new Map<string, string>(); // sessionId -> progressToken
   private appTemplateRoots: string[];
   private readonly settingsPath = path.resolve(process.cwd(), 'config', 'dashboard-settings.json');
 
@@ -380,7 +382,7 @@ export class MCPServer {
       
       const request = JSON.parse(body);
       const isLocal = this.isLocalRequest(req);
-      const response = await this._dispatchRequest(request, isLocal, req);
+      const response = await this._dispatchRequest(request, isLocal, req, undefined);
 
       // Return 400 for JSON-RPC validation errors (-32600) to preserve backward compat
       const httpStatus = response?.error?.code === -32600 ? 400 : 200;
@@ -396,11 +398,13 @@ export class MCPServer {
   /**
    * Shared JSON-RPC dispatch: validates, propagates admin token, calls handleMethod.
    * Used by both the plain-POST handler and the SSE message handler.
+   * @param progressToken - Optional progress token for SSE-based progress notifications
    */
   private async _dispatchRequest(
     request: any,
     isLocal: boolean,
     req: http.IncomingMessage,
+    progressToken?: string,
   ): Promise<any> {
     // Log incoming request (if JSON logging enabled)
     if (process.env.LOG_JSON !== 'false') {
@@ -424,7 +428,7 @@ export class MCPServer {
       request.params._adminToken = adminTokenHeader;
     }
 
-    const response = await this.handleMethod(request, isLocal);
+    const response = await this.handleMethod(request, isLocal, progressToken);
 
     // Log outgoing response (if JSON logging enabled)
     if (process.env.LOG_JSON !== 'false') {
@@ -472,10 +476,15 @@ export class MCPServer {
     const sseStream = this.sseClients.get(sessionId);
 
     try {
+      // Generate progress token for this request (used for long-running operations)
+      const progressToken = crypto.randomBytes(8).toString('hex');
+      this.progressTokens.set(sessionId, progressToken);
+
       const body = await this.readBody(req);
       const request = JSON.parse(body);
       const isLocal = this.isLocalRequest(req);
-      const response = await this._dispatchRequest(request, isLocal, req);
+      // Pass progress token and emitProgress callback for long-running operations
+      const response = await this._dispatchRequest(request, isLocal, req, progressToken);
 
       // 202 Accepted — actual response delivered via SSE stream
       res.writeHead(202);
@@ -484,6 +493,8 @@ export class MCPServer {
       if (sseStream && !sseStream.destroyed) {
         sseStream.write(`event: message\ndata: ${JSON.stringify(response)}\n\n`);
       }
+      // Cleanup progress token after response sent
+      this.progressTokens.delete(sessionId);
     } catch (error) {
       console.error('SSE message error:', error);
       res.writeHead(400);
@@ -546,7 +557,7 @@ export class MCPServer {
   /**
    * Handle JSON-RPC method calls
    */
-  private async handleMethod(request: any, isLocal: boolean = true): Promise<any> {
+  private async handleMethod(request: any, isLocal: boolean = true, progressToken?: string): Promise<any> {
     const { method, params, id } = request;
 
     try {
@@ -558,7 +569,7 @@ export class MCPServer {
           return this.handleToolsList(id);
         
         case 'tools/call':
-          return this.handleToolsCall(id, params, isLocal);
+          return this.handleToolsCall(id, params, isLocal, progressToken);
         
         case 'resources/list':
           return this.handleResourcesList(id);
@@ -816,8 +827,13 @@ export class MCPServer {
   /**
    * Call a tool
    */
-  private async handleToolsCall(id: any, params: any, isLocal: boolean = true): Promise<any> {
+  private async handleToolsCall(id: any, params: any, isLocal: boolean = true, progressToken?: string): Promise<any> {
     const { name, arguments: args, _adminToken: adminToken } = params;
+    // Store progress token for long-running operations
+    let _progressToken = progressToken;
+    if (_progressToken) {
+      this.emitProgress(_progressToken, 0, 100, `Starting ${name}...`);
+    }
 
     try {
       let result: any;
@@ -862,13 +878,23 @@ export class MCPServer {
           // Direct call to _System tool — dispatch to built-in server-side actions
           const sysAction: string = (args.action || '').toUpperCase();
           switch (sysAction) {
-            case 'EXEC_CMD':
+            case 'EXEC_CMD': {
+              const timeoutMs = args.timeoutMs || 30000;
+              if (_progressToken && timeoutMs > 10000) {
+                this.emitProgress(_progressToken, 10, 100, 'Executing command...');
+              }
+              const execStart = Date.now();
               result = await execCmd(
                 args.executable ?? args.proc ?? '',
                 args.args ?? args.value ?? '',
-                { cwd: args.cwd ?? args.path, timeoutMs: args.timeoutMs, backgroundMode: args.background === true },
+                { cwd: args.cwd ?? args.path, timeoutMs, backgroundMode: args.background === true },
               );
+              const execElapsed = Date.now() - execStart;
+              if (_progressToken && execElapsed > 10000) {
+                this.emitProgress(_progressToken, 100, 100, `Command completed in ${execElapsed}ms`);
+              }
               break;
+            }
             case 'FS_READ':
               result = await fsRead(args.path ?? '', {
                 maxBytes: args.maxBytes,
@@ -922,7 +948,11 @@ export class MCPServer {
               result = await this.automationEngine.fetchWebpage(url, fetchOpts);
               break;
             }
-            case 'FETCH_WEBPAGE_RENDER':
+            case 'FETCH_WEBPAGE_RENDER': {
+              if (_progressToken) {
+                this.emitProgress(_progressToken, 10, 100, 'Connecting to browser...');
+              }
+              const fetchStart = Date.now();
               result = await renderWebpage(
                 this.helperRegistry,
                 args.url ?? args.proc ?? '',
@@ -936,7 +966,12 @@ export class MCPServer {
                   selector: args.selector,
                 },
               );
+              const fetchElapsed = Date.now() - fetchStart;
+              if (_progressToken && fetchElapsed > 5000) {
+                this.emitProgress(_progressToken, 100, 100, `Page rendered in ${fetchElapsed}ms`);
+              }
               break;
+            }
             case 'SEARCH_WEB': {
               // Lazy-import SearchEngineClient to avoid loading when unused
               const { SearchEngineClient } = await import('../engine/searchEngineClient');
@@ -1008,7 +1043,15 @@ export class MCPServer {
                 const url = args.proc ?? args.path ?? '';
                 const fetchOptions = args.value ? (() => { try { return JSON.parse(args.value); } catch { return {}; } })() : (args.options ?? {});
                 
+                if (_progressToken) {
+                  this.emitProgress(_progressToken, 10, 100, 'Fetching webpage...');
+                }
+                const fetchStart = Date.now();
                 result = await this.automationEngine.fetchWebpage(url, fetchOptions);
+                const fetchElapsed = Date.now() - fetchStart;
+                if (_progressToken && fetchElapsed > 5000) {
+                  this.emitProgress(_progressToken, 90, 100, `Fetch completed in ${fetchElapsed}ms`);
+                }
                 
                 // Auto-escalate to interactive browser mode when login/captcha detected
                 // (unless caller explicitly disabled with autoEscalate:false)
@@ -1017,6 +1060,10 @@ export class MCPServer {
                     `Login form detected on ${url}, auto-escalating to fetch_webpage_render (interactive browser mode)...`);
                   
                   // Render in visible/interactive browser, wait for user to complete login
+                  if (_progressToken) {
+                    this.emitProgress(_progressToken, 50, 100, 'Login form detected, escalating to interactive browser...');
+                  }
+                  const renderStart = Date.now();
                   const renderResult = await renderWebpage(
                     this.helperRegistry,
                     url,
@@ -1030,6 +1077,10 @@ export class MCPServer {
                       selector: fetchOptions.selector,
                     }
                   );
+                  const renderElapsed = Date.now() - renderStart;
+                  if (_progressToken && renderElapsed > 5000) {
+                    this.emitProgress(_progressToken, 95, 100, `Render completed in ${renderElapsed}ms`);
+                  }
                   
                   if (renderResult.success) {
                     // Merge the rendered HTML back into the original result
@@ -1037,37 +1088,55 @@ export class MCPServer {
                       ...result,
                       content: renderResult.html,
                       text: renderResult.html,  // Full HTML as text
-                      _escalated: true,
-                      _escalationReason: `Login form detected (action: ${result.loginForm.action}, confidence: ${result.loginForm.confidence})`,
+                      escalated: true,
+                      escalationReason: `Login form detected (action: ${result.loginForm.action}, confidence: ${result.loginForm.confidence})`,
                       obstacle: renderResult.obstacle,
                     };
                     globalLogger.info('mcpServer',
                       `Auto-escalation successful, returned ${renderResult.length} chars of rendered HTML`);
                   } else {
                     // Escalation failed, keep original result but add note
-                    result._escalationFailed = renderResult.error;
+                    result.escalationError = renderResult.error;
                     globalLogger.warn('mcpServer',
                       `Auto-escalation failed: ${renderResult.error}`);
                   }
                 }
                 break;
               }
-              case 'FETCH_WEBPAGE_RENDER':
+              case 'FETCH_WEBPAGE_RENDER': {
                 // proc= carries the URL; value= carries optional JSON options ({browser, headless, timeoutMs, waitMs, selector})
+                if (_progressToken) {
+                  this.emitProgress(_progressToken, 10, 100, 'Rendering webpage...');
+                }
+                const renderStart = Date.now();
                 result = await renderWebpage(
                   this.helperRegistry,
                   args.proc ?? args.path ?? '',
                   args.value ? (() => { try { return JSON.parse(args.value); } catch { return {}; } })() : (args.options ?? {}),
                 );
+                const renderElapsed = Date.now() - renderStart;
+                if (_progressToken && renderElapsed > 5000) {
+                  this.emitProgress(_progressToken, 100, 100, `Render completed in ${renderElapsed}ms`);
+                }
                 break;
-              case 'EXEC_CMD':
+              }
+              case 'EXEC_CMD': {
                 // proc= carries executable; value= carries args string
+                if (_progressToken) {
+                  this.emitProgress(_progressToken, 10, 100, 'Executing command...');
+                }
+                const execStart = Date.now();
                 result = await execCmd(
                   args.proc ?? args.executable ?? '',
                   args.value ?? args.args ?? '',
                   { cwd: args.path, timeoutMs: args.timeoutMs },
                 );
+                const execElapsed = Date.now() - execStart;
+                if (_progressToken && execElapsed > 10000) {
+                  this.emitProgress(_progressToken, 100, 100, `Command completed in ${execElapsed}ms`);
+                }
                 break;
+              }
               case 'FS_READ':
                 result = await fsRead(args.path ?? '', { maxBytes: args.maxBytes });
                 break;
@@ -1168,7 +1237,7 @@ export class MCPServer {
               }))]
             : [sysEntry, ...allHelpers.map(s => slimHelperSummary(s))];
           const raw = { success: true, helpers,
-            _note: full ? undefined : 'Compact view. Pass full:true for complete command schemas.' };
+            note: full ? undefined : 'Compact view. Pass full:true for complete command schemas.' };
           const { data } = truncateResponse(raw, {
             arrayFields: ['helpers'],
             hint: 'Use listHelpers with full:true and getHelperSchema for per-helper detail.',
@@ -1371,7 +1440,7 @@ export class MCPServer {
               commands: sysSchema.commands.map(c => c.name),
             };
             const raw = { success: true, schema: schemaOut,
-              _note: full ? undefined : 'Compact view. Pass full:true for complete inputSchema detail.' };
+              note: full ? undefined : 'Compact view. Pass full:true for complete inputSchema detail.' };
             const { data } = truncateResponse(raw, {
               hint: 'Pass full:true to getHelperSchema for complete inputSchema detail.',
             });
@@ -1384,7 +1453,7 @@ export class MCPServer {
           }
           const schemaOut = full ? schema : slimHelperSummary(schema);
           const raw = { success: true, schema: schemaOut,
-            _note: full ? undefined : 'Compact view. Pass full:true for complete inputSchema detail.' };
+            note: full ? undefined : 'Compact view. Pass full:true for complete inputSchema detail.' };
           const { data } = truncateResponse(raw, {
             hint: 'Pass full:true to getHelperSchema for complete inputSchema detail.',
           });
@@ -1817,11 +1886,66 @@ export class MCPServer {
    * Create a JSON-RPC 2.0 error response.
    * @param data Optional extra fields (e.g. `{ correlationId: '...' }`) placed in `error.data`.
    */
-  private createErrorResponse(id: any, code: number, message: string, data?: Record<string, unknown>): any {
-    const errObj: Record<string, unknown> = { code, message };
-    if (data && Object.keys(data).length > 0) errObj.data = data;
-    return { jsonrpc: '2.0', id, error: errObj };
-  }
+   private createErrorResponse(id: any, code: number, message: string, data?: Record<string, unknown>): any {
+     const errObj: Record<string, unknown> = { code, message };
+     // If no explicit data provided, generate structured error context for AI clients
+     if (!data || Object.keys(data).length === 0) {
+       data = MCPServer.generateStructuredErrorData(code, message);
+     }
+     if (data && Object.keys(data).length > 0) errObj.data = data;
+     return { jsonrpc: '2.0', id, error: errObj };
+   }
+ 
+   /**
+    * Generate structured error context for AI client consumption.
+    * Provides error category, retryability hint, and suggested action.
+    * @internal Used by createErrorResponse() when no explicit data provided.
+    */
+   private static generateStructuredErrorData(code: number, message: string): Record<string, unknown> {
+     const data: Record<string, unknown> = {
+       correlationId: crypto.randomBytes(8).toString('hex'),
+     };
+ 
+     const lower = message.toLowerCase();
+ 
+     // Classify error by pattern matching
+     if (lower.includes('not found') || lower.includes('unknown tool') || lower.includes('unknown helper')) {
+       data.category = 'not_found';
+       data.retryable = false;
+       data.suggestedAction = 'Verify target exists or check available options with listHelpers';
+     } else if (lower.includes('unknown action') || lower.includes('invalid')) {
+       data.category = 'invalid_input';
+       data.retryable = false;
+       data.suggestedAction = 'Check action name spelling and available actions with getActionDetail';
+     } else if (lower.includes('permission') || lower.includes('denied') || lower.includes('access')) {
+       data.category = 'permission';
+       data.retryable = false;
+       data.suggestedAction = 'Check permissions or use admin token';
+     } else if (lower.includes('timeout') || lower.includes('timed out')) {
+       data.category = 'timeout';
+       data.retryable = true;
+       data.suggestedAction = 'Retry with increased timeout parameter';
+     } else if (lower.includes('network') || lower.includes('dns') || lower.includes('connection refused')) {
+       data.category = 'network';
+       data.retryable = false;
+       data.suggestedAction = 'Verify URL is correct and reachable';
+     } else if (lower.includes('security filter') || lower.includes('blocked')) {
+       data.category = 'security';
+       data.retryable = false;
+       data.suggestedAction = 'Request admin token or adjust security policy in dashboard';
+     } else if (code === -32603) {
+       data.category = 'internal';
+       data.retryable = true;
+       data.suggestedAction = 'Retry operation or contact administrator with correlation ID';
+     } else {
+       // Default for unclassified errors
+       data.category = 'internal';
+       data.retryable = code >= -32600 && code <= -32603;
+       data.suggestedAction = 'Review error message and retry if appropriate';
+     }
+ 
+     return data;
+   }
 
   /** Returns `true` if the request originates from the local machine (loopback). */
   private isLocalRequest(req: http.IncomingMessage): boolean {
@@ -1847,9 +1971,10 @@ export class MCPServer {
 
   /**
    * Recursively remove internal-only fields from a result object before
-   * serializing it to the wire. Fields starting with `_` that are not part
-   * of the public contract (like `_note`, `_escalated`) are stripped.
-   * Specifically removes `_bridgeError` which leaks internal WinSvcBridge paths.
+   * serializing it to the wire. Only truly internal fields are stripped:
+   * `_bridgeError` (leaks WinSvcBridge paths) and `_isScreenshot` (internal marker).
+   * Public contract fields like `note`, `escalated`, `escalationReason`,
+   * `escalationError`, and `sessionWarning` are preserved in the response.
    */
   private static sanitiseResultForWire(obj: unknown): unknown {
     if (obj === null || obj === undefined) return obj;
@@ -1876,17 +2001,23 @@ export class MCPServer {
    *   - { type: 'text', text: '...' }
    *   - { type: 'image', data: '<base64>', mimeType: 'image/png' }
    *
+   * Each content item includes annotations with audience, priority, and role hints
+   * to help AI clients prioritize and process responses correctly.
+   *
    * @param cleanResult - The sanitized result object (internal fields already stripped)
    * @param rawResult   - The original result before sanitization (to read _isScreenshot flag)
    */
   private static buildContentItems(
     cleanResult: unknown,
     rawResult: unknown,
-  ): Array<{ type: string; text?: string; data?: string; mimeType?: string }> {
-    const items: Array<{ type: string; text?: string; data?: string; mimeType?: string }> = [];
+  ): Array<{ type: string; text?: string; data?: string; mimeType?: string; annotations?: Record<string, unknown> }> {
+    const items: Array<{ type: string; text?: string; data?: string; mimeType?: string; annotations?: Record<string, unknown> }> = [];
 
     // Check if this was a screenshot call
     const isScreenshot = (rawResult as any)?._isScreenshot === true;
+    // Determine response characteristics for annotations
+    const role = MCPServer.determineRole(cleanResult);
+    const priority = MCPServer.calculatePriority(cleanResult);
 
     if (isScreenshot && typeof cleanResult === 'object' && cleanResult !== null && !Array.isArray(cleanResult)) {
       const result = cleanResult as Record<string, unknown>;
@@ -1909,14 +2040,15 @@ export class MCPServer {
       }
 
       if (imageBase64) {
-        // Emit image content item for vision input
+        // Emit image content item for vision input (high priority)
         items.push({
           type: 'image',
           data: imageBase64,
           mimeType: 'image/png',
+          annotations: { audience: ['assistant'], priority: 1.0, role: 'result' },
         });
 
-        // Also emit a lightweight text summary (without the large base64 blob)
+        // Also emit a lightweight text summary (without the large base64 blob) - lower priority
         const summary: Record<string, unknown> = {};
         for (const [key, val] of Object.entries(result)) {
           if (key !== imageFieldUsed) {
@@ -1926,12 +2058,14 @@ export class MCPServer {
         items.push({
           type: 'text',
           text: JSON.stringify(summary, null, 2),
+          annotations: { audience: ['assistant'], priority: 0.5, role: 'diagnostic' },
         });
       } else {
         // No image data found - fall back to text-only
         items.push({
           type: 'text',
           text: JSON.stringify(cleanResult, null, 2),
+          annotations: { audience: ['assistant'], priority, role },
         });
       }
     } else {
@@ -1939,10 +2073,35 @@ export class MCPServer {
       items.push({
         type: 'text',
         text: JSON.stringify(cleanResult, null, 2),
+        annotations: { audience: ['assistant'], priority, role },
       });
     }
 
     return items;
+  }
+
+  /**
+   * Calculate priority value (0.0-1.0) based on response content.
+   * Higher priority = more important for AI client to process.
+   */
+  private static calculatePriority(result: unknown): number {
+    if (result === null || result === undefined) return 0.3;
+    const obj = result as any;
+    if (obj?.success === false) return 0.9; // errors are high priority
+    if (obj?.escalated || obj?._escalated) return 0.8; // escalations need attention
+    if (obj?.sessionWarning || obj?._sessionWarning) return 0.7; // warnings are notable
+    return 1.0; // normal success is highest priority
+  }
+
+  /**
+   * Determine the semantic role of a response for annotation metadata.
+   */
+  private static determineRole(result: unknown): string {
+    const obj = result as any;
+    if (obj?.success === false) return 'error';
+    if (obj?.escalated || obj?._escalated) return 'hint';
+    if (obj?.sessionWarning || obj?._sessionWarning) return 'diagnostic';
+    return 'result';
   }
 
   private sanitiseInternalError(error: unknown, context: string): { message: string; corrId: string } {
@@ -1954,6 +2113,33 @@ export class MCPServer {
     const safeMsg = MCPServer.stripStackLines(rawMsg);
     globalLogger.error('MCP', `[corrId=${corrId}] ${context}: ${stack}`);
     return { message: `${context}: ${safeMsg}`, corrId };
+  }
+
+  /**
+   * Emit progress notification to all connected SSE clients.
+   * Used for long-running operations to prevent AI client timeouts.
+   * @param progressToken - Unique token identifying this progress sequence
+   * @param progress - Current progress value (0-100)
+   * @param total - Total work units (typically 100)
+   * @param message - Human-readable status message
+   */
+  private emitProgress(progressToken: string, progress: number, total: number, message: string): void {
+    const payload = {
+      jsonrpc: '2.0',
+      method: 'notifications/progress',
+      params: { progressToken, progress, total, message },
+    };
+    const data = `event: message\ndata: ${JSON.stringify(payload)}\n\n`;
+    
+    for (const sseStream of this.sseClients.values()) {
+      if (!sseStream.destroyed) {
+        try {
+          sseStream.write(data);
+        } catch {
+          // Silently ignore write errors to broken connections
+        }
+      }
+    }
   }
 
   /**
